@@ -77,9 +77,10 @@ private:
 
 typedef Lattice<iScalar<iMatrix<iScalar<vComplex>,Ns>>> SpinMatField;
 
-MODULE_REGISTER_TMP(Point,       TPoint<FIMPL::PropagatorField> , MSink);
-MODULE_REGISTER_TMP(ScalarPoint, TPoint<ScalarImplCR::Field>    , MSink);
-MODULE_REGISTER_TMP(SMatPoint,   TPoint<SpinMatField>           , MSink);
+MODULE_REGISTER_TMP(Point,       TPoint<FIMPL::PropagatorField>    , MSink);
+MODULE_REGISTER_TMP(ScalarPoint, TPoint<ScalarImplCR::Field>       , MSink);
+MODULE_REGISTER_TMP(SMatPoint,   TPoint<SpinMatField>              , MSink);
+MODULE_REGISTER_TMP(StagPoint,   TPoint<STAGIMPL::PropagatorField> , MSink);
 
 /******************************************************************************
  *                          TPoint implementation                             *

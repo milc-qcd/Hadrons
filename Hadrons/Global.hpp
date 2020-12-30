@@ -100,6 +100,13 @@ using Grid::operator>>;
 #define GIMPLF HADRONS_IMPL(GIMPLBASE, F)
 #define GIMPLD HADRONS_IMPL(GIMPLBASE, D)
 
+#ifndef STAGIMPLBASE
+#define STAGIMPLBASE StaggeredImpl // use 4d for impl for now since 5d is Lsvectorised
+#endif
+#define STAGIMPL  HADRONS_IMPL(STAGIMPLBASE, R)
+#define STAGIMPLF HADRONS_IMPL(STAGIMPLBASE, F)
+#define STAGIMPLD HADRONS_IMPL(STAGIMPLBASE, D)
+
 BEGIN_HADRONS_NAMESPACE
 
 // type aliases
