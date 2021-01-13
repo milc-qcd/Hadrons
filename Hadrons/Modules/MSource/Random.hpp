@@ -61,6 +61,7 @@ protected:
 };
 
 MODULE_REGISTER_TMP(Random,       TRandom<FIMPL>,        MSource);
+MODULE_REGISTER_TMP(StagRandom,   TRandom<STAGIMPL>,     MSource);
 
 /******************************************************************************
  *                       TRandom implementation                               *
