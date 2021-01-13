@@ -357,7 +357,8 @@ void TStagMeson<FImpl1, FImpl2>::setup(void)
     Lattice<iScalar<vInteger> > z(env().getGrid()); LatticeCoordinate(z,2);
     
     // coordinate of source
-    std::vector<int> src_coor = strToVec<int>(static_cast<MSource::StagPoint *>(vm().getModule(par().source))->par().position);
+    //    std::vector<int> src_coor = strToVec<int>(static_cast<MSource::StagPoint *>(vm().getModule(par().source))->par().position);
+    std::vector<int> src_coor(4, 0);
     // local taste non-singlet ops, including ``Hermiticity" phase,
     // see Tab. 11.2 in Degrand and Detar
     for(int i=0; i < gammaList.size(); i++){
