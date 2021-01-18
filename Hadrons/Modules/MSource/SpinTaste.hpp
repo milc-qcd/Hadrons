@@ -55,7 +55,7 @@ template <typename FImpl>
 class TSpinTaste: public Module<SpinTastePar>
 {
 public:
-    BASIC_TYPE_ALIASES(STAGIMPL,);
+    FERM_TYPE_ALIASES(FImpl,);
 public:
     // constructor
     TSpinTaste(const std::string name);
@@ -69,6 +69,9 @@ protected:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    void spinTasteOp(PropagatorField &out, PropagatorField &in, int t0);
+    Gamma::Algebra gamDiag;
 };
 
 MODULE_REGISTER_TMP(SpinTaste, TSpinTaste<STAGIMPL>, MSource);
@@ -104,6 +107,52 @@ template <typename FImpl>
 void TSpinTaste<FImpl>::setup(void)
 {
   envCreateLat(PropagatorField, getName());
+  envTmpLat(LatticeComplex, "stagPhaseDiag");
+}
+
+// spin-taste operator ///////////////////////////////////////////////////////////////////////
+template <typename FImpl>
+void TSpinTaste<FImpl>::spinTasteOp(PropagatorField &out, PropagatorField &in, int t0)
+{
+  // Mostly copied from MContraction/Meson.cpp for StagMeson
+  
+  // grid can't handle real * prop, so use complex
+  envGetTmp(LatticeComplex,stagPhaseDiag);
+  
+  Lattice<iScalar<vInteger> > x(env().getGrid()); LatticeCoordinate(x,0);
+  Lattice<iScalar<vInteger> > y(env().getGrid()); LatticeCoordinate(y,1);
+  Lattice<iScalar<vInteger> > z(env().getGrid()); LatticeCoordinate(z,2);
+  
+  // local taste non-singlet ops, including ``Hermiticity" phase,
+  // see Tab. 11.2 in Degrand and Detar
+  
+  stagPhaseDiag = 1.0;
+        
+  LOG(Message) << "Using gamma: " << gamDiag << std::endl;
+
+  switch(gamDiag) {
+    
+  case Gamma::Algebra::GammaX  :
+    stagPhaseDiag = where( mod(x,2)==(Integer)0, stagPhaseDiag, -stagPhaseDiag);
+    break;
+    
+  case Gamma::Algebra::GammaY  :
+    stagPhaseDiag = where( mod(y,2)==(Integer)0, stagPhaseDiag, -stagPhaseDiag);
+    break;
+    
+  case Gamma::Algebra::GammaZ  :
+    stagPhaseDiag = where( mod(z,2)==(Integer)0, stagPhaseDiag, -stagPhaseDiag);
+    break;
+    
+  case Gamma::Algebra::Gamma5  :
+    break;
+    
+  default :
+    std::cout << "your gamma is not supported for stag meson" << std::endl;
+    assert(0);
+  }
+
+  out = stagPhaseDiag * in;
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -120,7 +169,15 @@ void TSpinTaste<FImpl>::execute(void)
     auto &out        = envGet(PropagatorField, getName());
     
     out = Zero();
-    out = q;  // For testing
+
+    // parse the gamma matrix speciication 
+    std::vector<Gamma::Algebra> gammaList = strToVec<Gamma::Algebra>(par().gamma_spin);
+
+    assert(gammaList.size() == 1);
+    gamDiag = gammaList[0];
+
+    // Do the operation
+    spinTasteOp(out, q, t0);
 }
 
 END_MODULE_NAMESPACE
