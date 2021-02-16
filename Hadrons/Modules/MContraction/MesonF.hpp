@@ -84,7 +84,7 @@ public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
-                                        std::vector<std::vector<Complex>>, corr);
+                                        std::vector<Complex>, corr);
     };
 public:
     // constructor
@@ -172,6 +172,11 @@ void TStagMesonF<FImpl1, FImpl2>::setup(void)
 
         envTmp(std::vector<Result>,  "result", 1, Ngammas, Result());
 
+        if (envHasType(std::vector<FermionField1>, par().q1)) {
+            int nt = env().getDim(Tp);
+            envTmp(std::vector<Complex>,  "corrTemp", 1, nt, Complex());
+        }
+
     } else {
         HADRONS_ERROR(Argument, "incompatible field types '" 
             + env().getObjectType(par().q1) + "', and '" + env().getObjectType(par().q2)+ "'.")  
@@ -241,14 +246,20 @@ void TStagMesonF<FImpl1, FImpl2>::contractionHelper(std::vector<Complex> &corr,
         std::vector<TComplex>  buf = sink(c);
 
         for (unsigned int i=0; i<corr.size();i++) {
-            corr[i] = TensorRemove(buf[i]);
+            corr[i] += TensorRemove(buf[i]);
         }
 
     } else {
 
         FermionField1 temp = f1*(phaseSink);
 
-        sliceInnerProductVector<typename FermionField1::vector_object>(corr,temp,f2,Tp);
+        envGetTmp(std::vector<Complex>, corrTemp);
+
+        sliceInnerProductVector<typename FermionField1::vector_object>(corrTemp,temp,f2,Tp);
+
+        for (unsigned int i=0; i<corr.size();i++) {
+            corr[i] += corrTemp[i];
+        }
     }
 }
 
@@ -270,14 +281,14 @@ void TStagMesonF<FImpl1, FImpl2>::execute(void)
         result[i].gamma_snk = gammaList[i];
         result[i].gamma_src = Gamma::Algebra::Identity;
 
+        result[i].corr.resize(nt,0.0);
+
         if (envHasType(FermionField1, par().q1)) {
 
             auto& q1 = envGet(FermionField1, par().q1);
             auto& q2 = envGet(FermionField2, par().q2);
 
-            result[i].corr.resize(1,std::vector<Complex>(nt));
-
-            contractionHelper(result[i].corr[0],q1,q2,stag_phase_sink[i]);
+            contractionHelper(result[i].corr,q1,q2,stag_phase_sink[i]);
 
         } else {
 
@@ -285,14 +296,12 @@ void TStagMesonF<FImpl1, FImpl2>::execute(void)
             auto& q2 = envGet(std::vector<FermionField2>, par().q2);
 
             if (q1.size() != q2.size()) {
-                HADRONS_ERROR(Implementation, "Propagators " + par().q1 + " and " 
-                    + par().q2 + " must have the same number of vectors")
+                HADRONS_ERROR(Implementation, "Propagator vectors " + par().q1 + " and " 
+                    + par().q2 + " must have the same size")
             }
 
-            result[i].corr.resize(q1.size(),std::vector<Complex>(nt));
-
             for (unsigned int j=0;j<q1.size();j++){
-                contractionHelper(result[i].corr[j],q1[j],q2[j],stag_phase_sink[i]);
+                contractionHelper(result[i].corr,q1[j],q2[j],stag_phase_sink[i]);
             }
         }
     }
