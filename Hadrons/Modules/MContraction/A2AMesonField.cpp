@@ -30,3 +30,4 @@ using namespace Hadrons;
 using namespace MContraction;
 
 template class Grid::Hadrons::MContraction::TA2AMesonField<FIMPL>;
+template class Grid::Hadrons::MContraction::TA2AMesonField<STAGIMPL>;

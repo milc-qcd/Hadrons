@@ -77,9 +77,12 @@ public:
 };
 
 MODULE_REGISTER_TMP(LoadFermionEigenPack, ARG(TLoadEigenPack<FermionEigenPack<FIMPL>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPack, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPL>, GIMPL>), MIO);
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
 MODULE_REGISTER_TMP(LoadFermionEigenPackF, ARG(TLoadEigenPack<FermionEigenPack<FIMPLF>, GIMPLF>), MIO);
 MODULE_REGISTER_TMP(LoadFermionEigenPackIo32, ARG(TLoadEigenPack<FermionEigenPack<FIMPL, FIMPLF>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPackF, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPLF>, GIMPLF>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPackIo32, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>), MIO);
 #endif
 
 /******************************************************************************

@@ -41,6 +41,8 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
+HADRONS_FUNCTION_SPECIALIZE(MesonFunction,T,STAGIMPL,A2Autils<T>::MesonField,A2Autils<STAGIMPL>::StagMesonField,Helper)
+
 class A2AMesonFieldPar: Serializable
 {
 public:
@@ -85,7 +87,7 @@ public:
                             const FermionField *right,
                             const unsigned int orthogDim, double &t)
     {
-        A2Autils<FImpl>::MesonField(m, left, right, gamma_, mom_, orthogDim, &t);
+        Helper::MesonFunction<FImpl>::func(m, left, right, gamma_, mom_, orthogDim, &t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
@@ -135,6 +137,7 @@ private:
 };
 
 MODULE_REGISTER(A2AMesonField, ARG(TA2AMesonField<FIMPL>), MContraction);
+MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonField<STAGIMPL>), MContraction);
 
 /******************************************************************************
 *                  TA2AMesonField implementation                             *
