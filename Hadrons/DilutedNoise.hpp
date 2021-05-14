@@ -63,9 +63,9 @@ public:
     void generateNoise(GridParallelRNG &rng);
 private:
     template <typename T = FImpl>
-    std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)> setFerm(const int i);
+    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type setFerm(const int i);
     template <typename T = FImpl>
-    std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)> setFerm(const int i);
+    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type setFerm(const int i);
     virtual void setProp(const int i) = 0;
     LatticeComplex                 eta_;
     FermionField                   ferm_;
@@ -77,9 +77,9 @@ protected:
     FermionField &    getFerm(void);
     int               getNd(void) const;
     template <typename T = FImpl>
-    std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> getNsc(void) const;
+    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
     template <typename T = FImpl>
-    std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> getNsc(void) const;
+    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
     PropagatorField & getProp(void);
     void              setPropagator(LatticeComplex & eta);
 };
@@ -181,7 +181,7 @@ getNoise(void) const
 
 template <typename FImpl>
 template <typename T>
-std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)> 
+typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type 
 SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 {
     int nc  = FImpl::Dimension;
@@ -193,7 +193,7 @@ SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 
 template <typename FImpl>
 template <typename T>
-std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)> 
+typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type 
 SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 {
     int nc  = FImpl::Dimension;
@@ -270,14 +270,14 @@ int SpinColorDiagonalNoise<FImpl>::getNd(void) const
 
 template <typename FImpl>
 template <typename T>
-std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> 
+typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type 
 SpinColorDiagonalNoise<FImpl>::getNsc(void) const
 {
     return Ns*FImpl::Dimension;
 }
 template <typename FImpl>
 template <typename T>
-std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> 
+typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type 
 SpinColorDiagonalNoise<FImpl>::getNsc(void) const
 {
     return FImpl::Dimension;

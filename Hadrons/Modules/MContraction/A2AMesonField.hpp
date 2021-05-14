@@ -102,12 +102,12 @@ public:
     }
 private:
  template<typename TFImpl, typename ... Args>
- std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)> MesonFunction(Args && ... args){
+ typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)>::type MesonFunction(Args && ... args){
      return A2Autils<FImpl>::MesonField(args...);
  }
 
  template<typename TFImpl, typename ... Args>
- std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)> MesonFunction(Args && ... args){
+ typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)>::type MesonFunction(Args && ... args){
      return A2Autils<FImpl>::StagMesonField(args...);
  }
 

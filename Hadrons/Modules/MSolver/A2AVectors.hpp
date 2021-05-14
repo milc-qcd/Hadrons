@@ -81,9 +81,9 @@ public:
     virtual void execute(void);
 private:
     template <typename T = FImpl>
-    std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> getStride(){ return 2; }
+    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getStride(){ return 2; }
     template <typename T = FImpl>
-    std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int> getStride(){ return 1; }
+    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getStride(){ return 1; }
 private:
     std::string  solverName_;
     unsigned int Nl_{0};
