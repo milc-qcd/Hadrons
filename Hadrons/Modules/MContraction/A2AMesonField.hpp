@@ -41,7 +41,7 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
-HADRONS_FUNCTION_SPECIALIZE(MesonFunction,T,STAGIMPL,A2Autils<T>::MesonField,A2Autils<STAGIMPL>::StagMesonField,Helper)
+// HADRONS_FUNCTION_SPECIALIZE(MesonFunction,T,STAGIMPL,A2Autils<T>::MesonField,A2Autils<STAGIMPL>::StagMesonField,Helper)
 
 class A2AMesonFieldPar: Serializable
 {
@@ -87,7 +87,7 @@ public:
                             const FermionField *right,
                             const unsigned int orthogDim, double &t)
     {
-        Helper::MesonFunction<FImpl>::func(m, left, right, gamma_, mom_, orthogDim, &t);
+        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, &t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
@@ -100,6 +100,17 @@ public:
         return vol_*(12.0*sizeof(T))*blockSizei*blockSizej
                +  vol_*(2.0*sizeof(T)*mom_.size())*blockSizei*blockSizej*gamma_.size();
     }
+private:
+ template<typename TFImpl, typename ... Args>
+ std::enable_if_t<!HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)> MesonFunction(Args && ... args){
+     return A2Autils<FImpl>::MesonField(args...);
+ }
+
+ template<typename TFImpl, typename ... Args>
+ std::enable_if_t<HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)> MesonFunction(Args && ... args){
+     return A2Autils<FImpl>::StagMesonField(args...);
+ }
+
 private:
     const std::vector<Gamma::Algebra> &gamma_;
     const std::vector<LatticeComplex> &mom_;

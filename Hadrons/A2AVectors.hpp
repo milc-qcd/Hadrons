@@ -217,10 +217,12 @@ template <typename FImpl>
 void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField &vout2, 
                                               const FermionField &evec, const std::complex<double> &eval)
 {
+    ComplexD eval_conj = conjugate(eval);
+
     src_o_ = evec;
     src_o_.Checkerboard() = Odd;
+
     pickCheckerboard(Even, sol_e_, vout1);
-    pickCheckerboard(Odd, sol_o_, vout1);
     
     /////////////////////////////////////////////////////
     /// v_e = (1/eval^(*)) * (-i/Im(eval) * Meo evec_o)
@@ -230,39 +232,28 @@ void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField 
     ComplexD cc = ComplexD(0,-1.0/eval.imag());
     sol_e_ = (cc/eval) * tmp_;
     
+    setCheckerboard(vout1, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
+    sol_e_ = (cc/eval_conj) * tmp_;
+
+    setCheckerboard(vout2, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
     /////////////////////////////////////////////////////
     /// v_o = (1/eval^(*)) * evec_o
     /////////////////////////////////////////////////////
+    pickCheckerboard(Odd, sol_o_, vout1);
+
     cc = 1.0/eval;
     sol_o_ = cc * src_o_;
     
-    setCheckerboard(vout1, sol_e_);
-    assert(sol_e_.Checkerboard() == Even);
     setCheckerboard(vout1, sol_o_);
     assert(sol_o_.Checkerboard() == Odd);
 
-
-
-    ComplexD eval_conj = conjugate(eval);
-
-    pickCheckerboard(Even, sol_e_, vout2);
-    pickCheckerboard(Odd, sol_o_, vout2);
-    
-    /////////////////////////////////////////////////////
-    /// v_e = (1/eval^(*)) * (-i/Im(eval) * Meo evec_o)
-    /////////////////////////////////////////////////////
-    action_.Meooe(src_o_, tmp_);
-    cc = ComplexD(0,-1.0/(eval.imag()));
-    sol_e_ = (cc/eval_conj) * tmp_;
-    
-    /////////////////////////////////////////////////////
-    /// v_o = (1/eval^(*)) * evec_o
-    /////////////////////////////////////////////////////
     cc = -1.0/eval_conj;
     sol_o_ = cc * src_o_;
     
-    setCheckerboard(vout2, sol_e_);
-    assert(sol_e_.Checkerboard() == Even);
     setCheckerboard(vout2, sol_o_);
     assert(sol_o_.Checkerboard() == Odd);
 }
@@ -283,50 +274,35 @@ void A2AVectorsSchur<FImpl>::makeLowModePairW(FermionField &wout1, FermionField 
 {
     src_o_ = evec;
     src_o_.Checkerboard() = Odd;
-    pickCheckerboard(Even, sol_e_, wout1);
-    pickCheckerboard(Odd, sol_o_, wout1);
     
     /////////////////////////////////////////////////////
-    /// v_e = (-i/eval * Meo evec_o)
+    /// v_o = (+/-)evec_o
     /////////////////////////////////////////////////////
-    action_.Meooe(src_o_, tmp_);
-    ComplexD minusI(0, -1.0);
-    ComplexD cc = minusI/eval.imag();
-    sol_e_ = cc * tmp_;
-    
-    /////////////////////////////////////////////////////
-    /// v_o = evec_o
-    /////////////////////////////////////////////////////
-    sol_o_ = src_o_;
-    
-    setCheckerboard(wout1, sol_e_);
-    assert(sol_e_.Checkerboard() == Even);
-    setCheckerboard(wout1, sol_o_);
-    assert(sol_o_.Checkerboard() == Odd);
 
+    setCheckerboard(wout1, src_o_);
 
-
-
-    pickCheckerboard(Even, sol_e_, wout2);
     pickCheckerboard(Odd, sol_o_, wout2);
-    
-    /////////////////////////////////////////////////////
-    /// v_e = (-i/eval * Meo evec_o)
-    /////////////////////////////////////////////////////
-    action_.Meooe(src_o_, tmp_);
-    cc = minusI/eval.imag();
-    sol_e_ = cc * tmp_;
-    
-    /////////////////////////////////////////////////////
-    /// v_o = evec_o
-    /////////////////////////////////////////////////////
+
     sol_o_ = -src_o_;
     
-    setCheckerboard(wout2, sol_e_);
-    assert(sol_e_.Checkerboard() == Even);
     setCheckerboard(wout2, sol_o_);
     assert(sol_o_.Checkerboard() == Odd);    
 
+    /////////////////////////////////////////////////////
+    /// v_e = (-i/eval * Meo evec_o)
+    /////////////////////////////////////////////////////
+    pickCheckerboard(Even, sol_e_, wout1);
+    action_.Meooe(src_o_, tmp_);
+
+    ComplexD cc(0, -1.0/eval.imag());
+    sol_e_ = cc * tmp_;
+    
+    // sol_o_ = src_o_;
+    
+    setCheckerboard(wout1, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
+    setCheckerboard(wout2, sol_e_);
 }
 
 template <typename FImpl>

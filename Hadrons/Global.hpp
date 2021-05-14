@@ -257,8 +257,6 @@ void        makeFileDir(const std::string filename, GridBase *g = nullptr);
 template<typename T, typename... Args>\
 using type_name = typename std::conditional<condition, true_type<Args...>, false_type<Args...> >::type;
 
-
-
 #define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name,FImpl,staggered_type,non_staggered_type)\
 HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTATION(T), staggered_type, non_staggered_type)
 
@@ -277,19 +275,15 @@ HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTAT
 #define _HADRONS_SCHUR_OP_(conv) Schur##conv##Operator
 #define HADRONS_SCHUR_OP(conv) _HADRONS_SCHUR_OP_(conv)
 #define HADRONS_DEFAULT_SCHUR_OP HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR)
-#define HADRONS_DEFAULT_SCHUR_OP_STAGGERED HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
 #define _HADRONS_SCHUR_SOLVE_(conv) SchurRedBlack##conv##Solve
 #define HADRONS_SCHUR_SOLVE(conv) _HADRONS_SCHUR_SOLVE_(conv)
 #define HADRONS_DEFAULT_SCHUR_SOLVE HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR)
+// #define _HADRONS_SCHUR_A2A_(conv) A2AVectorsSchur##conv
+// #define HADRONS_SCHUR_A2A(conv) _HADRONS_SCHUR_A2A_(conv)
+// #define HADRONS_DEFAULT_SCHUR_A2A HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR)
+// #define HADRONS_DEFAULT_SCHUR_A2A_STAGGERED HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR_STAGGERED)
+#define HADRONS_DEFAULT_SCHUR_OP_STAGGERED HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
 #define HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR_STAGGERED)
-#define _HADRONS_SCHUR_A2A_(conv) A2AVectorsSchur##conv
-#define HADRONS_SCHUR_A2A(conv) _HADRONS_SCHUR_A2A_(conv)
-#define HADRONS_DEFAULT_SCHUR_A2A HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR)
-#define HADRONS_DEFAULT_SCHUR_A2A_STAGGERED HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR_STAGGERED)
-
-// #define HADRONS_DEFINE_SCHUR_A2A(name,FImpl)\
-// HADRONS_TYPEDEF_BRANCH_STAGGERED(_##name,FImpl,HADRONS_DEFAULT_SCHUR_A2A_STAGGERED,HADRONS_DEFAULT_SCHUR_A2A)\
-// using name = _##name<FImpl,FImpl>;
 
 #define HADRONS_DEFINE_SCHUR_OP(name,FImpl)\
 HADRONS_TYPEDEF_BRANCH_STAGGERED(name##_macro,FImpl,HADRONS_DEFAULT_SCHUR_OP_STAGGERED,HADRONS_DEFAULT_SCHUR_OP)\
@@ -330,26 +324,6 @@ struct Correlator: Serializable
                                     Metadata,             info,
                                     std::vector<Scalar>, corr);
 };
-
-// Helper macro to handle untemplated functions that depend on template values, 
-// e.g. Wilson vs Staggered Implementation
-#define HADRONS_FUNCTION_SPECIALIZE(class_name,TGeneric,TSpecial,function_generic,function_special,ns)\
-namespace ns{\
-    template <typename TGeneric> class class_name{\
-    public:\
-        template<typename... Args>\
-        static auto func(Args&&... args) -> decltype(function_generic(std::forward<Args>(args)...)) {\
-          return function_generic(std::forward<Args>(args)...);\
-        }\
-    };\
-    template <> class class_name<TSpecial>{\
-    public:\
-        template<typename... Args>\
-        static auto func(Args&&... args) -> decltype(function_special(std::forward<Args>(args)...)) {\
-          return function_special(std::forward<Args>(args)...);\
-        }\
-    };\
-}
 
 // check if grid is initlialised
 bool isGridInit(void);
