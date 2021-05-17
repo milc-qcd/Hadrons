@@ -117,8 +117,7 @@ env().template createDerivedObject<base, type>(name, Environment::Storage::stand
 envCreate(type, name, 1, envGetGrid(type))
 
 #define envCreateLat5(type, name, Ls)\
-if(Ls>1)envCreate(type, name, Ls, envGetGrid(type, Ls));\
-else envGetGrid4(type);
+if(Ls>1) {envCreate(type, name, Ls, envGetGrid(type, Ls));} else {envGetGrid4(type);}
 
 #define envCreateLat(...)\
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envCreateLat5, envCreateLat4)(__VA_ARGS__)
@@ -130,8 +129,7 @@ env().template createObject<type>(name, Environment::Storage::cache, Ls, __VA_AR
 envCache(type, name, 1, envGetGrid(type))
 
 #define envCacheLat5(type, name, Ls)\
-if(Ls>1)envCache(type, name, Ls, envGetGrid(type, Ls));\
-else envCacheLat4(type,name);
+  if(Ls>1){envCache(type, name, Ls, envGetGrid(type, Ls));} else {envCacheLat4(type,name);}
 
 #define envCacheLat(...)\
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envCacheLat5, envCacheLat4)(__VA_ARGS__)
@@ -144,8 +142,7 @@ env().template createObject<type>(getName() + "_tmp_" + name,         \
 envTmp(type, name, 1, envGetGrid(type))
 
 #define envTmpLat5(type, name, Ls)\
-if(Ls>1)envTmp(type, name, Ls, envGetGrid(type, Ls));\
-else envTmpLat4(type,name);
+if(Ls>1) {envTmp(type, name, Ls, envGetGrid(type, Ls));} else {envTmpLat4(type,name);}
 
 #define envTmpLat(...)\
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envTmpLat5, envTmpLat4)(__VA_ARGS__)

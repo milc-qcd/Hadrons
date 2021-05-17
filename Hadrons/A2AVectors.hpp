@@ -217,7 +217,7 @@ template <typename FImpl>
 void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField &vout2, 
                                               const FermionField &evec, const std::complex<double> &eval)
 {
-    ComplexD eval_conj = conjugate(eval);
+    ComplexD temp_c = eval;
 
     src_o_ = evec;
     src_o_.Checkerboard() = Odd;
@@ -230,12 +230,14 @@ void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField 
     action_.Meooe(src_o_, tmp_);
 
     ComplexD cc = ComplexD(0,-1.0/eval.imag());
-    sol_e_ = (cc/eval) * tmp_;
+    sol_e_ = (cc/temp_c) * tmp_;
     
     setCheckerboard(vout1, sol_e_);
     assert(sol_e_.Checkerboard() == Even);
 
-    sol_e_ = (cc/eval_conj) * tmp_;
+    temp_c = conjugate(temp_c);
+
+    sol_e_ = (cc/temp_c) * tmp_;
 
     setCheckerboard(vout2, sol_e_);
     assert(sol_e_.Checkerboard() == Even);
@@ -251,7 +253,7 @@ void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField 
     setCheckerboard(vout1, sol_o_);
     assert(sol_o_.Checkerboard() == Odd);
 
-    cc = -1.0/eval_conj;
+    cc = -1.0/temp_c;
     sol_o_ = cc * src_o_;
     
     setCheckerboard(vout2, sol_o_);
