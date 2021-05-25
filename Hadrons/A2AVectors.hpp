@@ -38,35 +38,41 @@ BEGIN_HADRONS_NAMESPACE
  *                 Class to generate V & W all-to-all vectors                 *
  ******************************************************************************/
 template <typename FImpl>
-class A2AVectorsSchurDiagTwo
+class A2AVectorsSchur
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
     SOLVER_TYPE_ALIASES(FImpl,);
+    HADRONS_DEFINE_SCHUR_OP(SchurOp,FImpl);
+    // using SchurOp = typename std::conditional<HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl), HADRONS_DEFAULT_SCHUR_OP_STAGGERED<FMat,FermionField>, HADRONS_DEFAULT_SCHUR_OP<FMat,FermionField> >::type;
 public:
-    A2AVectorsSchurDiagTwo(FMat &action, Solver &solver);
-    virtual ~A2AVectorsSchurDiagTwo(void) = default;
-    void makeLowModeV(FermionField &vout, 
-                      const FermionField &evec, const Real &eval);
-    void makeLowModeV5D(FermionField &vout_4d, FermionField &vout_5d, 
-                        const FermionField &evec, const Real &eval);
-    void makeLowModeW(FermionField &wout, 
-                      const FermionField &evec, const Real &eval);
-    void makeLowModeW5D(FermionField &wout_4d, FermionField &wout_5d, 
-                        const FermionField &evec, const Real &eval);
+    A2AVectorsSchur(FMat &action, Solver &solver);
+    virtual ~A2AVectorsSchur(void) = default;
+    void makeLowModeV(FermionField &vout, const FermionField &evec, const Real &eval);
+    void makeLowModeV5D(FermionField &vout_4d, FermionField &vout_5d, const FermionField &evec, const Real &eval);
+    void makeLowModeW(FermionField &wout, const FermionField &evec, const Real &eval);
+    void makeLowModeW5D(FermionField &wout_4d, FermionField &wout_5d, const FermionField &evec, const Real &eval);
+
+    void makeLowModePairV(FermionField &vout1, FermionField &vout2, const FermionField &evec, const std::complex<double> &eval);
+    void makeLowModePairV5D(FermionField &vout_4d1, FermionField &vout_5d1, 
+                            FermionField &vout_4d2, FermionField &vout_5d2, const FermionField &evec, const  std::complex<double> &eval);
+    void makeLowModePairW(FermionField &wout1, FermionField &wout2, const FermionField &evec, const std::complex<double> &eval);
+    void makeLowModePairW5D(FermionField &wout_4d1, FermionField &wout_5d1, 
+                            FermionField &wout_4d2, FermionField &wout_5d2, const FermionField &evec, const std::complex<double> &eval);
+
     void makeHighModeV(FermionField &vout, const FermionField &noise);
     void makeHighModeV5D(FermionField &vout_4d, FermionField &vout_5d, 
                          const FermionField &noise_5d);
     void makeHighModeW(FermionField &wout, const FermionField &noise);
     void makeHighModeW5D(FermionField &vout_5d, FermionField &wout_5d, 
                          const FermionField &noise_5d);
-private:
+protected:
     FMat                                     &action_;
     Solver                                   &solver_;
-    GridBase                                 *fGrid_, *frbGrid_, *gGrid_;
-    bool                                     is5d_;
-    FermionField                             src_o_, sol_e_, sol_o_, tmp_, tmp5_;
-    SchurDiagTwoOperator<FMat, FermionField> op_;
+    GridBase                                 *frbGrid_, *gGrid_, *fGrid_;
+    FermionField                             src_o_, sol_e_, sol_o_, tmp_, tmp5_, tmp5_2_;
+
+    SchurOp<FMat,FermionField> op_;
 };
 
 /******************************************************************************
@@ -106,10 +112,10 @@ private:
 };
 
 /******************************************************************************
- *               A2AVectorsSchurDiagTwo template implementation               *
+ *            A2AVectorsSchur template implementation                  *
  ******************************************************************************/
 template <typename FImpl>
-A2AVectorsSchurDiagTwo<FImpl>::A2AVectorsSchurDiagTwo(FMat &action, Solver &solver)
+A2AVectorsSchur<FImpl>::A2AVectorsSchur(FMat &action, Solver &solver)
 : action_(action)
 , solver_(solver)
 , fGrid_(action_.FermionGrid())
@@ -120,11 +126,12 @@ A2AVectorsSchurDiagTwo<FImpl>::A2AVectorsSchurDiagTwo(FMat &action, Solver &solv
 , sol_o_(frbGrid_)
 , tmp_(frbGrid_)
 , tmp5_(fGrid_)
+, tmp5_2_(fGrid_)
 , op_(action_)
 {}
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeV(FermionField &vout, const FermionField &evec, const Real &eval)
+void A2AVectorsSchur<FImpl>::makeLowModeV(FermionField &vout, const FermionField &evec, const Real &eval)
 {
     src_o_ = evec;
     src_o_.Checkerboard() = Odd;
@@ -157,14 +164,15 @@ void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeV(FermionField &vout, const Fermi
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeV5D(FermionField &vout_4d, FermionField &vout_5d, const FermionField &evec, const Real &eval)
+void A2AVectorsSchur<FImpl>::makeLowModeV5D(FermionField &vout_4d, FermionField &vout_5d, 
+                                                    const FermionField &evec, const Real &eval)
 {
     makeLowModeV(vout_5d, evec, eval);
     action_.ExportPhysicalFermionSolution(vout_5d, vout_4d);
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeW(FermionField &wout, const FermionField &evec, const Real &eval)
+void A2AVectorsSchur<FImpl>::makeLowModeW(FermionField &wout, const FermionField &evec, const Real &eval)
 {
     src_o_ = evec;
     src_o_.Checkerboard() = Odd;
@@ -194,7 +202,7 @@ void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeW(FermionField &wout, const Fermi
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeW5D(FermionField &wout_4d, 
+void A2AVectorsSchur<FImpl>::makeLowModeW5D(FermionField &wout_4d, 
                                                    FermionField &wout_5d, 
                                                    const FermionField &evec, 
                                                    const Real &eval)
@@ -204,15 +212,122 @@ void A2AVectorsSchurDiagTwo<FImpl>::makeLowModeW5D(FermionField &wout_4d,
     action_.ExportPhysicalFermionSource(wout_5d, wout_4d);
 }
 
+
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeHighModeV(FermionField &vout, 
+void A2AVectorsSchur<FImpl>::makeLowModePairV(FermionField &vout1, FermionField &vout2, 
+                                              const FermionField &evec, const std::complex<double> &eval)
+{
+    ComplexD temp_c = eval;
+
+    src_o_ = evec;
+    src_o_.Checkerboard() = Odd;
+
+    pickCheckerboard(Even, sol_e_, vout1);
+    
+    /////////////////////////////////////////////////////
+    /// v_e = (1/eval^(*)) * (-i/Im(eval) * Meo evec_o)
+    /////////////////////////////////////////////////////
+    action_.Meooe(src_o_, tmp_);
+
+    ComplexD cc = ComplexD(0,-1.0/eval.imag());
+    sol_e_ = (cc/temp_c) * tmp_;
+    
+    setCheckerboard(vout1, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
+    temp_c = conjugate(temp_c);
+
+    sol_e_ = (cc/temp_c) * tmp_;
+
+    setCheckerboard(vout2, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
+    /////////////////////////////////////////////////////
+    /// v_o = (1/eval^(*)) * evec_o
+    /////////////////////////////////////////////////////
+    pickCheckerboard(Odd, sol_o_, vout1);
+
+    cc = 1.0/eval;
+    sol_o_ = cc * src_o_;
+    
+    setCheckerboard(vout1, sol_o_);
+    assert(sol_o_.Checkerboard() == Odd);
+
+    cc = -1.0/temp_c;
+    sol_o_ = cc * src_o_;
+    
+    setCheckerboard(vout2, sol_o_);
+    assert(sol_o_.Checkerboard() == Odd);
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairV5D(FermionField &vout_4d1, FermionField &vout_5d1, 
+                                                FermionField &vout_4d2, FermionField &vout_5d2, 
+                                                const FermionField &evec, const  std::complex<double> &eval)
+{
+    makeLowModePairV(vout_5d1,vout_5d2, evec, eval);
+    action_.ExportPhysicalFermionSolution(vout_5d1, vout_4d1);
+    action_.ExportPhysicalFermionSolution(vout_5d2, vout_4d2);
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairW(FermionField &wout1, FermionField &wout2, 
+                                              const FermionField &evec, const std::complex<double> &eval)
+{
+    src_o_ = evec;
+    src_o_.Checkerboard() = Odd;
+    
+    /////////////////////////////////////////////////////
+    /// v_o = (+/-)evec_o
+    /////////////////////////////////////////////////////
+
+    setCheckerboard(wout1, src_o_);
+
+    pickCheckerboard(Odd, sol_o_, wout2);
+
+    sol_o_ = -src_o_;
+    
+    setCheckerboard(wout2, sol_o_);
+    assert(sol_o_.Checkerboard() == Odd);    
+
+    /////////////////////////////////////////////////////
+    /// v_e = (-i/eval * Meo evec_o)
+    /////////////////////////////////////////////////////
+    pickCheckerboard(Even, sol_e_, wout1);
+    action_.Meooe(src_o_, tmp_);
+
+    ComplexD cc(0, -1.0/eval.imag());
+    sol_e_ = cc * tmp_;
+    
+    // sol_o_ = src_o_;
+    
+    setCheckerboard(wout1, sol_e_);
+    assert(sol_e_.Checkerboard() == Even);
+
+    setCheckerboard(wout2, sol_e_);
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairW5D(FermionField &wout_4d1, FermionField &wout_5d1, 
+                                                FermionField &wout_4d2, FermionField &wout_5d2, 
+                                                const FermionField &evec, const std::complex<double> &eval)
+{
+    makeLowModePairW(tmp5_, tmp5_2_, evec, eval);
+    action_.DminusDag(tmp5_, wout_5d1);
+    action_.DminusDag(tmp5_2_, wout_5d2);
+    action_.ExportPhysicalFermionSource(wout_5d1, wout_4d1);
+    action_.ExportPhysicalFermionSource(wout_5d2, wout_4d2);
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeHighModeV(FermionField &vout, 
                                                   const FermionField &noise)
 {
     solver_(vout, noise);
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeHighModeV5D(FermionField &vout_4d, 
+void A2AVectorsSchur<FImpl>::makeHighModeV5D(FermionField &vout_4d, 
                                                     FermionField &vout_5d, 
                                                     const FermionField &noise)
 {
@@ -229,14 +344,14 @@ void A2AVectorsSchurDiagTwo<FImpl>::makeHighModeV5D(FermionField &vout_4d,
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeHighModeW(FermionField &wout, 
+void A2AVectorsSchur<FImpl>::makeHighModeW(FermionField &wout, 
                                                   const FermionField &noise)
 {
     wout = noise;
 }
 
 template <typename FImpl>
-void A2AVectorsSchurDiagTwo<FImpl>::makeHighModeW5D(FermionField &wout_4d, 
+void A2AVectorsSchur<FImpl>::makeHighModeW5D(FermionField &wout_4d, 
                                                     FermionField &wout_5d, 
                                                     const FermionField &noise)
 {

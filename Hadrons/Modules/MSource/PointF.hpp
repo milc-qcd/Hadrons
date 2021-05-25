@@ -1,9 +1,11 @@
 /*
- * LoadA2AVectors.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * Point.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Lanny91 <andrew.lawson@gmail.com>
+ * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,64 +25,75 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MIO_LoadA2AVectors_hpp_
-#define Hadrons_MIO_LoadA2AVectors_hpp_
+
+#ifndef Hadrons_MSource_PointF_hpp_
+#define Hadrons_MSource_PointF_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/A2AVectors.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
-/******************************************************************************
- *                    Module to load all-to-all vectors                       *
- ******************************************************************************/
-BEGIN_MODULE_NAMESPACE(MIO)
+/*
+ 
+ Point source
+ ------------
+ * src_x = delta_x,position
+ 
+ * options:
+ - position: space-separated integer sequence (e.g. "0 1 1 0")
+ 
+ */
 
-class LoadA2AVectorsPar: Serializable
+/******************************************************************************
+ *                                  TPointF                                   *
+ ******************************************************************************/
+BEGIN_MODULE_NAMESPACE(MSource)
+
+class PointFPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(LoadA2AVectorsPar,
-                                    std::string,  filestem,
-                                    bool,         multiFile,
-                                    unsigned int, size);
+    GRID_SERIALIZABLE_CLASS_MEMBERS(PointFPar,
+                                    std::string, position);
 };
 
 template <typename FImpl>
-class TLoadA2AVectors: public Module<LoadA2AVectorsPar>
+class TPointF: public Module<PointFPar>
 {
 public:
-    FERM_TYPE_ALIASES(FImpl,);
+    BASIC_TYPE_ALIASES(FImpl,);
+    typedef typename FImpl::FermionField FermionField;
+    typedef typename FermionField::scalar_object FermionSite;
 public:
     // constructor
-    TLoadA2AVectors(const std::string name);
+    TPointF(const std::string name);
     // destructor
-    virtual ~TLoadA2AVectors(void) {};
+    virtual ~TPointF(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+protected:
     // setup
     virtual void setup(void);
     // execution
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(LoadA2AVectors, TLoadA2AVectors<FIMPL>, MIO);
-MODULE_REGISTER_TMP(StagLoadA2AVectors, TLoadA2AVectors<STAGIMPL>, MIO);
+MODULE_REGISTER_TMP(StagPointF,   TPointF<STAGIMPL>,     MSource);
 
 /******************************************************************************
- *                      TLoadA2AVectors implementation                        *
+ *                       TPointF template implementation                      *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TLoadA2AVectors<FImpl>::TLoadA2AVectors(const std::string name)
-: Module<LoadA2AVectorsPar>(name)
+TPointF<FImpl>::TPointF(const std::string name)
+: Module<PointFPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TLoadA2AVectors<FImpl>::getInput(void)
+std::vector<std::string> TPointF<FImpl>::getInput(void)
 {
     std::vector<std::string> in;
     
@@ -88,7 +101,7 @@ std::vector<std::string> TLoadA2AVectors<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TLoadA2AVectors<FImpl>::getOutput(void)
+std::vector<std::string> TPointF<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     
@@ -97,23 +110,43 @@ std::vector<std::string> TLoadA2AVectors<FImpl>::getOutput(void)
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TLoadA2AVectors<FImpl>::setup(void)
+void TPointF<FImpl>::setup(void)
 {
-    envCreate(std::vector<FermionField>, getName(), 1, par().size, 
-              envGetGrid(FermionField));
+    auto nc = FImpl::Dimension;
+
+    envCreate(std::vector<FermionField>, getName(), 1, nc, envGetGrid(FermionField));
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TLoadA2AVectors<FImpl>::execute(void)
+void TPointF<FImpl>::execute(void)
 {
-    auto &vec = envGet(std::vector<FermionField>, getName());
+    LOG(Message) << "Creating point source at position [" << par().position
+                << "]" << std::endl;
 
-    A2AVectorsIo::read(vec, par().filestem, par().multiFile, vm().getTrajectory());
+    FermionSite fSite;
+    decltype(peekIndex<ColourIndex,FermionSite>(fSite,0)) id(1.);
+
+    std::vector<int> position = strToVec<int>(par().position);
+    auto             &src     = envGet(std::vector<FermionField>, getName());
+    auto             nc       = FImpl::Dimension;
+
+    if (position.size() != env().getNd())
+    {
+        HADRONS_ERROR(Size, "position has " + std::to_string(position.size())
+                      + " components (must have " + std::to_string(env().getNd()) + ")");
+    }
+
+    for (int i=0;i<nc;i++) {
+        src[i] = Zero();
+        fSite = 0.;
+        pokeIndex<ColourIndex,FermionSite>(fSite,id,i);
+        pokeSite(fSite, src[i], position);
+    }
 }
 
 END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MIO_LoadA2AVectors_hpp_
+#endif // Hadrons_MSource_Point_hpp_

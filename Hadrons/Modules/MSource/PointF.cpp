@@ -1,5 +1,5 @@
 /*
- * A2AMesonField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * Point.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/A2AMesonField.hpp>
+#include <Hadrons/Modules/MSource/PointF.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MSource;
 
-template class Grid::Hadrons::MContraction::TA2AMesonField<FIMPL>;
-template class Grid::Hadrons::MContraction::TA2AMesonField<STAGIMPL>;
+template class Grid::Hadrons::MSource::TPointF<STAGIMPL>;
+

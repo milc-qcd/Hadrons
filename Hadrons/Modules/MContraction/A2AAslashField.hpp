@@ -173,7 +173,7 @@ void TA2AAslashField<FImpl, PhotonImpl>::setup(void)
 template <typename FImpl, typename PhotonImpl>
 void TA2AAslashField<FImpl, PhotonImpl>::execute(void)
 {
-#ifndef GRID_NVCC
+#ifndef GRID_CUDA
     auto &left  = envGet(std::vector<FermionField>, par().left);
     auto &right = envGet(std::vector<FermionField>, par().right);
 

@@ -1,9 +1,10 @@
 /*
- * A2AMesonField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SpinTaste.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,11 +24,12 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/A2AMesonField.hpp>
+#include <Hadrons/Modules/MSource/SpinTaste.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MSource;
 
-template class Grid::Hadrons::MContraction::TA2AMesonField<FIMPL>;
-template class Grid::Hadrons::MContraction::TA2AMesonField<STAGIMPL>;
+template class Grid::Hadrons::MSource::TSpinTaste<STAGIMPL>;
+template class Grid::Hadrons::MSource::TSpinTaste<STAGIMPL,STAGIMPL::FermionField>;
+

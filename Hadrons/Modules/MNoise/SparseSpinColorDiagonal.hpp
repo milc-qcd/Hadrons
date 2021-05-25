@@ -68,6 +68,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(SparseSpinColorDiagonal, TSparseSpinColorDiagonal<FIMPL>, MNoise);
+MODULE_REGISTER_TMP(StagSparseSpinColorDiagonal, TSparseSpinColorDiagonal<STAGIMPL>, MNoise);
 MODULE_REGISTER_TMP(ZSparseSpinColorDiagonal, TSparseSpinColorDiagonal<ZFIMPL>, MNoise);
 
 /******************************************************************************

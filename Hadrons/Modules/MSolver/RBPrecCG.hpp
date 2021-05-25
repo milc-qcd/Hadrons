@@ -58,6 +58,7 @@ class TRBPrecCG: public Module<RBPrecCGPar>
 public:
     FERM_TYPE_ALIASES(FImpl,);
     SOLVER_TYPE_ALIASES(FImpl,);
+    HADRONS_DEFINE_SCHUR_SOLVE(schurSolve_t,FImpl);
 public:
     // constructor
     TRBPrecCG(const std::string name);
@@ -75,6 +76,7 @@ protected:
 };
 
 MODULE_REGISTER_TMP(RBPrecCG, ARG(TRBPrecCG<FIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
+MODULE_REGISTER_TMP(StagRBPrecCG, ARG(TRBPrecCG<STAGIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
 MODULE_REGISTER_TMP(ZRBPrecCG, ARG(TRBPrecCG<ZFIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
 
 /******************************************************************************
@@ -139,7 +141,7 @@ void TRBPrecCG<FImpl, nBasis>::setup(void)
                                      const FermionField &source) {
             ConjugateGradient<FermionField> cg(par().residual,
                                                par().maxIteration);
-            HADRONS_DEFAULT_SCHUR_SOLVE<FermionField> schurSolver(cg);
+            schurSolve_t<FermionField> schurSolver(cg);
             schurSolver.subtractGuess(subGuess);
             schurSolver(mat, source, sol, *guesserPt);
         };
