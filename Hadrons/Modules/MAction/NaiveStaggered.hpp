@@ -116,7 +116,17 @@ void TNaiveStaggered<FImpl>::setup(void)
     auto &U      = envGet(GaugeField, par().gauge);
     auto &grid   = *envGetGrid(FermionField);
     auto &gridRb = *envGetRbGrid(FermionField);
+
     typename NaiveStaggeredFermion<FImpl>::ImplParams implParams;
+
+    if (!par().boundary.empty())
+    {
+        implParams.boundary_phases = strToVec<Complex>(par().boundary);
+    }
+    if (!par().twist.empty())
+    {
+        implParams.twist_n_2pi_L   = strToVec<Real>(par().twist);
+    }
     
     envCreateDerived(FMat, NaiveStaggeredFermion<FImpl>, getName(), 1,
                      U,

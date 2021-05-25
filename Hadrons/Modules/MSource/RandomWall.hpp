@@ -43,7 +43,8 @@ BEGIN_HADRONS_NAMESPACE
  -----------------------------
  
  * options:
- - tW: source timeslice (integer)
+ - tW:   source timeslice (integer)
+ - size: number of sources (integer)
  
  */
 
@@ -190,9 +191,6 @@ void TRandomWall<FImpl>::execute(void)
                         }
                     } else {
                         *pointer = 0.;
-                        // for (int idx = 0; idx < words; idx++) {
-                            // pointer[idx] = 0;
-                        // }
                     }
                 }
                 merge(src_v[sm], buf);
