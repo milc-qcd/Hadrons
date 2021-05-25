@@ -1,5 +1,5 @@
 /*
- * LoadA2AVectors.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SaveNersc.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,40 +23,46 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MIO_LoadA2AVectors_hpp_
-#define Hadrons_MIO_LoadA2AVectors_hpp_
+#ifndef Hadrons_MIO_SaveNersc_hpp_
+#define Hadrons_MIO_SaveNersc_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/A2AVectors.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                    Module to load all-to-all vectors                       *
+ Save a NERSC configuration
+
+ gauge        Name of the gauge field object to write
+ file         Name of the file to write the gauge field to
+ ensebleLabel Label of the ensemble. Recommended this includes
+              a suffix identifying this as gauge-fixed and which gauge
  ******************************************************************************/
+
+
 BEGIN_MODULE_NAMESPACE(MIO)
 
-class LoadA2AVectorsPar: Serializable
+class SaveNerscPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(LoadA2AVectorsPar,
-                                    std::string,  filestem,
-                                    bool,         multiFile,
-                                    unsigned int, size);
+    GRID_SERIALIZABLE_CLASS_MEMBERS(SaveNerscPar,
+                                    std::string, gauge,
+                                    std::string, fileStem,
+                                    std::string, ensembleLabel);
 };
 
-template <typename FImpl>
-class TLoadA2AVectors: public Module<LoadA2AVectorsPar>
+template <typename GImpl>
+class TSaveNersc: public Module<SaveNerscPar>
 {
 public:
-    FERM_TYPE_ALIASES(FImpl,);
+    GAUGE_TYPE_ALIASES(GImpl,);
 public:
     // constructor
-    TLoadA2AVectors(const std::string name);
+    TSaveNersc(const std::string name);
     // destructor
-    virtual ~TLoadA2AVectors(void) {};
+    virtual ~TSaveNersc(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
@@ -66,54 +72,51 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(LoadA2AVectors, TLoadA2AVectors<FIMPL>, MIO);
-MODULE_REGISTER_TMP(StagLoadA2AVectors, TLoadA2AVectors<STAGIMPL>, MIO);
+MODULE_REGISTER_TMP(SaveNersc,  TSaveNersc<GIMPL>,  MIO);
 
 /******************************************************************************
- *                      TLoadA2AVectors implementation                        *
- ******************************************************************************/
+*                       TSaveNersc implementation                             *
+******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl>
-TLoadA2AVectors<FImpl>::TLoadA2AVectors(const std::string name)
-: Module<LoadA2AVectorsPar>(name)
+template <typename GImpl>
+TSaveNersc<GImpl>::TSaveNersc(const std::string name)
+: Module<SaveNerscPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl>
-std::vector<std::string> TLoadA2AVectors<FImpl>::getInput(void)
+template <typename GImpl>
+std::vector<std::string> TSaveNersc<GImpl>::getInput(void)
 {
-    std::vector<std::string> in;
-    
-    return in;
+  return { par().gauge };
 }
 
-template <typename FImpl>
-std::vector<std::string> TLoadA2AVectors<FImpl>::getOutput(void)
+template <typename GImpl>
+std::vector<std::string> TSaveNersc<GImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
-    
-    return out;
+    return {};
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TLoadA2AVectors<FImpl>::setup(void)
+template <typename GImpl>
+void TSaveNersc<GImpl>::setup(void)
 {
-    envCreate(std::vector<FermionField>, getName(), 1, par().size, 
-              envGetGrid(FermionField));
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TLoadA2AVectors<FImpl>::execute(void)
+template <typename GImpl>
+void TSaveNersc<GImpl>::execute(void)
 {
-    auto &vec = envGet(std::vector<FermionField>, getName());
+    std::string fileName = par().fileStem + "." + std::to_string(vm().getTrajectory());
+    LOG(Message) << "Saving NERSC configuration to file '" << fileName
+                 << "'" << std::endl;
 
-    A2AVectorsIo::read(vec, par().filestem, par().multiFile, vm().getTrajectory());
+    auto &U = envGet(GaugeField, par().gauge);
+    makeFileDir(fileName, U.Grid());
+    NerscIO::writeConfiguration(U, fileName, par().ensembleLabel);
 }
 
 END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MIO_LoadA2AVectors_hpp_
+#endif // Hadrons_MIO_SaveNersc_hpp_

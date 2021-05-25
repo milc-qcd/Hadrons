@@ -1,5 +1,5 @@
 /*
- * A2AMesonField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * XiToSigmaEye.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/A2AMesonField.hpp>
+#include <Hadrons/Modules/MContraction/XiToSigmaEye.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-template class Grid::Hadrons::MContraction::TA2AMesonField<FIMPL>;
-template class Grid::Hadrons::MContraction::TA2AMesonField<STAGIMPL>;
+template class Grid::Hadrons::MContraction::TXiToSigmaEye<FIMPL>;

@@ -1,9 +1,12 @@
 /*
- * A2AMesonField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * WardIdentity.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Lanny91 <andrew.lawson@gmail.com>
+ * Author: fionnoh <fionnoh@gmail.com>
+ * Author: Michael Marshall <Michael.Marshall@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,16 +21,16 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/A2AMesonField.hpp>
+#include <Hadrons/Modules/MContraction/WardIdentity.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-template class Grid::Hadrons::MContraction::TA2AMesonField<FIMPL>;
-template class Grid::Hadrons::MContraction::TA2AMesonField<STAGIMPL>;
+template class Grid::Hadrons::MContraction::TWardIdentity<FIMPL>;
+template class Grid::Hadrons::MContraction::TWardIdentity<ZFIMPL>;

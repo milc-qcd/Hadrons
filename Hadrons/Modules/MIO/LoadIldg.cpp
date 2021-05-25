@@ -25,7 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 See the full license in the file "LICENSE" in the top level distribution directory
 *************************************************************************************/
 /*  END LEGAL */
-#include <Hadrons/Modules/MIO/LoadIldg.hpp>
+#include "LoadIldg.hpp"
 
 using namespace Grid;
 using namespace Hadrons;

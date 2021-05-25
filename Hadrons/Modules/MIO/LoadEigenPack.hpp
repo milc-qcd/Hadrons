@@ -77,8 +77,12 @@ public:
 };
 
 MODULE_REGISTER_TMP(LoadFermionEigenPack, ARG(TLoadEigenPack<FermionEigenPack<FIMPL>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPack, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPL>, GIMPL>), MIO);
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
+MODULE_REGISTER_TMP(LoadFermionEigenPackF, ARG(TLoadEigenPack<FermionEigenPack<FIMPLF>, GIMPLF>), MIO);
 MODULE_REGISTER_TMP(LoadFermionEigenPackIo32, ARG(TLoadEigenPack<FermionEigenPack<FIMPL, FIMPLF>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPackF, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPLF>, GIMPLF>), MIO);
+MODULE_REGISTER_TMP(StagLoadFermionEigenPackIo32, ARG(TLoadEigenPack<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>), MIO);
 #endif
 
 /******************************************************************************
@@ -171,12 +175,16 @@ void TLoadEigenPack<Pack, GImpl>::execute(void)
             }
             stopTimer("5-d gauge transform creation");
         }
+        else
+        {
+            tmpXform = xform;
+        }
 
         pickCheckerboard(Odd, tmpXformOdd, tmpXform);
         startTimer("Transform application");
         for (unsigned int i = 0; i < par().size; i++)
         {
-            LOG(Message) << "Applying gauge transformation to eigenvector i = " << i << "/" << par().size << std::endl;
+            LOG(Message) << "Applying gauge transformation to eigenvector i = " << i+1 << "/" << par().size << std::endl;
             epack.evec[i].Checkerboard() = Odd;
             epack.evec[i] = tmpXformOdd * epack.evec[i];
         }
