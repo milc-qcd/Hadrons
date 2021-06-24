@@ -30,4 +30,5 @@ using namespace Hadrons;
 using namespace MNoise;
 
 template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<FIMPL>;
+template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<STAGIMPL>;
 template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<ZFIMPL>;

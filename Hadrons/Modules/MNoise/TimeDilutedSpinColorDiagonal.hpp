@@ -40,8 +40,15 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MNoise)
 
+class TimeDilutedSpinColorDiagonalPar: Serializable
+{
+public:
+    GRID_SERIALIZABLE_CLASS_MEMBERS(TimeDilutedSpinColorDiagonalPar,
+                                    unsigned int, nsrc);
+};
+
 template <typename FImpl>
-class TTimeDilutedSpinColorDiagonal: public Module<NoPar>
+class TTimeDilutedSpinColorDiagonal: public Module<TimeDilutedSpinColorDiagonalPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
@@ -60,6 +67,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(TimeDilutedSpinColorDiagonal, TTimeDilutedSpinColorDiagonal<FIMPL>, MNoise);
+MODULE_REGISTER_TMP(StagTimeDilutedSpinColorDiagonal, TTimeDilutedSpinColorDiagonal<STAGIMPL>, MNoise);
 MODULE_REGISTER_TMP(ZTimeDilutedSpinColorDiagonal, TTimeDilutedSpinColorDiagonal<ZFIMPL>, MNoise);
 
 /******************************************************************************
@@ -68,7 +76,7 @@ MODULE_REGISTER_TMP(ZTimeDilutedSpinColorDiagonal, TTimeDilutedSpinColorDiagonal
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
 TTimeDilutedSpinColorDiagonal<FImpl>::TTimeDilutedSpinColorDiagonal(const std::string name)
-: Module<NoPar>(name)
+: Module<TimeDilutedSpinColorDiagonalPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
@@ -94,7 +102,7 @@ void TTimeDilutedSpinColorDiagonal<FImpl>::setup(void)
 {
     envCreateDerived(SpinColorDiagonalNoise<FImpl>, 
                      TimeDilutedNoise<FImpl>,
-                     getName(), 1, envGetGrid(FermionField), 1);
+                     getName(), 1, envGetGrid(FermionField), par().nsrc);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
