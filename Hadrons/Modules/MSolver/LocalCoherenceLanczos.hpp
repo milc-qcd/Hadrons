@@ -155,7 +155,7 @@ void TLocalCoherenceLanczos<FImpl, nBasis, FImplIo>::setup(void)
     envTmp(SchurFMat, "mat", Ls, envGet(FMat, par().action));
     envGetTmp(SchurFMat, mat);
     envTmp(LCL, "solver", Ls, envGetRbGrid(Field, Ls), cg, mat, 
-           Odd, epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
+           Even, epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
