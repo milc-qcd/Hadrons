@@ -138,9 +138,16 @@ void TImprovedStaggered<FImpl>::setup(void)
     }
 
     envCreateDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName(), 1,
-                     U, Ufat, Ulong,
                      grid, gridRb,
-                     par().mass, par().c1, par().c2, par().tad, implParams);
+                     2.*par().mass, 2.*par().c1, 2.*par().c2, par().tad, implParams);
+
+    auto &fmat = envGetDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName());
+    fmat.ImportGaugeSimple(Ulong, Ufat);
+    
+//    envCreateDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName(), 1,
+//                     U, Ufat, Ulong,
+//                     grid, gridRb,
+//                     2.*par().mass, 2.*par().c1, 2.*par().c2, par().tad, implParams);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
