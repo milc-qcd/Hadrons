@@ -161,6 +161,7 @@ void TA2AVectors<FImpl, Pack>::setup(void)
         envTmpLat(FermionField, "f5", Ls);
     }
     envTmp(A2A, "a2a", 1, action, solver);
+    std::cout << "Running with Ls = " << Ls << " and getStride = " << getStride() << std::endl;
 }
 
 /******************************************************************************
@@ -199,54 +200,56 @@ void TA2AVectors<FImpl, Pack>::execute(void)
     {
         auto &epack  = envGet(Pack, par().eigenPack);
 
-        if (getStride() > 1)
-            eval = std::complex<double>(par().mass,sqrt(epack.eval[il]-pow(par().mass,2)));
+
+	// Assume staggered epack.evals are for zero mass
+	if (getStride() > 1)
+	  eval = std::complex<double>(par().mass,sqrt(epack.eval[il]));
+	//eval = std::complex<double>(par().mass,sqrt(epack.eval[il]-pow(par().mass,2)));
 
         startTimer("V low mode");
         LOG(Message) << "V vector i = " << il << " (low mode)" << std::endl;
         if (Ls == 1)
-        {
+	  {
             if(getStride()==1)
-                a2a.makeLowModeV(v[il], epack.evec[il], epack.eval[il]);
-            else {
-                a2a.makeLowModePairV(v[il*2], v[il*2+1], epack.evec[il], eval);
-            }
-        }
+	      a2a.makeLowModeV(v[il], epack.evec[il], epack.eval[il]);
+            else
+	      a2a.makeLowModePairV(v[il*2], v[il*2+1], epack.evec[il], eval);
+	  }
         else
-        {
-            envGetTmp(FermionField, f5);
-
-            if(getStride()==1)
-                a2a.makeLowModeV(v[il], epack.evec[il], epack.eval[il]);
-            else {
-                envGetTmp(FermionField, f5_2);
-                a2a.makeLowModePairV5D(v[il*2], v[il*2+1], f5, f5_2, epack.evec[il], eval);
-            }
-        }
+	  {
+	    if(getStride()==1)
+	      a2a.makeLowModeV(v[il], epack.evec[il], epack.eval[il]);
+	    else {
+	      envGetTmp(FermionField, f5);
+	      envGetTmp(FermionField, f5_2);
+	      a2a.makeLowModePairV5D(v[il*2], v[il*2+1], f5, f5_2, epack.evec[il], eval);
+	    }
+	  }
         stopTimer("V low mode");
+
         startTimer("W low mode");
         LOG(Message) << "W vector i = " << il << " (low mode)" << std::endl;
         if (Ls == 1)
-        {
-            if(getStride()==1)
-                a2a.makeLowModeW(w[il], epack.evec[il], epack.eval[il]);
-            else
-                a2a.makeLowModePairW(w[il*2], w[il*2+1], epack.evec[il], eval);
-        }
+	  {
+	    if(getStride()==1)
+	      a2a.makeLowModeW(w[il], epack.evec[il], epack.eval[il]);
+	    else
+	      a2a.makeLowModePairW(w[il*2], w[il*2+1], epack.evec[il], eval);
+	  }
         else
-        {
-            envGetTmp(FermionField, f5);
-
-            if(getStride()==1)
-                a2a.makeLowModeV(w[il], epack.evec[il], epack.eval[il]);
-            else {
-                envGetTmp(FermionField, f5_2);
-                a2a.makeLowModePairW5D(w[il*2], w[il*2+1], f5, f5_2, epack.evec[il], eval);
-            }
-        }
+	  {
+	    
+	    if(getStride()==1)
+	      a2a.makeLowModeV(w[il], epack.evec[il], epack.eval[il]);
+	    else {
+	      envGetTmp(FermionField, f5);
+	      envGetTmp(FermionField, f5_2);
+	      a2a.makeLowModePairW5D(w[il*2], w[il*2+1], f5, f5_2, epack.evec[il], eval);
+	    }
+	  }
         stopTimer("W low mode");
     }
-
+    
     // High modes
     for (unsigned int ih = 0; ih < noise.fermSize(); ih++)
     {
@@ -264,6 +267,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
             a2a.makeHighModeV5D(v[Nl_ + ih], f5, noise.getFerm(ih));
         }
         stopTimer("V high mode");
+
         startTimer("W high mode");
         LOG(Message) << "W vector i = " << Nl_ + ih
                      << " (" << ((Nl_ > 0) ? "high " : "") 
