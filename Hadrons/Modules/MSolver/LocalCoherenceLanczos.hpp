@@ -50,7 +50,8 @@ public:
                                     RealD,         coarseRelaxTol,
                                     std::string,   blockSize,
                                     std::string,   output,
-                                    bool,          multiFile);
+                                    bool,          multiFile,
+                                    bool,          evenEigen);
 };
 
 template <typename FImpl, int nBasis, typename FImplIo = FImpl>
@@ -155,7 +156,7 @@ void TLocalCoherenceLanczos<FImpl, nBasis, FImplIo>::setup(void)
     envTmp(SchurFMat, "mat", Ls, envGet(FMat, par().action));
     envGetTmp(SchurFMat, mat);
     envTmp(LCL, "solver", Ls, envGetRbGrid(Field, Ls), cg, mat, 
-           Even, epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
+           (par().evenEigen ? Even : Odd), epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
