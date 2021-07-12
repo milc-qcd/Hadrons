@@ -202,8 +202,9 @@ void TA2AVectors<FImpl, Pack>::execute(void)
 
 
 	// Assume staggered epack.evals are for zero mass
+	// Use MILC normalization of Dslash -- hence 2*mass here.
 	if (getStride() > 1)
-	  eval = std::complex<double>(par().mass,sqrt(epack.eval[il]));
+	  eval = std::complex<double>(2.*par().mass,sqrt(epack.eval[il]));
 	//eval = std::complex<double>(par().mass,sqrt(epack.eval[il]-pow(par().mass,2)));
 
         startTimer("V low mode");
