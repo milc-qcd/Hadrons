@@ -67,6 +67,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(CheckerboardSpinColorDiagonal, TCheckerboardSpinColorDiagonal<FIMPL>, MNoise);
+MODULE_REGISTER_TMP(StagCheckerboardSpinColorDiagonal, TCheckerboardSpinColorDiagonal<STAGIMPL>, MNoise);
 MODULE_REGISTER_TMP(ZCheckerboardSpinColorDiagonal, TCheckerboardSpinColorDiagonal<ZFIMPL>, MNoise);
 
 /******************************************************************************
