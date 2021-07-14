@@ -225,11 +225,13 @@ void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>
 
     //Expects eigenvalues of Dslash squarred
     ComplexD eval_D = ComplexD(0,sqrt(eval));
-
-    src_rb_ = *evec;
+    ComplexD norm = ComplexD(1.0/sqrt(2.0));
+    // Checkerboard evecs each have norm 1, divide by sqrt(2)
+    src_rb_ = norm*(*evec);
     src_rb_.Checkerboard() = cbParity;
     pickCheckerboard(cbParityNeg, sol_rb1_, *wout);
     
+    // Checkerboard evecs each have norm 1, divide by sqrt(2)
     action_.Meooe(src_rb_, temp_);
     sol_rb1_ = (1.0/eval_D) * temp_;
 
