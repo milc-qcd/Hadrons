@@ -50,7 +50,6 @@ public:
   GRID_SERIALIZABLE_CLASS_MEMBERS(A2AVectorsPar,
                                   std::string, noise,
                                   std::string, action,
-                                  double     , mass,
                                   std::string, eigenPack,
                                   std::string, solver,
                                   std::string, output,
@@ -105,16 +104,18 @@ TA2AVectors<FImpl, Pack>::TA2AVectors(const std::string name)
 template <typename FImpl, typename Pack>
 std::vector<std::string> TA2AVectors<FImpl, Pack>::getInput(void)
 {
-    std::string              sub_string;
-    std::vector<std::string> in;
+    std::vector<std::string> in {par().action,par().solver};
 
-    if (!par().eigenPack.empty())
-    {
+    if (!par().eigenPack.empty()) {
+
         in.push_back(par().eigenPack);
-        sub_string = (!par().eigenPack.empty()) ? "_subtract" : "";
+
+        if (A2A::isStaggered())
+           in.push_back(par().action+"_mass");
     }
-    in.push_back(par().solver + sub_string);
-    in.push_back(par().noise);
+    
+    if (!par().noise.empty())
+        in.push_back(par().noise);
 
     return in;
 }
@@ -134,19 +135,17 @@ template <typename FImpl, typename Pack>
 void TA2AVectors<FImpl, Pack>::setup(void)
 {
     bool        hasLowModes = (!par().eigenPack.empty());
-    std::string sub_string  = (hasLowModes) ? "_subtract" : "";
     auto        &noise      = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
     auto        &action     = envGet(FMat, par().action);
-    auto        &solver     = envGet(Solver, par().solver + sub_string);
+    auto        &solver     = envGet(Solver, par().solver);
     int         Ls          = env().getObjectLs(par().action);
 
     envTmp(A2A, "a2a", 1, action, solver);
-    envGetTmp(A2A, a2a);
 
     if (hasLowModes)
     {
         auto &epack = envGet(Pack, par().eigenPack);
-        Nl_ = epack.evec.size()*(a2a.isStaggered()?2:1);
+        Nl_ = epack.evec.size()*(A2A::isStaggered()?2:1);
     }
     envCreate(std::vector<FermionField>, getName() + "_v", 1, 
               Nl_ + noise.fermSize(), envGetGrid(FermionField));
@@ -154,7 +153,7 @@ void TA2AVectors<FImpl, Pack>::setup(void)
               Nl_ + noise.fermSize(), envGetGrid(FermionField));
     if (Ls > 1)
     {
-        if (a2a.isStaggered()) {
+        if (A2A::isStaggered()) {
             envTmp(std::vector<FermionField>, "f5", Ls, 2, envGetGrid(FermionField,Ls));
             envTmp(std::vector<FermionField>, "f5_2", Ls, 2, envGetGrid(FermionField,Ls));
         } else 
@@ -169,14 +168,13 @@ void TA2AVectors<FImpl, Pack>::setup(void)
 template <typename FImpl, typename Pack>
 void TA2AVectors<FImpl, Pack>::execute(void)
 {
-    std::string sub_string = (Nl_ > 0) ? "_subtract" : "";
        auto        &action    = envGet(FMat, par().action);
-       auto        &solver    = envGet(Solver, par().solver + sub_string);
+       auto        &solver    = envGet(Solver, par().solver);
        auto        &noise     = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
        auto        &v         = envGet(std::vector<FermionField>, getName() + "_v");
        auto        &w         = envGet(std::vector<FermionField>, getName() + "_w");
        int         Ls         = env().getObjectLs(par().action);
-
+       Real        mass;
        envGetTmp(A2A, a2a);
 
        if (Nl_ > 0)
@@ -204,21 +202,24 @@ void TA2AVectors<FImpl, Pack>::execute(void)
            it_v = v.begin();
            it_evec = epack.evec.begin();
 
+           if(A2A::isStaggered())
+               mass = (envGet(std::vector<Real>, par().action+"_mass"))[0];
+
            // Low modes
            for (auto it_eval = epack.eval.begin(); it_eval < epack.eval.end(); it_eval++)
            {
                int il = it_eval-epack.eval.begin();
 
-               if(a2a.isStaggered()) {
+               if(A2A::isStaggered()) {
                    startTimer("low mode pair");
                    LOG(Message) << "V,W vector pairs for i = " << 2*il << " and " << 2*il+1 << " (low mode)" << std::endl;
                    if (Ls == 1)
-                       a2a.makeLowModePairs(it_v, it_w, it_evec, par().mass, *it_eval, par().evenEigen == true);
+                       a2a.makeLowModePairs(it_v, it_w, it_evec, mass, *it_eval, par().evenEigen == true);
                    else {
                        envGetTmp(std::vector<FermionField>, f5);
                        envGetTmp(std::vector<FermionField>, f5_2);
                        typename std::vector<FermionField>::iterator it_f5 = f5.begin(), it_f5_2 = f5_2.begin();
-                       a2a.makeLowModePairs5D(it_v, it_f5, it_w, it_f5_2, it_evec, par().mass, *it_eval, par().evenEigen == true); 
+                       a2a.makeLowModePairs5D(it_v, it_f5, it_w, it_f5_2, it_evec, mass, *it_eval, par().evenEigen == true); 
                    }
                    stopTimer("low mode pair");
                } else {
@@ -249,7 +250,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
                    stopTimer("W low mode");
                }
 
-               if (a2a.isStaggered()) {
+               if (A2A::isStaggered()) {
                    it_w+=2;
                    it_v+=2;
                } else {

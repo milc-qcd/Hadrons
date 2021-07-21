@@ -68,9 +68,9 @@ public:
                          const FermionField &noise_5d);
 public:
     template <typename T = FImpl, IfStag<T> = 0>
-    bool isStaggered(){ return true; }
+    static bool isStaggered(){ return true; }
     template <typename T = FImpl, IfNotStag<T> = 0>
-    bool isStaggered(){ return false; }
+    static bool isStaggered(){ return false; }
 protected:
     FMat                                     &action_;
     Solver                                   &solver_;

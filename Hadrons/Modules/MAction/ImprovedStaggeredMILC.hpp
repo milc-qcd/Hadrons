@@ -7,7 +7,7 @@ Source file: Hadrons/Modules/MAction/ImprovedStaggered.hpp
 Copyright (C) 2015-2019
 
 Author: Antonin Portelli <antonin.portelli@me.com>
-Author: Lanny91 <andrew.lawson@gmail.com>
+Author: Michael Lynch <michaellynch628@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,8 +27,8 @@ See the full license in the file "LICENSE" in the top level distribution directo
 *************************************************************************************/
 /*  END LEGAL */
 
-#ifndef Hadrons_MAction_ImprovedStaggered_hpp_
-#define Hadrons_MAction_ImprovedStaggered_hpp_
+#ifndef Hadrons_MAction_ImprovedStaggeredMILC_hpp_
+#define Hadrons_MAction_ImprovedStaggeredMILC_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -37,14 +37,14 @@ See the full license in the file "LICENSE" in the top level distribution directo
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                            TImprovedStaggered quark action                            *
+ *                         ImprovedStaggeredMILC                                 *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MAction)
 
-class ImprovedStaggeredPar: Serializable
+class ImprovedStaggeredMILCPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(ImprovedStaggeredPar,
+    GRID_SERIALIZABLE_CLASS_MEMBERS(ImprovedStaggeredMILCPar,
                                     std::string, gauge,
                                     std::string, gaugefat,
                                     std::string, gaugelong,
@@ -58,42 +58,41 @@ public:
 };
 
 template <typename FImpl>
-class TImprovedStaggered: public Module<ImprovedStaggeredPar>
+class TImprovedStaggeredMILC: public Module<ImprovedStaggeredMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
 public:
     // constructor
-    TImprovedStaggered(const std::string name);
+    TImprovedStaggeredMILC(const std::string name);
     // destructor
-    virtual ~TImprovedStaggered(void) {};
-    // dependencies/products
+    virtual ~TImprovedStaggeredMILC(void) {};
+    // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
-protected:
     // setup
     virtual void setup(void);
     // execution
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(ImprovedStaggered, TImprovedStaggered<STAGIMPL>, MAction);
+MODULE_REGISTER_TMP(ImprovedStaggeredMILC, TImprovedStaggeredMILC<STAGIMPL>, MAction);
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-MODULE_REGISTER_TMP(ImprovedStaggeredF, TImprovedStaggered<STAGIMPLF>, MAction);
+MODULE_REGISTER_TMP(ImprovedStaggeredMILCF, TImprovedStaggeredMILC<STAGIMPLF>, MAction);
 #endif
 
 /******************************************************************************
- *                     TImprovedStaggered template implementation                        *
+ *                 TImprovedStaggeredMILC implementation                             *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TImprovedStaggered<FImpl>::TImprovedStaggered(const std::string name)
-: Module<ImprovedStaggeredPar>(name)
+TImprovedStaggeredMILC<FImpl>::TImprovedStaggeredMILC(const std::string name)
+: Module<ImprovedStaggeredMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TImprovedStaggered<FImpl>::getInput(void)
+std::vector<std::string> TImprovedStaggeredMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().gauge, par().gaugefat, par().gaugelong };
     
@@ -101,7 +100,7 @@ std::vector<std::string> TImprovedStaggered<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TImprovedStaggered<FImpl>::getOutput(void)
+std::vector<std::string> TImprovedStaggeredMILC<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName(), getName()+"_mass"};
     
@@ -110,7 +109,7 @@ std::vector<std::string> TImprovedStaggered<FImpl>::getOutput(void)
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TImprovedStaggered<FImpl>::setup(void)
+void TImprovedStaggeredMILC<FImpl>::setup(void)
 {
     LOG(Message) << "Setting up ImprovedStaggered fermion matrix." << std::endl;
     LOG(Message) << "Using m=" << par().mass << std::endl;
@@ -137,21 +136,25 @@ void TImprovedStaggered<FImpl>::setup(void)
         implParams.twist_n_2pi_L   = strToVec<Real>(par().twist);
     }
 
-    envCreate(std::vector<Real>, getName()+"_mass", 1, 1, par().mass );
+    envCreate(std::vector<Real>, getName()+"_mass", 1, 1, 2.*par().mass);
 
     envCreateDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName(), 1,
-                     U, Ufat, Ulong,
                      grid, gridRb,
-                     par().mass, par().c1, par().c2, par().tad, implParams);
+                     2.*par().mass, 2.*par().c1, 2.*par().c2, par().tad, implParams);
+
+    auto &fmat = envGetDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName());
+    fmat.ImportGaugeSimple(Ulong, Ufat);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TImprovedStaggered<FImpl>::execute()
-{}
+void TImprovedStaggeredMILC<FImpl>::execute(void)
+{
+    
+}
 
 END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_ImprovedStaggered_hpp_
+#endif // Hadrons_MAction_ImprovedStaggeredMILC_hpp_
