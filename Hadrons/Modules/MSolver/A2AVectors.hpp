@@ -197,7 +197,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
        typename std::vector<FermionField>::iterator it_w, it_v, it_evec;
        typename std::vector<Real>::iterator it_eval;
 
-       if (!par().eigenPack.empty()) {
+       if (Nl_ > 0) {
 
            auto &epack  = envGet(Pack, par().eigenPack);
            it_w = w.begin();
@@ -211,7 +211,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
 
                if(a2a.isStaggered()) {
                    startTimer("low mode pair");
-                   LOG(Message) << "V,W vector pairs for i = " << il << " and " << il+1 << " (low mode)" << std::endl;
+                   LOG(Message) << "V,W vector pairs for i = " << 2*il << " and " << 2*il+1 << " (low mode)" << std::endl;
                    if (Ls == 1)
                        a2a.makeLowModePairs(it_v, it_w, it_evec, par().mass, *it_eval, par().evenEigen == true);
                    else {
@@ -264,27 +264,15 @@ void TA2AVectors<FImpl, Pack>::execute(void)
        // High modes
        for (unsigned int ih = 0; ih < noise.fermSize(); ih++)
        {
-           startTimer("V high mode");
-           LOG(Message) << "V vector i = " << Nl_ + ih
-                        << " (" << ((Nl_ > 0) ? "high " : "") 
-                        << "stochastic mode)" << std::endl;
-           if (Ls == 1)
-           {
-               a2a.makeHighModeV(v[Nl_ + ih], noise.getFerm(ih));
-           }
-           else
-           {
-               envGetTmp(FermionField, f5);
-               a2a.makeHighModeV5D(v[Nl_ + ih], f5, noise.getFerm(ih));
-           }
-           stopTimer("V high mode");
            startTimer("W high mode");
            LOG(Message) << "W vector i = " << Nl_ + ih
                         << " (" << ((Nl_ > 0) ? "high " : "") 
                         << "stochastic mode)" << std::endl;
-           if (Ls == 1)
-           {
-               a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih));
+           if (Ls == 1) {
+                if (Nl_ > 0)
+                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih),w,Nl_);
+                else
+                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih));
            }
            else
            {
@@ -292,6 +280,20 @@ void TA2AVectors<FImpl, Pack>::execute(void)
                a2a.makeHighModeW5D(w[Nl_ + ih], f5, noise.getFerm(ih));
            }
            stopTimer("W high mode");
+           startTimer("V high mode");
+           LOG(Message) << "V vector i = " << Nl_ + ih
+                        << " (" << ((Nl_ > 0) ? "high " : "") 
+                        << "stochastic mode)" << std::endl;
+           if (Ls == 1)
+           {
+               a2a.makeHighModeV(v[Nl_ + ih],w[Nl_ + ih]);
+           }
+           else
+           {
+               envGetTmp(FermionField, f5);
+               a2a.makeHighModeV5D(v[Nl_ + ih], f5, w[Nl_ + ih]);
+           }
+           stopTimer("V high mode");
        }
 
        // I/O if necessary

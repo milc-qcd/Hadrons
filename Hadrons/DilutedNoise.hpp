@@ -63,9 +63,9 @@ public:
     void generateNoise(GridParallelRNG &rng);
 private:
     template <typename T = FImpl>
-    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type setFerm(const int i);
+    IfNotStag<T,void> setFerm(const int i);
     template <typename T = FImpl>
-    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type setFerm(const int i);
+    IfStag<T,void> setFerm(const int i);
     virtual void setProp(const int i) = 0;
     LatticeComplex                 eta_;
     FermionField                   ferm_;
@@ -181,8 +181,7 @@ getNoise(void) const
 
 template <typename FImpl>
 template <typename T>
-typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type 
-SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
+IfNotStag<T,void> SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 {
     int nc  = FImpl::Dimension;
     std::div_t divs;
@@ -193,8 +192,7 @@ SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 
 template <typename FImpl>
 template <typename T>
-typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T)>::type 
-SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
+IfStag<T,void> SpinColorDiagonalNoise<FImpl>::setFerm(const int i)
 {
     int nc  = FImpl::Dimension;
     std::div_t divs;

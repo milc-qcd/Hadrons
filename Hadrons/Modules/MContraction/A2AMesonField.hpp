@@ -41,8 +41,6 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
-// HADRONS_FUNCTION_SPECIALIZE(MesonFunction,T,STAGIMPL,A2Autils<T>::MesonField,A2Autils<STAGIMPL>::StagMesonField,Helper)
-
 class A2AMesonFieldPar: Serializable
 {
 public:
@@ -102,13 +100,13 @@ public:
     }
 private:
  template<typename TFImpl, typename ... Args>
- typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)>::type MesonFunction(Args && ... args){
-     return A2Autils<FImpl>::MesonField(args...);
+ IfNotStag<TFImpl,void> MesonFunction(Args && ... args){
+     A2Autils<FImpl>::MesonField(args...);
  }
 
  template<typename TFImpl, typename ... Args>
- typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(TFImpl)>::type MesonFunction(Args && ... args){
-     return A2Autils<FImpl>::StagMesonField(args...);
+ IfStag<TFImpl,void> MesonFunction(Args && ... args){
+     A2Autils<FImpl>::StagMesonField(args...);
  }
 
 private:
