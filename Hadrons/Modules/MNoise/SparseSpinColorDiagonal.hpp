@@ -115,12 +115,6 @@ void TSparseSpinColorDiagonal<FImpl>::execute(void)
                  << " nsrc = " << par().nsrc
                  << " and nSparse = " << par().nsparse << std::endl;
     noise.generateNoise(rng4d());
-
-    auto &noise_vecs = noise.getNoise();
-    ComplexD norm = 1.0/sqrt(noise.size());
-    for (auto &n:noise_vecs) {
-        n = norm*n;
-    }
 }
 
 END_MODULE_NAMESPACE

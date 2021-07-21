@@ -110,6 +110,7 @@ template <typename FImpl>
 void TTimeDilutedSpinColorDiagonal<FImpl>::execute(void)
 {
     auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, getName());
+    auto nt    = noise.getGrid()->GlobalDimensions()[Tp];
 
     LOG(Message) << "Generating time-diluted, spin-color diagonal noise" << std::endl;
     noise.generateNoise(rng4d());

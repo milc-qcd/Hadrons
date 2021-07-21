@@ -262,17 +262,24 @@ void TA2AVectors<FImpl, Pack>::execute(void)
        }
 
        // High modes
+       int nsrc = noise.size();  // Normalization for the noise sources
+       RealD norm = 1.0/::sqrt(nsrc);
+       
+       std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
+
        for (unsigned int ih = 0; ih < noise.fermSize(); ih++)
        {
            startTimer("W high mode");
            LOG(Message) << "W vector i = " << Nl_ + ih
                         << " (" << ((Nl_ > 0) ? "high " : "") 
                         << "stochastic mode)" << std::endl;
+
+           FermionField wnorm(norm*noise.getFerm(ih));                        
            if (Ls == 1) {
                 if (Nl_ > 0)
-                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih),w,Nl_);
+                    a2a.makeHighModeW(w[Nl_ + ih], wnorm,w,Nl_);
                 else
-                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih));
+                    a2a.makeHighModeW(w[Nl_ + ih], wnorm);
            }
            else
            {
