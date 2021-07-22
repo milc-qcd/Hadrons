@@ -63,13 +63,14 @@ public:
     void makeHighModeV5D(FermionField &vout_4d, FermionField &vout_5d, 
                          const FermionField &noise_5d);
     void makeHighModeW(FermionField &wout, const FermionField &noise);
+    void makeHighModeW(FermionField &wout, const FermionField &noise, std::vector<FermionField> &evecs, int size);
     void makeHighModeW5D(FermionField &vout_5d, FermionField &wout_5d, 
                          const FermionField &noise_5d);
 public:
-    template <typename T = FImpl>
-    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),bool>::type isStaggered(){ return true; }
-    template <typename T = FImpl>
-    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),bool>::type isStaggered(){ return false; }
+    template <typename T = FImpl, IfStag<T> = 0>
+    static bool isStaggered(){ return true; }
+    template <typename T = FImpl, IfNotStag<T> = 0>
+    static bool isStaggered(){ return false; }
 protected:
     FMat                                     &action_;
     Solver                                   &solver_;
@@ -298,6 +299,14 @@ void A2AVectorsSchur<FImpl>::makeHighModeW(FermionField &wout,
                                                   const FermionField &noise)
 {
     wout = noise;
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeHighModeW(FermionField &wout, const FermionField &noise,
+                                            std::vector<FermionField> &evecs, int size)
+{
+    wout = noise;
+    basisOrthogonalize(evecs, wout, size);
 }
 
 template <typename FImpl>

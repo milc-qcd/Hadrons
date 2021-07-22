@@ -48,7 +48,8 @@ public:
                                     bool, multiFile,
                                     unsigned int, size,
                                     unsigned int, Ls,
-                                    std::string, gaugeXform);
+                                    std::string, gaugeXform,
+                                    double, mass);
 };
 
 template <typename Pack, typename GImpl>
@@ -156,6 +157,11 @@ void TLoadEigenPack<Pack, GImpl>::execute(void)
     epack.read(par().filestem, par().multiFile, vm().getTrajectory());
     epack.eval.resize(par().size);
 
+    if(par().mass && par().mass > 0) {
+        for (auto &lam:epack.eval) {
+            lam += pow(par().mass,2);
+        }
+    }
     if (!par().gaugeXform.empty())
     {
 

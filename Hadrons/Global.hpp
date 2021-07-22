@@ -253,16 +253,6 @@ std::string basename(const std::string &s);
 std::string dirname(const std::string &s);
 void        makeFileDir(const std::string filename, GridBase *g = nullptr);
 
-#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,TImpl,condition,true_type,false_type)\
-template<typename T, typename... Args>\
-using type_name = typename std::conditional<condition, true_type<Args...>, false_type<Args...> >::type;
-
-#define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name,FImpl,staggered_type,non_staggered_type)\
-HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTATION(T), staggered_type, non_staggered_type)
-
-#define HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl)\
-(std::is_same<FImpl,STAGIMPLD>::value || std::is_same<FImpl,STAGIMPLF>::value)
-
 // default Schur convention
 #ifndef HADRONS_DEFAULT_SCHUR
 #define HADRONS_DEFAULT_SCHUR DiagTwo
@@ -285,6 +275,16 @@ HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTAT
 #define HADRONS_DEFAULT_SCHUR_OP_STAGGERED HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
 #define HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR_STAGGERED)
 
+#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,TImpl,condition,true_type,false_type)\
+template<typename T, typename... Args>\
+using type_name = typename std::conditional<condition, true_type<Args...>, false_type<Args...> >::type;
+
+#define HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl)\
+(std::is_same<FImpl,STAGIMPLD>::value || std::is_same<FImpl,STAGIMPLF>::value)
+
+#define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name,FImpl,staggered_type,non_staggered_type)\
+HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTATION(T), staggered_type, non_staggered_type)
+
 #define HADRONS_DEFINE_SCHUR_OP(name,FImpl)\
 HADRONS_TYPEDEF_BRANCH_STAGGERED(name##_macro,FImpl,HADRONS_DEFAULT_SCHUR_OP_STAGGERED,HADRONS_DEFAULT_SCHUR_OP)\
 template <typename... Args>\
@@ -294,6 +294,10 @@ using name = name##_macro<FImpl,Args...>;
 HADRONS_TYPEDEF_BRANCH_STAGGERED(name##_macro,FImpl,HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED,HADRONS_DEFAULT_SCHUR_SOLVE)\
 template <typename... Args>\
 using name = name##_macro<FImpl,Args...>;
+
+template <typename T, typename U = int> using IfStag = Invoke<std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
+template <typename T, typename U = int> using IfNotStag = Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
+
 
 // stringify macro
 #define _HADRONS_STR(x) #x
