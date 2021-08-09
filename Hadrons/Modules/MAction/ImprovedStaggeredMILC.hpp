@@ -102,7 +102,7 @@ std::vector<std::string> TImprovedStaggeredMILC<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TImprovedStaggeredMILC<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName(), getName()+"_mass"};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
@@ -135,8 +135,6 @@ void TImprovedStaggeredMILC<FImpl>::setup(void)
     {
         implParams.twist_n_2pi_L   = strToVec<Real>(par().twist);
     }
-
-    envCreate(std::vector<Real>, getName()+"_mass", 1, 1, 2.*par().mass);
 
     envCreateDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName(), 1,
                      grid, gridRb,

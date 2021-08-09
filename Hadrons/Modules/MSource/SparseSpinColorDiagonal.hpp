@@ -38,7 +38,7 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(SparseSpinColorDiagonal, TSparseSpinColorDiagonal<STAGIMPL>, MSource);
+MODULE_REGISTER_TMP(SparseColorDiagonal, TSparseSpinColorDiagonal<STAGIMPL>, MSource);
 
 /******************************************************************************
  *                 TSparseSpinColorDiagonal implementation                             *
@@ -73,9 +73,9 @@ void TSparseSpinColorDiagonal<FImpl>::setup(void)
     int nSparseSpinColorDiagonal = par().nsparse;
 
     
-    envCreate(std::vector<PropagatorField>, getName(), 1, pow(par().nsparse,Nd),
+    envCreate(std::vector<PropagatorField>, getName(), 1, pow(par().nsparse,Nd-1)*env().getDim(Tp),
               envGetGrid(PropagatorField));
-    envCreate(std::vector<Integer>, getName()+"_shift", 1, pow(par().nsparse,Nd), 0);
+    envCreate(std::vector<Integer>, getName()+"_shift", 1, pow(par().nsparse,Nd-1)*env().getDim(Tp), 0);
     
 }
 
@@ -83,37 +83,64 @@ void TSparseSpinColorDiagonal<FImpl>::setup(void)
 template <typename FImpl>
 void TSparseSpinColorDiagonal<FImpl>::execute(void)
 {
-    std::div_t divs;
     LatticeInteger coor(envGetGrid(PropagatorField));
-
-    int nSparse = par().nsparse;
-    auto &fields = envGet(std::vector<PropagatorField>,getName());
-    auto &shifts = envGet(std::vector<Integer>,getName()+"_shift");
+    std::div_t     divs;
+    int            nSparse   = par().nsparse;
+    auto           &fields   = envGet(std::vector<PropagatorField>,getName());
+    auto           &shifts   = envGet(std::vector<Integer>,getName()+"_shift");
 
     // Create the sparse source pattern starting at the origin
     fields[0] = 1.;
     for(int d = 0; d < Nd; ++d) 
     {
-        LatticeCoordinate(coor, d);
-        fields[0] = where(mod(coor,nSparse),0.*fields[0],fields[0]);
+        if (d != Tp) {
+            LatticeCoordinate(coor, d);
+            fields[0] = where(mod(coor,nSparse),0.*fields[0],fields[0]);
+       }
     }
 
-    auto norm = norm2(fields[0]);
-    fields[0] = sqrt(Nc/norm)*fields[0];
+    // Normalize field
+    Real norm = norm2(fields[0])/(FImpl::Dimension*env().getDim(Tp));
+    norm = 1/sqrt(norm);
 
-    for (int i = 1; i < fields.size(); i++) {
-        fields[i] = fields[0];
-        for (int d = 0; d < Nd; ++d) {
-            divs = std::div(i, pow(nSparse, Nd-(d+1)));
-            if (divs.quot != 0) {
-                fields[i] = Cshift(fields[i], d, divs.quot);
+    fields[0] = ComplexD(norm,0.)*fields[0];
 
-                // If we're shifting in the time direction
-                if (d == Tp) {
-                    shifts[i] = (Integer)divs.quot;
-                }
+    int repeatSet = 1;
+    // Shift in each direction
+    for (int d = 0; d < Nd; ++d) {
+        if (d == Tp) 
+            continue;
+
+        // Loop over all previous fields
+        for (int i = 0; i < repeatSet; i++) {
+            int nShifts = nSparse-1;
+            // Iteratively Shift and save fields in direction d
+            for (int n = 0; n < nShifts; n++) {
+                if (n==0)
+                    fields[repeatSet + i*nShifts + n] = Cshift(fields[i], d, 1);
+                else
+                    fields[repeatSet + i*nShifts + n] = Cshift(fields[repeatSet + i*nShifts + n-1], d, 1);
             }
         }
+        repeatSet = repeatSet*nSparse;
+    }
+
+    LatticeCoordinate(coor, Tp);
+
+    // Dilute in time direction
+    // Loop backwards through fields so we're not overwriting the source fields generated above
+    Integer t = env().getDim(Tp)-1;
+    int j = repeatSet-1;
+    for (int k = fields.size()-1; k >= 0; k--) {
+        if (j < 0) {
+            j = repeatSet-1;
+            t--;
+        }
+
+        fields[k] = where(coor==t, fields[j], 0.*fields[j]);
+        shifts[k] = t;
+        j--;
+
     }
 }
 

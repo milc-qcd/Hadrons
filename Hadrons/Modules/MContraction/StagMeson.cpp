@@ -1,5 +1,5 @@
 /*
- * Meson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * StagMeson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/Meson.hpp>
+#include <Hadrons/Modules/MContraction/StagMeson.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-template class Grid::Hadrons::MContraction::TMeson<FIMPL,FIMPL>;
+template class Grid::Hadrons::MContraction::TStagMeson<STAGIMPL>;
 

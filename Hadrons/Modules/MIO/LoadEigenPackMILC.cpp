@@ -1,5 +1,5 @@
 /*
- * Meson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LoadEigenPack.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,14 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/Meson.hpp>
+#include <Hadrons/Modules/MIO/LoadEigenPackMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MIO;
 
-template class Grid::Hadrons::MContraction::TMeson<FIMPL,FIMPL>;
-
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL>, GIMPL>;
+#ifdef GRID_DEFAULT_PRECISION_DOUBLE
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF>, GIMPLF>;
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>;
+#endif

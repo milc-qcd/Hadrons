@@ -111,7 +111,7 @@ std::vector<std::string> TA2AVectors<FImpl, Pack>::getInput(void)
         in.push_back(par().eigenPack);
 
         if (A2A::isStaggered())
-           in.push_back(par().action+"_mass");
+           in.push_back(par().eigenPack+"_mass");
     }
     
     if (!par().noise.empty())
@@ -203,7 +203,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
            it_evec = epack.evec.begin();
 
            if(A2A::isStaggered())
-               mass = (envGet(std::vector<Real>, par().action+"_mass"))[0];
+               mass = (envGet(std::vector<Real>, par().eigenPack+"_mass"))[0];
 
            // Low modes
            for (auto it_eval = epack.eval.begin(); it_eval < epack.eval.end(); it_eval++)
@@ -275,17 +275,19 @@ void TA2AVectors<FImpl, Pack>::execute(void)
                         << " (" << ((Nl_ > 0) ? "high " : "") 
                         << "stochastic mode)" << std::endl;
 
-           FermionField wnorm(norm*noise.getFerm(ih));                        
            if (Ls == 1) {
                 if (Nl_ > 0)
-                    a2a.makeHighModeW(w[Nl_ + ih], wnorm,w,Nl_);
+                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih),w,Nl_);
                 else
-                    a2a.makeHighModeW(w[Nl_ + ih], wnorm);
+                    a2a.makeHighModeW(w[Nl_ + ih], noise.getFerm(ih));
+
+                w[Nl_ + ih] = norm*w[Nl_ + ih];
            }
            else
            {
+               FermionField wnorm(norm*noise.getFerm(ih));                        
                envGetTmp(FermionField, f5);
-               a2a.makeHighModeW5D(w[Nl_ + ih], f5, noise.getFerm(ih));
+               a2a.makeHighModeW5D(w[Nl_ + ih], f5, wnorm);
            }
            stopTimer("W high mode");
            startTimer("V high mode");
