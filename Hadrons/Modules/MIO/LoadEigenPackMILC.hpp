@@ -158,11 +158,12 @@ void TLoadEigenPackMILC<Pack, GImpl>::execute(void)
 
     epack.read(par().filestem, par().multiFile, vm().getTrajectory());
     epack.eval.resize(par().size);
+    epack.evec.resize(par().size);
 
     if (par().mass > 0) {
         LOG(Message) << "Shifting eigenvalues by mass^2 = " << pow(par().mass,2) << std::endl;
         for (auto &lam:epack.eval) {
-            lam += pow(par().mass,2);
+            lam += pow(2*par().mass,2);
         }        
     }
 
