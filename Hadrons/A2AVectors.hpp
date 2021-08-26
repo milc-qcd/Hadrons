@@ -54,10 +54,10 @@ public:
     void makeLowModeW5D(FermionField &wout_4d, FermionField &wout_5d, const FermionField &evec, const Real &eval);
 
     void makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
-                          const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = true);
+                          const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
     void makeLowModePairs5D(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator vout5,
                                                 typename std::vector<FermionField>::iterator wout, typename std::vector<FermionField>::iterator wout5,
-                                                const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = true);
+                                                const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
 
     void makeHighModeV(FermionField &vout, const FermionField &noise);
     void makeHighModeV5D(FermionField &vout_4d, FermionField &vout_5d, 

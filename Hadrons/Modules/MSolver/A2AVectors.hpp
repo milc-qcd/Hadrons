@@ -53,7 +53,6 @@ public:
                                   std::string, eigenPack,
                                   std::string, solver,
                                   std::string, output,
-                                  bool,        evenEigen,
                                   bool,        multiFile);
 };
 
@@ -110,8 +109,10 @@ std::vector<std::string> TA2AVectors<FImpl, Pack>::getInput(void)
 
         in.push_back(par().eigenPack);
 
-        if (A2A::isStaggered())
+        if (A2A::isStaggered()) {
            in.push_back(par().eigenPack+"_mass");
+           in.push_back(par().eigenPack+"_evenEigen");
+        }
     }
     
     if (!par().noise.empty())
@@ -211,15 +212,16 @@ void TA2AVectors<FImpl, Pack>::execute(void)
                int il = it_eval-epack.eval.begin();
 
                if(A2A::isStaggered()) {
+                   auto cbEven = (envGet(std::vector<bool>, par().eigenPack+"_evenEigen"))[0];
                    startTimer("low mode pair");
                    LOG(Message) << "V,W vector pairs for i = " << 2*il << " and " << 2*il+1 << " (low mode)" << std::endl;
                    if (Ls == 1)
-                       a2a.makeLowModePairs(it_v, it_w, it_evec, mass, *it_eval, par().evenEigen == true);
+                       a2a.makeLowModePairs(it_v, it_w, it_evec, mass, *it_eval, cbEven);
                    else {
                        envGetTmp(std::vector<FermionField>, f5);
                        envGetTmp(std::vector<FermionField>, f5_2);
                        typename std::vector<FermionField>::iterator it_f5 = f5.begin(), it_f5_2 = f5_2.begin();
-                       a2a.makeLowModePairs5D(it_v, it_f5, it_w, it_f5_2, it_evec, mass, *it_eval, par().evenEigen == true); 
+                       a2a.makeLowModePairs5D(it_v, it_f5, it_w, it_f5_2, it_evec, mass, *it_eval, cbEven);
                    }
                    stopTimer("low mode pair");
                } else {

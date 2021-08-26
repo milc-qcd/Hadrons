@@ -93,7 +93,7 @@ public:
     void parseGammaString();
 protected:
     template<typename TField,  EnableIf<is_lattice<TField>, int> = 0 >
-    void contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc, Integer shift = 0);
+    void contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc, Real scale = 1.0, Integer shift = 0);
     template<typename TField,  EnableIf<is_lattice<TField>, int> = 0 >
     void contract(std::vector<Result> &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc);
     inline void buildProp(PropagatorField &ret, const FermionField &fSink, const FermionField &fSrc) {
@@ -240,7 +240,7 @@ void TStagMeson<FImpl>::parseGammaString()
 // execution ///////////////////////////////////////////////////////////////////
 template<typename FImpl>
 template<typename TField, EnableIf<is_lattice<TField>, int> >
-void TStagMeson<FImpl>::contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc, Integer shift) {
+void TStagMeson<FImpl>::contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc, Real scale, Integer shift) {
 
     int offset, nt = env().getDim(Tp);
     std::vector<TComplex>     buf;
@@ -259,7 +259,10 @@ void TStagMeson<FImpl>::contract(std::vector<Result> &ret, const TField &fSink, 
         for (unsigned int t = 0; t < nt; ++t)
         {
             offset = mod(t+shift,nt);
-            ret[g].corr[t] += TensorRemove(buf[offset]);
+            if (scale > 0.0)
+                ret[g].corr[t] += (TensorRemove(buf[offset])/scale);
+            else 
+                ret[g].corr[t] += TensorRemove(buf[offset]);
         }
     }
 }
@@ -271,12 +274,15 @@ void TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::vector<TFi
     if (!par().sourceShift.empty()) {
         shifts = envGet(std::vector<Integer>, par().sourceShift+"_shift");
     }
+
     for (int i = 0; i < fSink.size(); i++) {
         if (!par().sourceShift.empty())
-            contract(ret,fSink[i],fSrc[i],shifts[i]);
+            contract(ret,fSink[i],fSrc[i],fSink.size(), shifts[i]);
         else
-            contract(ret,fSink[i],fSrc[i]);
+            contract(ret,fSink[i],fSrc[i],fSink.size());
     }
+
+
 }
 
 template <typename FImpl>

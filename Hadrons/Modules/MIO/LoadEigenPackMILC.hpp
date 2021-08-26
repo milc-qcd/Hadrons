@@ -48,6 +48,7 @@ public:
                                     unsigned int, size,
                                     unsigned int, Ls,
                                     std::string,  gaugeXform,
+                                    bool,         evenEigen,
                                     double,       mass);
 };
 
@@ -108,7 +109,7 @@ std::vector<std::string> TLoadEigenPackMILC<Pack, GImpl>::getInput(void)
 template <typename Pack, typename GImpl>
 std::vector<std::string> TLoadEigenPackMILC<Pack, GImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName(), getName()+"_mass"};
+    std::vector<std::string> out = {getName(), getName()+"_mass", getName() + "_evenEigen"};
     
     return out;
 }
@@ -120,6 +121,7 @@ void TLoadEigenPackMILC<Pack, GImpl>::setup(void)
     GridBase *gridIo = nullptr;
 
     envCreate(std::vector<Real>, getName()+"_mass", 1, 1, 2.*par().mass);
+    envCreate(std::vector<bool>, getName()+"_evenEigen", 1, 1, par().evenEigen == true);
 
     if (par().mass > 0) {
         LOG(Warning) << "The LoadEigenPackMILC module assumes MASSLESS eigenvalues of the Dirac Operator squarred." << std::endl;
@@ -158,12 +160,14 @@ void TLoadEigenPackMILC<Pack, GImpl>::execute(void)
 
     epack.read(par().filestem, par().multiFile, vm().getTrajectory());
     epack.eval.resize(par().size);
-    epack.evec.resize(par().size);
 
-    if (par().mass > 0) {
-        LOG(Message) << "Shifting eigenvalues by mass^2 = " << pow(par().mass,2) << std::endl;
+    if (par().mass > 0.0) {
+        Real m2 = pow(2*par().mass,2);
+
+        LOG(Message) << "Shifting eigenvalues by mass^2 (including MILC factor of 2) = " << m2 << std::endl;
+
         for (auto &lam:epack.eval) {
-            lam += pow(2*par().mass,2);
+            lam += m2;
         }        
     }
 
