@@ -105,6 +105,7 @@ std::vector<std::string> TRBPrecCG<FImpl, nBasis>::getReference(void)
     if (!par().eigenPack.empty())
     {
         ref.push_back(par().eigenPack);
+        ref.push_back(par().eigenPack+"_evenEigen");
     }
 
     return ref;
@@ -136,12 +137,16 @@ void TRBPrecCG<FImpl, nBasis>::setup(void)
     auto &mat      = envGet(FMat, par().action);
     auto guesserPt = makeGuesser<FImpl, nBasis>(par().eigenPack);
 
-    auto makeSolver = [&mat, guesserPt, this](bool subGuess) {
-        return [&mat, guesserPt, subGuess, this](FermionField &sol,
+    bool cbEven = false;
+    if (!par().eigenPack.empty())
+        cbEven = (envGet(std::vector<bool>, par().eigenPack+"_evenEigen"))[0];
+
+    auto makeSolver = [&mat, guesserPt, cbEven, this](bool subGuess) {
+        return [&mat, guesserPt, subGuess, cbEven, this](FermionField &sol,
                                      const FermionField &source) {
             ConjugateGradient<FermionField> cg(par().residual,
                                                par().maxIteration);
-            schurSolve_t<FermionField> schurSolver(cg);
+            schurSolve_t<FermionField> schurSolver(cg,false,false,cbEven);
             schurSolver.subtractGuess(subGuess);
             schurSolver(mat, source, sol, *guesserPt);
         };
