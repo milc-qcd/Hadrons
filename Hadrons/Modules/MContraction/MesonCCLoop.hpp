@@ -210,12 +210,12 @@ void TStagMesonCCLoop<FImpl1, FImpl2>::execute(void)
             localphases[0] = where( mod(x    ,2)==(Integer)0, localphases[0],-localphases[0]);
         }else if(mu==1){
             localphases[1] = where( mod(y    ,2)==(Integer)0, localphases[1],-localphases[1]);
-            phases = where( mod(x    ,2)==(Integer)0, phases,-phases);
+            // phases = where( mod(x    ,2)==(Integer)0, phases,-phases);
         }else if(mu==2){
             localphases[2] = where( mod(z    ,2)==(Integer)0, localphases[2],-localphases[2]);
-            phases = where( mod(lin_z,2)==(Integer)0, phases,-phases);
+            // phases = where( mod(lin_z,2)==(Integer)0, phases,-phases);
         }else assert(0);
-        Umu[mu] *= phases;
+        // Umu[mu] *= phases;
     }
         
     // loop over source position
@@ -283,7 +283,7 @@ void TStagMesonCCLoop<FImpl1, FImpl2>::execute(void)
                             std::to_string(z)+"_"+
                             std::to_string(t)+"_mu_"+
                             std::to_string(mu);
-                        saveResult(outFileName, "mesonCC", result);
+                        saveResult(outFileName, "meson", result);
                         
                         // do the local current
                         corr = trace(adj(q1) * q1);
@@ -297,14 +297,26 @@ void TStagMesonCCLoop<FImpl1, FImpl2>::execute(void)
                         for (unsigned int tsnk = 0; tsnk < buf.size(); ++tsnk){
                             result.corr[tsnk] = TensorRemove(buf[tsnk]);
                         }
-                        outFileName = par().output+"local_2pt_"+
+                        outFileName = par().output+"/local_2pt_"+
                             std::to_string(x)+"_"+
                             std::to_string(y)+"_"+
                             std::to_string(z)+"_"+
                             std::to_string(t)+"_mu_"+
                             std::to_string(mu);
-                        saveResult(outFileName, "mesonLL", result);
+                        saveResult(outFileName, "meson", result);
                     }
+                    // do the local Goldstone pion
+                    corr = trace(adj(q1) * q1);
+                    sliceSum(corr, buf, Tp);
+                    for (unsigned int tsnk = 0; tsnk < buf.size(); ++tsnk){
+                        result.corr[tsnk] = TensorRemove(buf[tsnk]);
+                    }
+                    outFileName = par().output+"/local_pion_"+
+                        std::to_string(x)+"_"+
+                        std::to_string(y)+"_"+
+                        std::to_string(z)+"_"+
+                        std::to_string(t);
+                    saveResult(outFileName, "meson", result);
                 }
             }
         }

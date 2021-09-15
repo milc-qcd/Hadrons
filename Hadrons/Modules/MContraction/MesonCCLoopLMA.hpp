@@ -63,9 +63,8 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(MesonCCLoopLMAPar,
                                     std::string, gauge,
                                     std::string, output,
-                                    std::string, eigenPack,
+                                    std::string, epack,
                                     std::string, action,
-                                    double, mass,
                                     int, inc,
                                     int, tinc);
 };
@@ -136,7 +135,7 @@ TStagMesonCCLoopLMA<FImpl1, FImpl2>::TStagMesonCCLoopLMA(const std::string name)
 template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TStagMesonCCLoopLMA<FImpl1, FImpl2>::getInput(void)
 {
-    std::vector<std::string> input = {par().gauge, par().eigenPack, par().action};
+    std::vector<std::string> input = {par().gauge, par().epack, par().epack+"_mass", par().action};
     
     return input;
 }
@@ -194,12 +193,13 @@ void TStagMesonCCLoopLMA<FImpl1, FImpl2>::execute(void)
     result.corr.resize(nt);
     
     auto &U = envGet(LatticeGaugeField, par().gauge);
-    auto &epack = envGet(BaseFermionEigenPack<FImpl1>, par().eigenPack);
+    auto &epack = envGet(BaseFermionEigenPack<FImpl1>, par().epack);
     auto &action = envGet(FermionOperator<FImpl1>, par().action); // for mult by Meo, Moe
     Guesser LMA(epack.evec, epack.eval);
     
     // need another guesser to mult by m/lambda^2;
-    double mass = par().mass;
+    double mass = (envGet(std::vector<Real>, par().epack+"_mass"))[0];
+
     std::vector<double> movevalsq(epack.eval.size());
     for(int i=0;i<epack.eval.size();i++){
         movevalsq[i]=(epack.eval[i]-mass*mass) * epack.eval[i] / mass;
@@ -242,12 +242,12 @@ void TStagMesonCCLoopLMA<FImpl1, FImpl2>::execute(void)
             localphases[0] = where( mod(x    ,2)==(Integer)0, localphases[0],-localphases[0]);
         }else if(mu==1){
             localphases[1] = where( mod(y    ,2)==(Integer)0, localphases[1],-localphases[1]);
-            phases = where( mod(x    ,2)==(Integer)0, phases,-phases);
+            // phases = where( mod(x    ,2)==(Integer)0, phases,-phases);
         }else if(mu==2){
             localphases[2] = where( mod(z    ,2)==(Integer)0, localphases[2],-localphases[2]);
-            phases = where( mod(lin_z,2)==(Integer)0, phases,-phases);
+            // phases = where( mod(lin_z,2)==(Integer)0, phases,-phases);
         }else assert(0);
-        Umu[mu] *= phases;
+        // Umu[mu] *= phases;
     }
         
     // loop over source position
@@ -262,25 +262,6 @@ void TStagMesonCCLoopLMA<FImpl1, FImpl2>::execute(void)
                     srcSite[2]=z;
                     srcSite[3]=t;
                     assert((x+y+z+t)%2==0);// must be Even
-                    
-                    outFileName = par().output+"/cc_2pt_"+
-                        std::to_string(x)+"_"+
-                        std::to_string(y)+"_"+
-                        std::to_string(z)+"_"+
-                        std::to_string(t)+"_mu_";
-                    std::string file = resultFilename(outFileName+"0","h5");
-                    //bool f1 = std::__fs::filesystem::exists(file);
-                    bool f1 = exists(file);
-                    file = resultFilename(outFileName+"1","h5");
-                    //bool f2 = std::__fs::filesystem::exists(file);
-                    bool f2 = exists(file);
-                    file = resultFilename(outFileName+"2","h5");
-                    //bool f3 = std::__fs::filesystem::exists(file);
-                    bool f3 = exists(file);
-                    if(f1 and f2 and f3){
-                        std::cout << "Skipping src point " << x << y << z << t << std::endl;
-                        continue;
-                    }
                     
                     for (unsigned int c = 0; c < FImpl1::Dimension; ++c){
                         source = Zero();
@@ -354,7 +335,7 @@ void TStagMesonCCLoopLMA<FImpl1, FImpl2>::execute(void)
                             std::to_string(z)+"_"+
                             std::to_string(t)+"_mu_"+
                             std::to_string(mu);
-                        saveResult(outFileName, "mesonCC", result);
+                        saveResult(outFileName, "meson", result);
                         
                         // do the local current
                         corr = trace(adj(q1) * q1);
@@ -374,8 +355,20 @@ void TStagMesonCCLoopLMA<FImpl1, FImpl2>::execute(void)
                             std::to_string(z)+"_"+
                             std::to_string(t)+"_mu_"+
                             std::to_string(mu);
-                        saveResult(outFileName, "mesonLL", result);
+                        saveResult(outFileName, "meson", result);
                     }
+                    // do the local Goldstone pion
+                    corr = trace(adj(q1) * q1);
+                    sliceSum(corr, buf, Tp);
+                    for (unsigned int tsnk = 0; tsnk < buf.size(); ++tsnk){
+                        result.corr[tsnk] = TensorRemove(buf[tsnk]);
+                    }
+                    outFileName = par().output+"/local_pion_"+
+                        std::to_string(x)+"_"+
+                        std::to_string(y)+"_"+
+                        std::to_string(z)+"_"+
+                        std::to_string(t);
+                    saveResult(outFileName, "meson", result);
                 }
             }
         }
