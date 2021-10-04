@@ -55,6 +55,8 @@ public:
 
     void makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
                           const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
+    void makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<ComplexD>::iterator evalOut, 
+                          const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
     void makeLowModePairs5D(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator vout5,
                                                 typename std::vector<FermionField>::iterator wout, typename std::vector<FermionField>::iterator wout5,
                                                 const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
@@ -66,11 +68,6 @@ public:
     void makeHighModeW(FermionField &wout, const FermionField &noise, std::vector<FermionField> &evecs, int size);
     void makeHighModeW5D(FermionField &vout_5d, FermionField &wout_5d, 
                          const FermionField &noise_5d);
-public:
-    template <typename T = FImpl, IfStag<T> = 0>
-    static bool isStaggered(){ return true; }
-    template <typename T = FImpl, IfNotStag<T> = 0>
-    static bool isStaggered(){ return false; }
 protected:
     FMat                                     &action_;
     Solver                                   &solver_;
@@ -216,9 +213,19 @@ void A2AVectorsSchur<FImpl>::makeLowModeW5D(FermionField &wout_4d,
     action_.ExportPhysicalFermionSource(wout_5d, wout_4d);
 }
 
-
 template <typename FImpl>
 void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
+                                              const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven)
+{
+    std::vector<ComplexD> evals(2);
+    makeLowModePairs(wout,evals.begin(),evec,mass,eval,cbEven);
+
+    *vout = evals[0]*(*wout);
+    *(vout+1) = evals[1]*(*(wout+1));
+
+}
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<ComplexD>::iterator evalOut, 
                                               const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven)
 {
     int cbParity = cbEven ? Even : Odd;
@@ -230,30 +237,30 @@ void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>
     // Checkerboard evecs each have norm 1, divide by sqrt(2)
     src_rb_ = norm*(*evec);
     src_rb_.Checkerboard() = cbParity;
-    pickCheckerboard(cbParityNeg, sol_rb1_, *wout);
+    pickCheckerboard(cbParityNeg, sol_rb1_, *vecOut);
     
     // Checkerboard evecs each have norm 1, divide by sqrt(2)
     action_.Meooe(src_rb_, temp_);
     sol_rb1_ = (1.0/eval_D) * temp_;
 
-    setCheckerboard(*wout, sol_rb1_);
-    setCheckerboard(*wout, src_rb_);
+    setCheckerboard(*vecOut, sol_rb1_);
+    setCheckerboard(*vecOut, src_rb_);
 
     if (cbEven){
-        pickCheckerboard(cbParityNeg, temp_, *(wout+1));
+        pickCheckerboard(cbParityNeg, temp_, *(vecOut+1));
         temp_ = -1.0 * sol_rb1_;
 
-        setCheckerboard(*(wout+1), temp_);
-        setCheckerboard(*(wout+1), src_rb_);
+        setCheckerboard(*(vecOut+1), temp_);
+        setCheckerboard(*(vecOut+1), src_rb_);
     } else {
-        pickCheckerboard(cbParity, temp_, *(wout+1));
+        pickCheckerboard(cbParity, temp_, *(vecOut+1));
         temp_ = -1.0 * src_rb_;
 
-        setCheckerboard(*(wout+1), temp_);
-        setCheckerboard(*(wout+1), sol_rb1_);
+        setCheckerboard(*(vecOut+1), temp_);
+        setCheckerboard(*(vecOut+1), sol_rb1_);
     }
-    *vout = (1.0/(mass+eval_D))*(*wout);
-    *(vout+1) = (1.0/(mass-eval_D))*(*(wout+1));
+    *evalOut = (1.0/(mass+eval_D));
+    *(evalOut+1) = (1.0/(mass-eval_D));
 }
 
 template <typename FImpl>

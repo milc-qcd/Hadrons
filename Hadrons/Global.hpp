@@ -304,6 +304,11 @@ template <typename T, typename U = int> using IfStag = Invoke<std::enable_if<HAD
 template <typename T, typename U = int> using IfNotStag = Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
 
 
+template <typename T, IfStag<T> = 0>
+static bool IsStaggeredImpl(){ return true; }
+template <typename T, IfNotStag<T> = 0>
+static bool IsStaggeredImpl(){ return false; }
+
 // stringify macro
 #define _HADRONS_STR(x) #x
 #define HADRONS_STR(x) _HADRONS_STR(x)

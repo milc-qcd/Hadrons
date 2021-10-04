@@ -144,7 +144,9 @@ public:
                  A2AKernel<T, Field> &kernel,
                  const FilenameFn &ionameFn,
                  const FilenameFn &filenameFn,
-                 const MetadataFn &metadataFn);
+                 const MetadataFn &metadataFn,
+                 const std::vector<Field> &evecs = {},
+                 const std::vector<ComplexD> &evals = {});
 private:
     // I/O handler
     void saveBlock(const A2AMatrixSet<TIo> &m, IoHelper &h);
@@ -627,7 +629,7 @@ template <typename T, typename Field, typename MetadataType, typename TIo>
 void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
 ::execute(const std::vector<Field> &left, const std::vector<Field> &right,
           A2AKernel<T, Field> &kernel, const FilenameFn &ionameFn,
-          const FilenameFn &filenameFn, const MetadataFn &metadataFn)
+          const FilenameFn &filenameFn, const MetadataFn &metadataFn,const std::vector<Field> &evecs,const std::vector<ComplexD> &evals)
 {
     //////////////////////////////////////////////////////////////////////////
     // i,j   is first  loop over blockSize_ factors
@@ -635,11 +637,13 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
     // iii,jjj are loops within cacheBlock
     // Total index is sum of these  i+ii+iii etc...
     //////////////////////////////////////////////////////////////////////////
-    int    N_i = left.size();
-    int    N_j = right.size();
+    int    N_low = evecs.size();
+    int    N_i = left.size()+N_low;
+    int    N_j = right.size()+N_low;
     double flops, bytes, t_kernel;
     double nodes = grid_->NodeCount();
     
+
     int NBlock_i = N_i/blockSize_ + (((N_i % blockSize_) != 0) ? 1 : 0);
     int NBlock_j = N_j/blockSize_ + (((N_j % blockSize_) != 0) ? 1 : 0);
 
@@ -660,32 +664,70 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
         flops    = 0.0;
         bytes    = 0.0;
         t_kernel = 0.0;
-        for(int ii=0;ii<N_ii;ii+=cacheBlockSize_)
-        for(int jj=0;jj<N_jj;jj+=cacheBlockSize_)
-        {
-            double t;
-            int N_iii = MIN(N_ii-ii,cacheBlockSize_);
-            int N_jjj = MIN(N_jj-jj,cacheBlockSize_);
-            A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
+        bool iBlockFilled = false,jBlockFilled;
+        double t;
+        int ii=0, jj, N_iii, N_jjj;
+        while(!iBlockFilled) {
+            const Field *l_temp;
+            // If there are still low modes to process
+            if (N_low > 0 && (i+ii) < N_low) {
+                // Pick as many as are left or cacheBlockSize_
+                N_iii = MIN(N_low-(i+ii),cacheBlockSize_);
+                l_temp = &evecs[i+ii];
+            }
+            else {
+                // Pick as many as are left in the block or cacheBlockSize_
+                N_iii = MIN(N_ii-ii,cacheBlockSize_);
+                l_temp = &left[i+ii-N_low];
+            }
 
-            START_TIMER("kernel");
-            kernel(mCacheBlock, &left[i+ii], &right[j+jj], orthogDim_, t);
-            STOP_TIMER("kernel");
-            t_kernel += t;
-            flops    += kernel.flops(N_iii, N_jjj);
-            bytes    += kernel.bytes(N_iii, N_jjj);
+            jBlockFilled = false; 
+            jj = 0;
+            while(!jBlockFilled) {
+                const Field *r_temp;
+                // If there are still low modes to process
+                if (N_low > 0 && (j+jj) < N_low) {
+                    // Pick as many as are left or cacheBlockSize_
+                    N_jjj = MIN(N_low-(j+jj),cacheBlockSize_);
+                    r_temp = &evecs[j+jj];
+                }
+                else {
+                    // Pick as many as are left in the block or cacheBlockSize_
+                    N_jjj = MIN(N_jj-jj,cacheBlockSize_);
+                    r_temp = &right[j+jj-N_low];
+                }
 
-            START_TIMER("cache copy");
-            thread_for_collapse( 5,e,next_,{
-              for(int s =0;s< nstr_;s++)
-              for(int t =0;t< nt_;t++)
-              for(int iii=0;iii< N_iii;iii++)
-              for(int jjj=0;jjj< N_jjj;jjj++)
-              {
-                mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj);
-              }
-            });
-            STOP_TIMER("cache copy");
+                A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
+
+                START_TIMER("kernel");
+                kernel(mCacheBlock, l_temp, r_temp, orthogDim_, t);
+                STOP_TIMER("kernel");
+                t_kernel += t;
+                flops    += kernel.flops(N_iii, N_jjj);
+                bytes    += kernel.bytes(N_iii, N_jjj);
+
+                START_TIMER("cache copy");
+                thread_for_collapse( 5,e,next_,{
+                  for(int s =0;s< nstr_;s++)
+                  for(int t =0;t< nt_;t++)
+                  for(int iii=0;iii< N_iii;iii++)
+                  for(int jjj=0;jjj< N_jjj;jjj++)
+                  {
+                    if (N_low > j+jj+jjj)
+                        mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj)*evals[j+jj+jjj];
+                    else 
+                        mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj);
+                  }
+                });
+                STOP_TIMER("cache copy");
+
+                jj += N_jjj;
+                if (jj >= N_jj)
+                    jBlockFilled = true;
+            }
+            ii += N_iii;
+            if (ii >= N_ii)
+                iBlockFilled = true;
         }
 
         // perf

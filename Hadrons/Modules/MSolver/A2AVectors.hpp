@@ -109,7 +109,7 @@ std::vector<std::string> TA2AVectors<FImpl, Pack>::getInput(void)
 
         in.push_back(par().eigenPack);
 
-        if (A2A::isStaggered()) {
+        if (IsStaggeredImpl<FImpl>()) {
            in.push_back(par().eigenPack+"_mass");
            in.push_back(par().eigenPack+"_evenEigen");
         }
@@ -146,7 +146,7 @@ void TA2AVectors<FImpl, Pack>::setup(void)
     if (hasLowModes)
     {
         auto &epack = envGet(Pack, par().eigenPack);
-        Nl_ = epack.evec.size()*(A2A::isStaggered()?2:1);
+        Nl_ = epack.evec.size()*(IsStaggeredImpl<FImpl>()?2:1);
     }
     envCreate(std::vector<FermionField>, getName() + "_v", 1, 
               Nl_ + noise.fermSize(), envGetGrid(FermionField));
@@ -154,7 +154,7 @@ void TA2AVectors<FImpl, Pack>::setup(void)
               Nl_ + noise.fermSize(), envGetGrid(FermionField));
     if (Ls > 1)
     {
-        if (A2A::isStaggered()) {
+        if (IsStaggeredImpl<FImpl>()) {
             envTmp(std::vector<FermionField>, "f5", Ls, 2, envGetGrid(FermionField,Ls));
             envTmp(std::vector<FermionField>, "f5_2", Ls, 2, envGetGrid(FermionField,Ls));
         } else 
@@ -203,7 +203,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
            it_v = v.begin();
            it_evec = epack.evec.begin();
 
-           if(A2A::isStaggered())
+           if(IsStaggeredImpl<FImpl>())
                mass = (envGet(std::vector<Real>, par().eigenPack+"_mass"))[0];
 
            // Low modes
@@ -211,7 +211,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
            {
                int il = it_eval-epack.eval.begin();
 
-               if(A2A::isStaggered()) {
+               if(IsStaggeredImpl<FImpl>()) {
                    auto cbEven = (envGet(std::vector<bool>, par().eigenPack+"_evenEigen"))[0];
                    startTimer("low mode pair");
                    LOG(Message) << "V,W vector pairs for i = " << 2*il << " and " << 2*il+1 << " (low mode)" << std::endl;
@@ -252,7 +252,7 @@ void TA2AVectors<FImpl, Pack>::execute(void)
                    stopTimer("W low mode");
                }
 
-               if (A2A::isStaggered()) {
+               if (IsStaggeredImpl<FImpl>()) {
                    it_w+=2;
                    it_v+=2;
                } else {
