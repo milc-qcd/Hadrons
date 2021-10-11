@@ -59,7 +59,6 @@ class TLocalCoherenceLanczos: public Module<LocalCoherenceLanczosPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
-    HADRONS_DEFINE_SCHUR_OP(SchurOp,FImpl);
     typedef LocalCoherenceLanczos<typename FImpl::SiteSpinor, 
                                   typename FImpl::SiteComplex, 
                                   nBasis>                  LCL;
@@ -70,7 +69,7 @@ public:
     typedef typename CoarsePack::CoarseField               CoarseField;
     typedef typename CoarsePack::CoarseFieldIo             CoarseFieldIo;
 
-    typedef SchurOp<FMat, FermionField>   SchurFMat;
+
 public:
     // constructor
     TLocalCoherenceLanczos(const std::string name);
@@ -153,8 +152,8 @@ void TLocalCoherenceLanczos<FImpl, nBasis, FImplIo>::setup(void)
 
     auto &epack = envGetDerived(BasePack, CoarsePack, getName());
 
-    envTmp(SchurFMat, "mat", Ls, envGet(FMat, par().action));
-    envGetTmp(SchurFMat, mat);
+    envTmp(FSchurOp, "mat", Ls, envGet(FMat, par().action));
+    envGetTmp(FSchurOp, mat);
     envTmp(LCL, "solver", Ls, envGetRbGrid(Field, Ls), cg, mat, 
            (par().evenEigen ? Even : Odd), epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
 }

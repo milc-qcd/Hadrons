@@ -107,7 +107,7 @@ private:
 
  template<typename TFImpl, typename ... Args>
  IfStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::StagMesonField(args...);
+     A2Autils<FImpl>::StagMesonFieldMILC(args...);
  }
 
 private:

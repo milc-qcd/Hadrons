@@ -52,9 +52,7 @@ public:
                                   std::string, action,
                                   std::string, eigenPack,
                                   std::string, solver,
-                                  std::string, lowOutput,
                                   std::string, highOutput,
-                                  bool,        lowMultiFile,
                                   bool,        highMultiFile);
 };
 
@@ -148,8 +146,6 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
         envCreate(std::vector<FermionField>, getName() + "_lowModes_evec", Ls, Nl_, envGetGrid(FermionField, Ls));
         envCreate(std::vector<ComplexD>, getName() + "_lowModes_eval", Ls, Nl_, 0);
     }
-    // if (hasEpack_ && !generateLowModes_)
-        // LOG(Warning) << "input pack '" << par().eigenPack << "' not checkerboarded. '"<< getName() << "_lowModes' will be empty!" << std::endl;
 
     envCreate(std::vector<FermionField>, getName() + "_v", 1, 
               noise.fermSize(), envGetGrid(FermionField));
@@ -176,22 +172,22 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
        Real        mass;
        envGetTmp(A2A, a2a);
 
-       // if (generateLowModes_)
-       // {
-       //     LOG(Message) << "Computing all-to-all vectors "
-       //                  << " using eigenpack '" << par().eigenPack << "' ("
-       //                  << Nl_ << " low modes) and noise '"
-       //                  << par().noise << "' (" << noise.fermSize() 
-       //                  << " noise vectors)" << std::endl;
+       if (Nl_ > 0)
+       {
+           LOG(Message) << "Computing all-to-all vectors "
+                        << " using eigenpack '" << par().eigenPack << "' ("
+                        << Nl_ << " low modes) and noise '"
+                        << par().noise << "' (" << noise.fermSize() 
+                        << " noise vectors)" << std::endl;
 
-       //     LOG(Message) << "Eigenpack with conjugate pair evecs and corresponding evals available in '" 
-       //                  << getName() << "_lowModes'" << std::endl;
-       // } else {
+           LOG(Message) << "Eigenpack with conjugate pair evecs and corresponding evals available in '" 
+                        << getName() << "_lowModes'" << std::endl;
+       } else {
 
-       LOG(Message) << "Computing all-to-all vectors "
-                    << " using noise '" << par().noise << "' (" << noise.fermSize() 
-                    << " noise vectors)" << std::endl;
-       // }
+           LOG(Message) << "Computing all-to-all vectors "
+                        << " using noise '" << par().noise << "' (" << noise.fermSize() 
+                        << " noise vectors)" << std::endl;
+       }
 
        typename std::vector<FermionField>::iterator it_evec, it_lowModeEvec;
        typename std::vector<Real>::iterator it_eval;
@@ -199,8 +195,8 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
        if (Nl_ > 0) {
 
-            auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_lowModes_evec");
-            auto &lowModeVals = envGet(std::vector<ComplexD>, getName() + "_lowModes_eval");
+           auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_lowModes_evec");
+           auto &lowModeVals = envGet(std::vector<ComplexD>, getName() + "_lowModes_eval");
            auto &epack  = envGet(Pack, par().eigenPack);
            it_evec = epack.evec.begin();
            it_lowModeEvec = lowModeVecs.begin();
@@ -261,14 +257,6 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
                stopTimer("V high mode");
            }
-       }
-
-       // I/O if necessary
-       if (!par().lowOutput.empty())
-       {
-            // auto &lowModes = envGet(EigenPackOut, getName() + "_lowModes");
-            // lowModes.writeCoarse(par().lowOutput, par().lowMultiFile, vm().getTrajectory());
-
        }
 
        if (!par().highOutput.empty())

@@ -707,6 +707,18 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                 bytes    += kernel.bytes(N_iii, N_jjj);
 
                 START_TIMER("cache copy");
+                if (N_low > j+jj) {
+                    thread_for_collapse( 5,e,next_,{
+                      for(int s =0;s< nstr_;s++)
+                      for(int t =0;t< nt_;t++)
+                      for(int iii=0;iii< N_iii;iii++)
+                      for(int jjj=0;jjj< N_jjj;jjj++)
+                      {
+                        mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj)*evals[j+jj+jjj];
+                      }
+                    });
+                    
+                }
                 thread_for_collapse( 5,e,next_,{
                   for(int s =0;s< nstr_;s++)
                   for(int t =0;t< nt_;t++)

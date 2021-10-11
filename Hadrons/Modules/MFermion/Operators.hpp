@@ -40,6 +40,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(Operators, TOperators<FIMPL>, MFermion);
+MODULE_REGISTER_TMP(StagOperators, TOperators<STAGIMPL>, MFermion);
 MODULE_REGISTER_TMP(ZOperators, TOperators<ZFIMPL>, MFermion);
 
 /******************************************************************************

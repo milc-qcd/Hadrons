@@ -127,7 +127,8 @@ typedef typename FImpl::DoubledGaugeField          DoubledGaugeField##suffix;\
 typedef LinearOperatorBase<FermionField##suffix>   FBaseOp##suffix;\
 typedef NonHermitianLinearOperator<FMat##suffix, FermionField##suffix>   FOp##suffix;\
 typedef MdagMLinearOperator<FMat##suffix, FermionField##suffix>   FHermOp##suffix;\
-typedef HADRONS_DEFAULT_SCHUR_OP<FMat##suffix, FermionField##suffix> FSchurOp##suffix;\
+HADRONS_DEFINE_SCHUR_OP(TSchurOp##suffix,FImpl);\
+typedef TSchurOp##suffix<FMat##suffix, FermionField##suffix> FSchurOp##suffix;\
 typedef Lattice<iSpinMatrix<typename FImpl::Simd>> SpinMatrixField##suffix;\
 typedef Lattice<iColourVector<typename FImpl::Simd>> ColourVectorField##suffix;
 
@@ -280,25 +281,21 @@ void        makeFileDir(const std::string filename, GridBase *g = nullptr);
 #define HADRONS_DEFAULT_SCHUR_OP_STAGGERED HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
 #define HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR_STAGGERED)
 
-#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,TImpl,condition,true_type,false_type)\
-template<typename T, typename... Args>\
+#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,condition,true_type,false_type)\
+template<typename... Args>\
 using type_name = typename std::conditional<condition, true_type<Args...>, false_type<Args...> >::type;
 
 #define HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl)\
-(std::is_same<FImpl,STAGIMPLD>::value || std::is_same<FImpl,STAGIMPLF>::value)
+(std::is_same<FImpl,STAGIMPLD>::value || std::is_same<FImpl,STAGIMPLF>::value || std::is_same<FImpl,STAGIMPL>::value)
 
 #define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name,FImpl,staggered_type,non_staggered_type)\
-HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,FImpl,HADRONS_IS_STAGGERED_IMPLEMENTATION(T), staggered_type, non_staggered_type)
+HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl), staggered_type, non_staggered_type)
 
 #define HADRONS_DEFINE_SCHUR_OP(name,FImpl)\
-HADRONS_TYPEDEF_BRANCH_STAGGERED(name##_macro,FImpl,HADRONS_DEFAULT_SCHUR_OP_STAGGERED,HADRONS_DEFAULT_SCHUR_OP)\
-template <typename... Args>\
-using name = name##_macro<FImpl,Args...>;
+HADRONS_TYPEDEF_BRANCH_STAGGERED(name,FImpl,HADRONS_DEFAULT_SCHUR_OP_STAGGERED,HADRONS_DEFAULT_SCHUR_OP)
 
 #define HADRONS_DEFINE_SCHUR_SOLVE(name,FImpl)\
-HADRONS_TYPEDEF_BRANCH_STAGGERED(name##_macro,FImpl,HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED,HADRONS_DEFAULT_SCHUR_SOLVE)\
-template <typename... Args>\
-using name = name##_macro<FImpl,Args...>;
+HADRONS_TYPEDEF_BRANCH_STAGGERED(name,FImpl,HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED,HADRONS_DEFAULT_SCHUR_SOLVE)
 
 template <typename T, typename U = int> using IfStag = Invoke<std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
 template <typename T, typename U = int> using IfNotStag = Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;

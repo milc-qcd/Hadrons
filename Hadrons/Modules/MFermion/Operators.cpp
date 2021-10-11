@@ -5,4 +5,5 @@ using namespace Hadrons;
 using namespace MFermion;
 
 template class Grid::Hadrons::MFermion::TOperators<FIMPL>;
+template class Grid::Hadrons::MFermion::TOperators<STAGIMPL>;
 template class Grid::Hadrons::MFermion::TOperators<ZFIMPL>;

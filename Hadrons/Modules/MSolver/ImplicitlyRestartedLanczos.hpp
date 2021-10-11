@@ -21,6 +21,7 @@ public:
                                     std::string,   op,
                                     std::string,   output,
                                     bool,          redBlack,
+                                    bool,          evenEigen,
                                     bool,          multiFile);
 };
 
@@ -47,6 +48,8 @@ public:
 
 MODULE_REGISTER_TMP(FermionImplicitlyRestartedLanczos, TImplicitlyRestartedLanczos<FIMPL::FermionField>, MSolver);
 MODULE_REGISTER_TMP(FermionImplicitlyRestartedLanczosIo32, ARG(TImplicitlyRestartedLanczos<FIMPL::FermionField, FIMPLF::FermionField>), MSolver);
+MODULE_REGISTER_TMP(StagFermionIRL, TImplicitlyRestartedLanczos<STAGIMPL::FermionField>, MSolver);
+MODULE_REGISTER_TMP(StagFermionIRLIo32, ARG(TImplicitlyRestartedLanczos<STAGIMPL::FermionField, STAGIMPLF::FermionField>), MSolver);
 
 /******************************************************************************
  *                 TImplicitlyRestartedLanczos implementation                 *
@@ -103,6 +106,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::setup(void)
         par().lanczosParams.Nstop, par().lanczosParams.Nk, par().lanczosParams.Nm,
         par().lanczosParams.resid, par().lanczosParams.MaxIt, par().lanczosParams.betastp, 
         par().lanczosParams.MinRes);
+    envTmp(Field, "gauss", Ls, getGrid<Field>(false, Ls));
     envTmp(Field, "src", Ls, grid);
 }
 
@@ -117,16 +121,20 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     
     envGetTmp(ImplicitlyRestartedLanczos<Field>, irl);
     envGetTmp(Field, src);
+    envGetTmp(Field, gauss);
 
     grid = getGrid<Field>(par().redBlack, Ls);
     if (typeHash<Field>() != typeHash<FieldIo>())
     {
         gridIo = getGrid<FieldIo>(par().redBlack, Ls);
     }
-    gaussian(rng4d(), src);
     if (par().redBlack)
     {
-        src.Checkerboard() = Odd;
+        envGetTmp(Field, gauss);
+        gaussian(rng4d(), gauss);
+        pickCheckerboard(par().evenEigen?Even:Odd,src,gauss);
+    } else {
+        gaussian(rng4d(), src);
     }
     irl.calc(epack.eval, epack.evec, src, nconv, false);
     epack.eval.resize(par().lanczosParams.Nstop);
