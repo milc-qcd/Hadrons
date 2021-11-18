@@ -62,6 +62,8 @@ namespace Contractor
                                         std::string, file,
                                         std::string, dataset,
                                         unsigned int, cacheSize,
+                                        unsigned int, ni,
+                                        unsigned int, nj,
                                         std::string, name);
     };
 
@@ -286,7 +288,7 @@ int main(int argc, char* argv[])
             tokenReplace(filename, "traj", traj);
             std::cout << "======== Loading '" << filename << "'" << std::endl;
 
-            A2AMatrixIo<HADRONS_A2AM_IO_TYPE> a2aIo(filename, p.dataset, par.global.nt);
+            A2AMatrixIo<HADRONS_A2AM_IO_TYPE> a2aIo(filename, p.dataset, par.global.nt,p.ni,p.nj);
 
             a2aIo.load(a2aMat.at(p.name), &t);
             std::cout << "Read " << a2aIo.getSize() << " bytes in " << t/1.0e6 

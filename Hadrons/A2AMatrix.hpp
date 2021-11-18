@@ -527,7 +527,7 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
         hdim.resize(dataspace.getSimpleExtentNdims());
         dataspace.getSimpleExtentDims(hdim.data());
         if ((nt_ * ni_ * nj_ != 0) and
-            ((hdim[0] != nt_) or (hdim[1] != ni_) or (hdim[2] != nj_)))
+            ((hdim[0] < nt_) or (hdim[1] < ni_) or (hdim[2] < nj_)))
         {
             HADRONS_ERROR(Size, "all-to-all matrix size mismatch (got "
                 + std::to_string(hdim[0]) + "x" + std::to_string(hdim[1]) + "x"
@@ -745,8 +745,8 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
         // perf
         LOG(Message) << "Kernel perf " << flops/t_kernel/1.0e3/nodes 
                      << " Gflop/s/node " << std::endl;
-        LOG(Message) << "Kernel perf " << bytes/t_kernel*1.0e6/1024/1024/1024/nodes 
-                     << " GB/s/node "  << std::endl;
+        // LOG(Message) << "Kernel perf " << bytes/t_kernel*1.0e6/1024/1024/1024/nodes 
+                     // << " GB/s/node "  << std::endl;
 
         // IO
         double       blockSize, ioTime;
