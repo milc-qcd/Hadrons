@@ -1,10 +1,10 @@
-#include <Hadrons/Modules/MAction/ImprovedStaggeredMILC.hpp>
+#include <Hadrons/Modules/MAction/ImprovedStaggeredMILC5D.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MAction;
 
-template class Grid::Hadrons::MAction::TImprovedStaggeredMILC<STAGIMPL>;
+template class Grid::Hadrons::MAction::TImprovedStaggeredMILC5D<STAGIMPL>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MAction::TImprovedStaggeredMILC<STAGIMPLF>;
+template class Grid::Hadrons::MAction::TImprovedStaggeredMILC5D<STAGIMPLF>;
 #endif

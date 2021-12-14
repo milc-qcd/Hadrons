@@ -164,8 +164,11 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
 
 
     if (!par().noise.empty()) {
+
+        auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+
         Nh_ = noise.fermSize();
-        auto        &noise      = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+
         if (solverLs == Nh_) {
             usesMultiRHS = true;
             envTmpLat(FermionField,"multiRHSource",solverLs);
@@ -255,7 +258,8 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
     // High modes
     if (Nh_ > 0) {
-       auto        &noise     = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+
+       auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
        int nsrc = noise.size();  
 
