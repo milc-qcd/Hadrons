@@ -640,7 +640,7 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
     int    N_low = evecs.size();
     int    N_i = left.size()+N_low;
     int    N_j = right.size()+N_low;
-    double flops, bytes, t_kernel;
+    double flops, bytes, t_kernel, t_gsum;
     double nodes = grid_->NodeCount();
     
 
@@ -664,19 +664,20 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
         flops    = 0.0;
         bytes    = 0.0;
         t_kernel = 0.0;
+        t_gsum = 0.0;
         bool iBlockFilled = false,jBlockFilled;
-        double t;
+        double t, tg;
         int ii=0, jj, N_iii, N_jjj;
         while(!iBlockFilled) {
             const Field *l_temp;
             // If there are still low modes to process
             if (N_low > 0 && (i+ii) < N_low) {
-                // Pick as many as are left or cacheBlockSize_
+                // Pick the min of how many low modes are left vs. cacheBlockSize_
                 N_iii = MIN(N_low-(i+ii),cacheBlockSize_);
                 l_temp = &evecs[i+ii];
             }
             else {
-                // Pick as many as are left in the block or cacheBlockSize_
+                // Pick the min of how many high modes are left vs. cacheBlockSize_
                 N_iii = MIN(N_ii-ii,cacheBlockSize_);
                 l_temp = &left[i+ii-N_low];
             }
@@ -687,12 +688,12 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                 const Field *r_temp;
                 // If there are still low modes to process
                 if (N_low > 0 && (j+jj) < N_low) {
-                    // Pick as many as are left or cacheBlockSize_
+                    // Pick the min of how many low modes are left vs. cacheBlockSize_
                     N_jjj = MIN(N_low-(j+jj),cacheBlockSize_);
                     r_temp = &evecs[j+jj];
                 }
                 else {
-                    // Pick as many as are left in the block or cacheBlockSize_
+                    // Pick the min of how many high modes are left vs. cacheBlockSize_
                     N_jjj = MIN(N_jj-jj,cacheBlockSize_);
                     r_temp = &right[j+jj-N_low];
                 }
@@ -700,14 +701,16 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                 A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
 
                 START_TIMER("kernel");
-                kernel(mCacheBlock, l_temp, r_temp, orthogDim_, t);
+                kernel(mCacheBlock, l_temp, r_temp, orthogDim_, t,tg);
                 STOP_TIMER("kernel");
                 t_kernel += t;
+                t_gsum   += tg;
                 flops    += kernel.flops(N_iii, N_jjj);
                 bytes    += kernel.bytes(N_iii, N_jjj);
 
                 START_TIMER("cache copy");
-                if (N_low > j+jj) {
+                // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
+                if (N_low > j+jj+1) {
                     thread_for_collapse( 5,e,next_,{
                       for(int s =0;s< nstr_;s++)
                       for(int t =0;t< nt_;t++)
@@ -717,20 +720,17 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                         mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj)*evals[j+jj+jjj];
                       }
                     });
-                    
+                } else {
+                    thread_for_collapse( 5,e,next_,{
+                      for(int s =0;s< nstr_;s++)
+                      for(int t =0;t< nt_;t++)
+                      for(int iii=0;iii< N_iii;iii++)
+                      for(int jjj=0;jjj< N_jjj;jjj++)
+                      {
+                            mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj);
+                      }
+                    });
                 }
-                thread_for_collapse( 5,e,next_,{
-                  for(int s =0;s< nstr_;s++)
-                  for(int t =0;t< nt_;t++)
-                  for(int iii=0;iii< N_iii;iii++)
-                  for(int jjj=0;jjj< N_jjj;jjj++)
-                  {
-                    if (N_low > j+jj+jjj)
-                        mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj)*evals[j+jj+jjj];
-                    else 
-                        mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj);
-                  }
-                });
                 STOP_TIMER("cache copy");
 
                 jj += N_jjj;
@@ -745,8 +745,8 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
         // perf
         LOG(Message) << "Kernel perf " << flops/t_kernel/1.0e3/nodes 
                      << " Gflop/s/node " << std::endl;
-        // LOG(Message) << "Kernel perf " << bytes/t_kernel*1.0e6/1024/1024/1024/nodes 
-                     // << " GB/s/node "  << std::endl;
+        LOG(Message) << "Kernel Time: " << t_kernel << " us." << std::endl;
+        LOG(Message) << "Global Sum Time: " << t_gsum << " us." << std::endl;
 
         // IO
         double       blockSize, ioTime;

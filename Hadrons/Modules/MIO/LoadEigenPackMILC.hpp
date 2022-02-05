@@ -169,11 +169,10 @@ void TLoadEigenPackMILC<Pack, GImpl>::execute(void)
         for (auto &lam:epack.eval) {
             lam += m2;
         }        
+        epack.record.operatorXml = "<!-- WARNING! This EigenPack has been altered! metadata may be inaccurate. Added m^2 to evals; m = " 
+            + std::to_string(2*par().mass) + ". -->" + epack.record.operatorXml; 
+        LOG(Message) << epack.record.operatorXml << std::endl;
     }
-
-    epack.record.operatorXml = "<!-- WARNING! This EigenPack has been altered! metadata may be inaccurate. Added m^2 to evals; m = " 
-        + std::to_string(2*par().mass) + ". -->" + epack.record.operatorXml; 
-    LOG(Message) << epack.record.operatorXml << std::endl;
 
     if (!par().gaugeXform.empty())
     {
