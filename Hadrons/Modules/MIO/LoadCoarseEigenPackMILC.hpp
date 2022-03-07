@@ -42,7 +42,7 @@ BEGIN_MODULE_NAMESPACE(MIO)
 class LoadCoarseEigenPackMILCPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(LoadCoarseEigenPackPar,
+    GRID_SERIALIZABLE_CLASS_MEMBERS(LoadCoarseEigenPackMILCPar,
                                     std::string, filestem,
                                     bool,         multiFile,
                                     unsigned int, sizeFine,
