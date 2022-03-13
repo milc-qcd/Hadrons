@@ -1,9 +1,10 @@
 /*
- * A2AMesonField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * A2AMesonFieldMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

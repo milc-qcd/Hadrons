@@ -67,13 +67,11 @@ private:
     template <typename T = FImpl>
     IfStag<T,void> setFerm(const int i);
     virtual void setProp(const int i) = 0;
-    LatticeComplex                 eta_;
     FermionField                   ferm_;
     GridCartesian                  *grid_;
     std::vector<LatticeComplex>    noise_;
     PropagatorField                prop_;
 protected:
-    LatticeComplex &  getEta(void);
     FermionField &    getFerm(void);
     int               getNd(void) const;
     template <typename T = FImpl>
@@ -81,11 +79,10 @@ protected:
     template <typename T = FImpl>
     typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
     PropagatorField & getProp(void);
-    void              setPropagator(LatticeComplex & eta);
     template <typename T = FImpl>
-    IfNotStag<T,void> setPropagator(FermionField & eta);
+    IfNotStag<T,void> setPropagator(LatticeComplex* eta);
     template <typename T = FImpl>
-    IfStag<T,void> setPropagator(FermionField & eta);
+    IfStag<T,void> setPropagator(LatticeComplex* eta);
 };
 
 template <typename FImpl>
@@ -105,25 +102,6 @@ protected:
     Lattice<iScalar<vInteger>> tLat_;
 private:
     void setProp(const int i);
-};
-
-template <typename FImpl>
-class ProjectedTimeDilutedNoise: public TimeDilutedNoise<FImpl>
-{
-public:
-    typedef typename FImpl::FermionField FermionField;
-    typedef typename FImpl::PropagatorField PropagatorField;
-public:
-    // constructor/destructor
-    ProjectedTimeDilutedNoise(GridCartesian *g, const int nNoise, const std::vector<FermionField> &basis);
-    virtual ~ProjectedTimeDilutedNoise(void) = default;
-    std::vector<FermionField> &       getProjectedNoise(void);
-    const std::vector<FermionField> & getProjectedNoise(void) const;
-private:
-    void setProp(const int i);
-    void projectNoise();
-    std::vector<FermionField> projNoise_;
-    const std::vector<FermionField> &basis_;
 };
 
 template <typename FImpl>
@@ -171,7 +149,7 @@ public:
     int dilutionSize(void) const;
 private:
     void setProp(const int i);
-    int nSparse_;
+    int nSparseL_,nSparseT_;
     LatticeInteger coor_;
 };
 /******************************************************************************
@@ -179,7 +157,7 @@ private:
  ******************************************************************************/
 template <typename FImpl>
 SpinColorDiagonalNoise<FImpl>::SpinColorDiagonalNoise(GridCartesian *g)
-: grid_(g), ferm_(g), prop_(g), eta_(g)
+: grid_(g), ferm_(g), prop_(g)
 {}
 
 template <typename FImpl>
@@ -246,36 +224,28 @@ SpinColorDiagonalNoise<FImpl>::getFerm(const int i)
 }
 
 template <typename FImpl>
-void SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex & eta)
-{
-    prop_ = 1.;
-    prop_ = prop_*eta;
-}
-
-template <typename FImpl>
 template <typename T>
-IfStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(FermionField & eta)
+IfStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex * eta)
 {
     int nc  = FImpl::Dimension;
     std::div_t divs;
 
     for (int i=0; i<this->getNsc();i++) {
-        pokeColour(prop_,peekColour(eta,i),i,i);
+        pokeColour(prop_,eta[i],i,i);
     }
 }
 
 template <typename FImpl>
 template <typename T>
-IfNotStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(FermionField & eta)
+IfNotStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex * eta)
 {
     int nc  = FImpl::Dimension;
     std::div_t divs;
     divs = std::div(nc, this->getNsc());
     for (int i=0; i<divs.quot; i++) {
-        auto fermTmp = peekSpin(eta,i);
         auto propTmp = peekSpin(prop_,i,i);
         for (int j=0; j<divs.rem; j++) {
-            pokeColour(propTmp,peekColour(fermTmp,j),j,j);
+            pokeColour(propTmp,eta[divs.rem*i+j],j,j);
         }
         pokeSpin(prop_,propTmp,i,i);
     }
@@ -309,12 +279,6 @@ int SpinColorDiagonalNoise<FImpl>::fermSize(void) const
 }
 
 template <typename FImpl>
-LatticeComplex & SpinColorDiagonalNoise<FImpl>::getEta(void)
-{
-    return eta_;
-}
-
-template <typename FImpl>
 int SpinColorDiagonalNoise<FImpl>::getNd(void) const
 {
     return grid_->GlobalDimensions().size();
@@ -338,7 +302,7 @@ SpinColorDiagonalNoise<FImpl>::getNsc(void) const
 template <typename FImpl>
 void SpinColorDiagonalNoise<FImpl>::resize(const int nNoise)
 {
-    noise_.resize(nNoise, grid_);
+    noise_.resize(this->getNsc()*nNoise, grid_);
 }
 
 template <typename FImpl>
@@ -351,11 +315,13 @@ template <typename FImpl>
 void SpinColorDiagonalNoise<FImpl>::generateNoise(GridParallelRNG &rng)
 {
     Complex        shift(1., 1.);
+    LatticeComplex eta(grid_);
+
     for (int n = 0; n < noise_.size(); ++n)
     {
-        bernoulli(rng, eta_);
-        eta_ = (2.*eta_ - shift)*(1./::sqrt(2.));
-        noise_[n] = eta_;
+        bernoulli(rng, eta);
+        eta = (2.*eta - shift)*(1./::sqrt(2.));
+        noise_[n] = eta;
     }
 }
 
@@ -383,83 +349,21 @@ Lattice<iScalar<vInteger> > & TimeDilutedNoise<FImpl>::getTLat() {
 template <typename FImpl>
 void TimeDilutedNoise<FImpl>::setProp(const int i)
 {
-    auto eta   = this->getEta();
     auto noise = this->getNoise();
     auto nd    = this->getNd();
     auto nt    = this->getGrid()->GlobalDimensions()[Tp];
+    auto nsc   = this->getNsc();
 
+    std::vector<LatticeComplex> eta(nsc,this->getGrid());
     LatticeCoordinate(tLat_, nd - 1);
 
     std::div_t divs = std::div(i, nt);
     int t = divs.rem;
 
-    eta = where((tLat_ == t), noise[divs.quot], 0.*noise[divs.quot]);
-    this->setPropagator(eta);
-}
+    for (int j=0;j<nsc;j++)
+        eta[j] = where((tLat_ == t), noise[divs.quot*nsc+j], 0.*noise[divs.quot*nsc+j]);
 
-/******************************************************************************
- *                  ProjectedTimeDilutedNoise template implementation          *
- ******************************************************************************/
-template <typename FImpl>
-ProjectedTimeDilutedNoise<FImpl>::
-ProjectedTimeDilutedNoise(GridCartesian *g, int nNoise, const std::vector<FermionField> &basis)
-: TimeDilutedNoise<FImpl>(g, nNoise), basis_(basis)
-{}
-
-template <typename FImpl>
-std::vector<typename ProjectedTimeDilutedNoise<FImpl>::FermionField> & ProjectedTimeDilutedNoise<FImpl>::
-getProjectedNoise(void)
-{
-    if (projNoise_.size() == 0) {
-        const auto &noise = this->getNoise();
-        projNoise_.resize(noise.size(), this->getGrid());
-        projectNoise();
-    }
-    return projNoise_;
-}
-
-template <typename FImpl>
-const std::vector<typename ProjectedTimeDilutedNoise<FImpl>::FermionField> & ProjectedTimeDilutedNoise<FImpl>::
-getProjectedNoise(void) const
-{
-    if (projNoise_.size() == 0) {
-        const auto &noise = this->getNoise();
-        projNoise_.resize(noise.size(), this->getGrid());
-        projectNoise();
-    }
-    return projNoise_;
-}
-
-template <typename FImpl>
-void ProjectedTimeDilutedNoise<FImpl>::projectNoise() {
-
-    const auto &noise = this->getNoise();
-    LOG(Message) << "Orthogonalizing " << noise.size() << " noise vectors (before dilution) from " << 
-    basis_.size() << " basis vectors" << std::endl;
-    thread_for(i,noise.size(), {
-        projNoise_[i] = 1.F;
-        projNoise_[i] = projNoise_[i]*noise[i];
-        for (int j = 0; j<basis_.size(); j++) {
-            const FermionField& tmp = basis_[j];
-            axpy(projNoise_[i], -1.*TensorRemove(innerProduct(tmp,projNoise_[i])), tmp, projNoise_[i]);
-        }
-    });
-}
-
-template <typename FImpl>
-void ProjectedTimeDilutedNoise<FImpl>::setProp(const int i)
-{
-    auto noise = this->getProjectedNoise();
-    auto nd    = this->getNd();
-    auto nt    = this->getGrid()->GlobalDimensions()[Tp];
-
-    LatticeCoordinate(this->getTLat(), nd - 1);
-
-    std::div_t divs = std::div(i, nt);
-    int t = divs.rem;
-
-    FermionField eta = where((this->getTLat() == t), noise[divs.quot], 0.*noise[divs.quot]);
-    this->setPropagator(eta);
+    this->setPropagator(&(eta[0]));
 }
 
 /******************************************************************************
@@ -481,7 +385,7 @@ template <typename FImpl>
 void FullVolumeNoise<FImpl>::setProp(const int i)
 {
     auto noise = this->getNoise();
-    this->setPropagator(noise[i]);
+    this->setPropagator(&noise[i*this->getNsc()]);
 }
 
 /******************************************************************************
@@ -512,12 +416,13 @@ int CheckerboardNoise<FImpl>::dilutionSize() const
 template <typename FImpl>
 void CheckerboardNoise<FImpl>::setProp(const int i)
 {
-    auto eta   = this->getEta();
     auto nd    = this->getNd();
     auto noise = this->getNoise();
     auto nsc   = this->getNsc();
     unsigned int j;
-    eta = noise[i];
+
+    std::vector<LatticeComplex> eta(nsc,this->getGrid());
+
     j   = i/nSrc_ec_;
 
     coorTot_ = 0.;
@@ -528,9 +433,12 @@ void CheckerboardNoise<FImpl>::setProp(const int i)
     }
     coor_ = j;
     coorTot_ = coorTot_ + coor_;
-    eta = where(mod(coorTot_,nSparse_), 0.*eta, eta);
-    eta *= sqrt(1./nSrc_ec_);
-    this->setPropagator(eta);
+
+    for (int k=0;k<nsc;k++) {
+        eta[k] = where(mod(coorTot_,nSparse_), 0.*noise[i*nsc+k], noise[i*nsc+k]);
+        eta[k] *= sqrt(1./nSrc_ec_);
+    }
+    this->setPropagator(&(eta[0]));
 }
 
 /******************************************************************************
@@ -538,38 +446,48 @@ void CheckerboardNoise<FImpl>::setProp(const int i)
  ******************************************************************************/
 template <typename FImpl>
 SparseNoise<FImpl>::
-SparseNoise(GridCartesian *g, int nNoise, int nSparse)
-: SpinColorDiagonalNoise<FImpl>(g, nNoise), nSparse_(nSparse), coor_(g)
+SparseNoise(GridCartesian *g, int nNoise, int nSparseL, int nSparseT)
+: SpinColorDiagonalNoise<FImpl>(g, nNoise), nSparseL_(nSparseL), nSparseT_(nSparseT), coor_(g)
 {}
 
 template <typename FImpl>
 int SparseNoise<FImpl>::dilutionSize() const
 {
     auto nd  = this->getNd();
-    return this->size()*pow(nSparse_, nd);
+    return this->size()*pow(nSparseL_, nd-1)*nSparseT_;
 }
 
 template <typename FImpl>
 void SparseNoise<FImpl>::setProp(const int i)
 {
-    auto eta   = this->getEta();
     auto nd    = this->getNd();
     auto noise = this->getNoise();
+    auto nsc   = this->getNsc();
 
-    std::div_t divs = std::div(i, pow(nSparse_, nd));
-    eta = noise[divs.quot];
-    for(int d = 0; d < nd; ++d) 
-    {
+    std::vector<LatticeComplex> eta(nsc,this->getGrid());
+
+    std::div_t divs = std::div(i, pow(nSparseL_, nd-1)*nSparseT_);
+    std::div_t subdivs;
+
+    for (int j=0;j<nsc;j++) {
+        eta[j] = noise[divs.quot*nsc+j];
+    }
+
+    unsigned int sparseIndexD, sparseIndex = divs.rem;
+    for(int d = 0; d < nd; ++d) {
         LatticeCoordinate(coor_, d);
-        eta = where(mod(coor_,nSparse_), 0.*eta, eta);
-    }
+        if (d < nd-1)
+            subdivs = std::div(sparseIndex,nSparseL_);
+        else
+            subdivs = std::div(sparseIndex,nSparseT_);
 
-    for (int d = 0; d < nd; ++d)
-    {
-        divs = std::div(divs.rem, pow(nSparse_, nd-(d+1)));
-        eta = Cshift(eta, d, divs.quot);
+        for (int j=0;j<nsc;j++) {
+            auto temp = where(coor_ == subdivs.rem, eta[j], 0.*eta[j]);
+            eta[j] = temp;
+        }
+        sparseIndex = subdivs.quot;
     }
-    this->setPropagator(eta);
+    this->setPropagator(&(eta[0]));
 }
 
 END_HADRONS_NAMESPACE

@@ -1,5 +1,5 @@
 /*
- * A2AVectors.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * A2AVectorsMILC.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -7,6 +7,7 @@
  * Author: Fionn O hOgain <fionn.o.hogain@ed.ac.uk>
  * Author: Fionn Ó hÓgáin <fionnoh@gmail.com>
  * Author: fionnoh <fionnoh@gmail.com>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -129,8 +130,8 @@ std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getOutput(void)
     }
 
     if (!par().eigenPack.empty()) {
-        out.push_back(getName() + "_lowModes_evec");
-        out.push_back(getName() + "_lowModes_eval");
+        out.push_back(getName() + "_evec");
+        out.push_back(getName() + "_eval");
     }
 
     return out;
@@ -154,8 +155,8 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
 
         auto &epack = envGet(Pack, par().eigenPack);
         Nl_ = epack.evec.size()*(IsStaggeredImpl<FImpl>()?2:1);
-        envCreate(std::vector<FermionField>, getName() + "_lowModes_evec", actionLs, Nl_, envGetGrid(FermionField, actionLs));
-        envCreate(std::vector<ComplexD>, getName() + "_lowModes_eval", actionLs, Nl_, 0);
+        envCreate(std::vector<FermionField>, getName() + "_evec", actionLs, Nl_, envGetGrid(FermionField, actionLs));
+        envCreate(std::vector<ComplexD>, getName() + "_eval", actionLs, Nl_, 0);
     }
 
     if (actionLs > 1) {
@@ -190,8 +191,6 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 {
     auto        &action    = envGet(FMat, par().action);
     auto        &solver    = envGet(Solver, par().solver);
-    auto        &v         = envGet(std::vector<FermionField>, getName() + "_v");
-    auto        &w         = envGet(std::vector<FermionField>, getName() + "_w");
     int         solverLs   = env().getObjectLs(par().solver);
 
     Real        mass;
@@ -213,7 +212,7 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
        }
        LOG(Message) << "Eigenpack with conjugate pair evecs and corresponding evals available in '" 
-                    << getName() << "_lowModes_evec'" << getName() << "_lowModes_eval'"<< std::endl;
+                    << getName() << "_evec,' and " << getName() << "_eval,' respectively"<< std::endl;
 
     } else {
 
@@ -228,8 +227,8 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
     if (Nl_ > 0) {
 
-       auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_lowModes_evec");
-       auto &lowModeVals = envGet(std::vector<ComplexD>, getName() + "_lowModes_eval");
+       auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_evec");
+       auto &lowModeVals = envGet(std::vector<ComplexD>, getName() + "_eval");
        auto &epack  = envGet(Pack, par().eigenPack);
        it_evec = epack.evec.begin();
        it_lowModeEvec = lowModeVecs.begin();
@@ -259,28 +258,31 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
     // High modes
     if (Nh_ > 0) {
 
-       auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+        auto        &v         = envGet(std::vector<FermionField>, getName() + "_v");
+        auto        &w         = envGet(std::vector<FermionField>, getName() + "_w");
+        auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
-       int nsrc = noise.size();  
+        int nsrc = noise.size();  
 
-       // Normalization for the noise sources
-       RealD norm = 1.0/::sqrt(Real(nsrc));
-       
-       std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
+        // Normalization for the noise sources
+        RealD norm = 1.0/::sqrt(Real(nsrc));
 
-       FermionField *multiRHSource, *multiRHSolve;
-       if (usesMultiRHS) {
+        std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
+
+        FermionField *multiRHSource, *multiRHSolve;
+        if (usesMultiRHS) {
             multiRHSource = env().template getObject<FermionField>(getName() + "_tmp_multiRHSource");
             multiRHSolve = env().template getObject<FermionField>(getName() + "_tmp_multiRHSolve");
         }
-       for (int ih = 0; ih < Nh_; ih++)
-       {
+
+        for (int ih = 0; ih < Nh_; ih++)
+        {
            startTimer("W high mode");
            LOG(Message) << "W vector i = " << Nl_ + ih
                         << " (" << ((hasEpack_) ? "high " : "") 
                         << "stochastic mode)" << std::endl;
             if (hasEpack_) {
-                auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_lowModes_evec");
+                auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_evec");
                 a2a.makeHighModeW(w[ih], noise.getFerm(ih),lowModeVecs,lowModeVecs.size());
             } else {
                 a2a.makeHighModeW(w[ih], noise.getFerm(ih));
@@ -302,23 +304,25 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 
                stopTimer("V high mode");
            }
-       }
-       if (usesMultiRHS) {
+        }
+
+        if (usesMultiRHS) {
 
             a2a.makeHighModeV(*multiRHSolve,*multiRHSource);
             for (int ih = 0; ih < Nh_; ih++) {
                 ExtractSlice(v[ih],*multiRHSolve,ih,0);
             }
         }
-    }
-    if (!par().highOutput.empty())
-    {
-       startTimer("V I/O");
-       A2AVectorsIo::write(par().highOutput + "_v", v, par().highMultiFile, vm().getTrajectory());
-       stopTimer("V I/O");
-       startTimer("W I/O");
-       A2AVectorsIo::write(par().highOutput + "_w", w, par().highMultiFile, vm().getTrajectory());
-       stopTimer("W I/O");
+
+        if (!par().highOutput.empty())
+        {
+           startTimer("V I/O");
+           A2AVectorsIo::write(par().highOutput + "_v", v, par().highMultiFile, vm().getTrajectory());
+           stopTimer("V I/O");
+           startTimer("W I/O");
+           A2AVectorsIo::write(par().highOutput + "_w", w, par().highMultiFile, vm().getTrajectory());
+           stopTimer("W I/O");
+        }
     }
 }
 

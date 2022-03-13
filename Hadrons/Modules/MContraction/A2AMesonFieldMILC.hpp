@@ -7,6 +7,7 @@
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
  * Author: ferben <ferben@debian.felix.com>
  * Author: paboyle <paboyle@ph.ed.ac.uk>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

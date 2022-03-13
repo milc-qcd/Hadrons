@@ -6,6 +6,7 @@
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
  * Author: fionnoh <fionnoh@gmail.com>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,7 +45,6 @@ public:
     FERM_TYPE_ALIASES(FImpl,);
     SOLVER_TYPE_ALIASES(FImpl,);
     HADRONS_DEFINE_SCHUR_OP(SchurOp,FImpl);
-    // using SchurOp = typename std::conditional<HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl), HADRONS_DEFAULT_SCHUR_OP_STAGGERED<FMat,FermionField>, HADRONS_DEFAULT_SCHUR_OP<FMat,FermionField> >::type;
 public:
     A2AVectorsSchur(FMat &action, Solver &solver);
     virtual ~A2AVectorsSchur(void) = default;
