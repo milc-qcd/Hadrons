@@ -262,7 +262,7 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
         auto        &w         = envGet(std::vector<FermionField>, getName() + "_w");
         auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
-        int nsrc = noise.size();  
+        int nsrc = noise.size()/FImpl::Dimension;  
 
         // Normalization for the noise sources
         RealD norm = 1.0/::sqrt(Real(nsrc));
