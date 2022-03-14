@@ -144,7 +144,7 @@ public:
     typedef typename FImpl::PropagatorField PropagatorField;
 public:
     // constructor/destructor
-    SparseNoise(GridCartesian *g, const int nNoise, const int nSparse);
+    SparseNoise(GridCartesian *g, const int nNoise, const int nSparseL, const int nSparseT);
     virtual ~SparseNoise(void) = default;
     int dilutionSize(void) const;
 private:
