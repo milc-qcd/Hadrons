@@ -275,7 +275,7 @@ int SpinColorDiagonalNoise<FImpl>::size(void) const
 template <typename FImpl>
 int SpinColorDiagonalNoise<FImpl>::fermSize(void) const
 {
-    return dilutionSize()*getNsc();
+    return dilutionSize();
 }
 
 template <typename FImpl>
