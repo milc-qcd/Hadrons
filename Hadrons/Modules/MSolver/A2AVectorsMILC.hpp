@@ -283,11 +283,11 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
                         << " (" << ((hasEpack_) ? "high " : "") 
                         << "stochastic mode)" << std::endl;
             if (hasEpack_ || !par().lowModes.empty()) {
-                const std::vector<FermionField> &lowModeVecs;
+                FermionField *lowModeVecs;
                 if (hasEpack_)
-                    lowModeVecs = envGet(std::vector<FermionField>, getName() + "_evec");
+                    lowModeVecs = &(envGet(std::vector<FermionField>, getName() + "_evec"));
                 else
-                    lowModeVecs = envGet(std::vector<FermionField>, par().lowModes + "_evec");
+                    lowModeVecs = &(envGet(std::vector<FermionField>, par().lowModes + "_evec"));
                 a2a.makeHighModeW(w[ih], noise.getFerm(ih),lowModeVecs,lowModeVecs.size());
             } else {
                 a2a.makeHighModeW(w[ih], noise.getFerm(ih));
