@@ -29,8 +29,11 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL,STAGIMPL,Complex>, GIMPL>;
 template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL>, GIMPL>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF,STAGIMPLF,Complex>, GIMPLF>;
+template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF,Complex>, GIMPL>;
 template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF>, GIMPLF>;
 template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>;
 #endif

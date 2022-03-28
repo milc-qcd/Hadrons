@@ -127,10 +127,17 @@ void TLoadCoarseEigenPack<Pack>::setup(void)
     {
         gridCoarseIo = envGetCoarseGrid(CoarseFieldIo, par().blockSize, par().Ls);
     }
-    envCreateDerived(BasePack, Pack, getName(), par().Ls, par().sizeFine,
-                     par().sizeCoarse, envGetRbGrid(Field, par().Ls), 
-                     envGetCoarseGrid(CoarseField, par().blockSize, par().Ls),
-                     gridIo, gridCoarseIo);
+    envCreate(std::vector<Field>,getName() + "_evec_fine", par().Ls, par().sizeFine, envGetRbGrid(Field, par().Ls));
+    envCreate(std::vector<RealD>,getName() + "_eval_fine", par().Ls, par().sizeFine);
+    envCreate(std::vector<CoarseField>,getName() + "_evec_coarse", par().Ls, par().sizeCoarse, envGetCoarseGrid(CoarseField, par().blockSize, par().Ls));
+    envCreate(std::vector<RealD>,getName() + "_eval_coarse", par().Ls, par().sizeCoarse);
+
+    auto &evecOut       = envGet(std::vector<Field>,getName() + "_evec_fine");
+    auto &evalOut       = envGet(std::vector<RealD>,getName() + "_eval_fine");
+    auto &evecCoarseOut = envGet(std::vector<CoarseField>,getName() + "_evec_coarse");
+    auto &evalCoarseOut = envGet(std::vector<RealD>,getName() + "_eval_coarse");
+
+    envCreateDerived(BasePack, Pack, getName(), par().Ls, evecOut, evalOut, evecCoarseOut, evalCoarseOut, gridIo, gridCoarseIo);
 }
 
 // execution ///////////////////////////////////////////////////////////////////

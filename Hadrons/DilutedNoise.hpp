@@ -473,7 +473,7 @@ void SparseNoise<FImpl>::setProp(const int i)
         eta[j] = noise[divs.quot*nsc+j];
     }
 
-    unsigned int sparseIndexD, sparseIndex = divs.rem;
+    unsigned int sparseIndex = divs.rem;
     for(int d = 0; d < nd; ++d) {
         LatticeCoordinate(coor_, d);
         if (d < nd-1)
@@ -482,7 +482,7 @@ void SparseNoise<FImpl>::setProp(const int i)
             subdivs = std::div(sparseIndex,nSparseT_);
 
         for (int j=0;j<nsc;j++) {
-            auto temp = where(coor_ == subdivs.rem, eta[j], 0.*eta[j]);
+            auto temp = where(coor_ == ((uint32_t) subdivs.rem), eta[j], 0.*eta[j]);
             eta[j] = temp;
         }
         sparseIndex = subdivs.quot;

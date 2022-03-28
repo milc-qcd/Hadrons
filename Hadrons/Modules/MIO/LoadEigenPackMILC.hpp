@@ -27,6 +27,7 @@
 #ifndef Hadrons_MIO_LoadEigenPackMILC_hpp_
 #define Hadrons_MIO_LoadEigenPackMILC_hpp_
 
+#include <typeinfo>
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
@@ -58,7 +59,8 @@ class TLoadEigenPackMILC: public Module<LoadEigenPackMILCPar>
 public:
     typedef typename Pack::Field   Field;
     typedef typename Pack::FieldIo FieldIo;
-    typedef BaseEigenPack<Field>   BasePack;
+    typedef typename Pack::EvalType EvalType;
+    typedef BaseEigenPack<Field,EvalType>   BasePack;
 
 public:
     GAUGE_TYPE_ALIASES(GImpl, );
@@ -77,10 +79,13 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(LoadFermionEigenPackMILC, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILC, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL,STAGIMPL,Complex>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILCHermitian, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL>, GIMPL>), MIO);
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-MODULE_REGISTER_TMP(LoadFermionEigenPackMILCF, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF>, GIMPLF>), MIO);
-MODULE_REGISTER_TMP(LoadFermionEigenPackMILCIo32, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILCF, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF, STAGIMPLF, Complex>, GIMPLF>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILCIo32, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF, Complex>, GIMPL>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILCHermitianF, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF>, GIMPLF>), MIO);
+MODULE_REGISTER_TMP(LoadFermionEigenPackMILCHermitianIo32, ARG(TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>), MIO);
 #endif
 
 /******************************************************************************
@@ -109,7 +114,7 @@ std::vector<std::string> TLoadEigenPackMILC<Pack, GImpl>::getInput(void)
 template <typename Pack, typename GImpl>
 std::vector<std::string> TLoadEigenPackMILC<Pack, GImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName(), getName()+"_mass", getName() + "_evenEigen"};
+    std::vector<std::string> out = {getName(), getName() + "_evec", getName() + "_eval"};
     
     return out;
 }
@@ -120,19 +125,18 @@ void TLoadEigenPackMILC<Pack, GImpl>::setup(void)
 {
     GridBase *gridIo = nullptr;
 
-    envCreate(std::vector<Real>, getName()+"_mass", 1, 1, 2.*par().mass);
-    envCreate(std::vector<bool>, getName()+"_evenEigen", 1, 1, par().evenEigen == true);
-
-    if (par().mass > 0) {
-        LOG(Warning) << "The LoadEigenPackMILC module assumes MASSLESS eigenvalues of the Dirac Operator squarred." << std::endl;
-    }
-
     if (typeHash<Field>() != typeHash<FieldIo>())
     {
         gridIo = envGetRbGrid(FieldIo, par().Ls);
     }
-    envCreateDerived(BasePack, Pack, getName(), par().Ls, par().size, 
-                     envGetRbGrid(Field, par().Ls), gridIo);
+
+    envCreate(std::vector<Field>,getName() + "_evec", par().Ls, par().size, envGetRbGrid(Field, par().Ls));
+    envCreate(std::vector<EvalType>,getName() + "_eval", par().Ls, par().size);
+
+    auto &evecOut = envGet(std::vector<Field>,getName() + "_evec");
+    auto &evalOut = envGet(std::vector<EvalType>,getName() + "_eval");
+
+    envCreateDerived(BasePack, Pack, getName(), par().Ls, evecOut, evalOut, gridIo);
 
     if (!par().gaugeXform.empty())
     {
@@ -162,16 +166,36 @@ void TLoadEigenPackMILC<Pack, GImpl>::execute(void)
     epack.eval.resize(par().size);
 
     if (par().mass > 0.0) {
-        Real m2 = pow(2*par().mass,2);
+        Real m = 2*par().mass;
 
-        LOG(Message) << "Shifting eigenvalues by mass^2 (including MILC factor of 2) = " << m2 << std::endl;
+        if (typeid(decltype(epack.eval[0])) == typeid(Real)) {
+            m = ::pow(m,2);
+            epack.record.operatorXml = "<!-- WARNING! This EigenPack has been altered! metadata may be inaccurate. Shifted eigenvalues by m^2; m = " 
+                + std::to_string(2*par().mass) + ". -->" + epack.record.operatorXml; 
+        } else {
+            LOG(Warning) << "The LoadEigenPackMILC module provides eigenvalues of the Dirac operator, i.e. mass + i*lambda_D." << std::endl;
+
+            epack.record.operatorXml = "<!-- WARNING! This EigenPack has been altered! metadata may be inaccurate. Changed evals to m+i*lambda_D; m = " 
+                + std::to_string(2*par().mass) + ". -->" + epack.record.operatorXml; 
+
+        }
+        LOG(Message) << "Shifting eigenvalues by mass (including MILC factor of 2) = " << m << std::endl;
 
         for (auto &lam:epack.eval) {
-            lam += m2;
+            lam += m;
         }        
-        epack.record.operatorXml = "<!-- WARNING! This EigenPack has been altered! metadata may be inaccurate. Added m^2 to evals; m = " 
-            + std::to_string(2*par().mass) + ". -->" + epack.record.operatorXml; 
         LOG(Message) << epack.record.operatorXml << std::endl;
+    }
+
+
+    ComplexD norm(1.0,0.0);
+    if (typeid(decltype(epack.eval[0])) != typeid(Real)) {
+        norm *= 1.0/sqrt(2.0);
+        LOG(Message) << "Normalizing eigenvectors by 1/sqrt(2)" << std::endl;
+    }
+    for (auto &e:epack.evec) {
+        e *= norm;
+        e.Checkerboard() = (par().evenEigen ? Even : Odd);
     }
 
     if (!par().gaugeXform.empty())

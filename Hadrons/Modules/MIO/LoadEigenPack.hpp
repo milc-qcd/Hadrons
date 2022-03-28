@@ -112,7 +112,7 @@ std::vector<std::string> TLoadEigenPack<Pack, GImpl>::getInput(void)
 template <typename Pack, typename GImpl>
 std::vector<std::string> TLoadEigenPack<Pack, GImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName(),getName()+"_evec",getName()+"_eval"};
     
     return out;
 }
@@ -129,7 +129,14 @@ void TLoadEigenPack<Pack, GImpl>::setup(void)
     {
         gridIo = getGrid<FieldIo>(par().redBlack, par().Ls);
     }
-    envCreateDerived(BasePack, Pack, getName(), par().Ls, par().size, gridRb, gridIo);
+    envCreate(std::vector<Field>,getName() + "_evec", par().Ls, par().size, envGetRbGrid(Field, par().Ls));
+    envCreate(std::vector<RealD>,getName() + "_eval", par().Ls, par().size);
+
+    auto &evecOut = envGet(std::vector<Field>,getName() + "_evec");
+    auto &evalOut = envGet(std::vector<RealD>,getName() + "_eval");
+
+    envCreateDerived(BasePack, Pack, getName(), par().Ls, evecOut, evalOut, gridIo);
+
     if (!par().gaugeXform.empty())
     {
         envTmp(GaugeMat,    "tmpXform", par().Ls, grid);

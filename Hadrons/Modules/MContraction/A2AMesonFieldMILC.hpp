@@ -33,6 +33,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/A2AVectors.hpp>
 #include <Hadrons/A2AMatrix.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -50,6 +51,7 @@ public:
                                     int, block,
                                     std::string, lowModes,
                                     std::string, left,
+                                    std::string, action,
                                     std::string, right,
                                     std::string, output,
                                     std::string, gammas,
@@ -172,6 +174,8 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getInput(void)
         in.push_back(par().right);
 
     if (!par().lowModes.empty()) {
+        if (!par().action.empty())
+           in.push_back(par().action);
        in.push_back(par().lowModes+"_evec");
        in.push_back(par().lowModes+"_eval");
     }
@@ -191,7 +195,10 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getOutput(void)
 template <typename FImpl>
 void TA2AMesonFieldMILC<FImpl>::setup(void)
 {
-   gamma_.clear();
+    if (!par().action.empty()) {
+    }
+
+    gamma_.clear();
     mom_.clear();
     if (par().gammas == "all")
     {
@@ -243,8 +250,12 @@ void TA2AMesonFieldMILC<FImpl>::setup(void)
 template <typename FImpl>
 void TA2AMesonFieldMILC<FImpl>::execute(void)
 {
+    bool hasHighModes = (!par().left.empty() && !par().right.empty());
+    bool hasLowModes = (!par().lowModes.empty());
+    bool isCheckerBoarded = (!par().action.empty());
+
     std::vector<FermionField> *left, *right;
-    if (!par().left.empty() && !par().left.empty()) {
+    if (hasHighModes) {
         left  = &(envGet(std::vector<FermionField>, par().left));
         right = &(envGet(std::vector<FermionField>, par().right));
     } else {
@@ -257,12 +268,11 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
     int N_i        = left->size();
     int N_j        = right->size();
 
-    bool hasLowModes = (!par().lowModes.empty());
     if (hasLowModes)
     {
         auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
-        N_i += lowModeVecs.size();
-        N_j += lowModeVecs.size();
+        N_i += (isCheckerBoarded?2:1)*lowModeVecs.size();
+        N_j += (isCheckerBoarded?2:1)*lowModeVecs.size();
     }
     int ngamma     = gamma_.size();
     int nmom       = mom_.size();
@@ -275,17 +285,23 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
     }
 
     LOG(Message) << "Computing all-to-all meson fields" << std::endl;
-    LOG(Message) << "Left: '" << par().left << "' Right: '" << par().right << "'" << std::endl;
+    if (hasLowModes)
+        LOG(Message) << "Low Modes: '" << par().lowModes << std::endl;
+    if (hasHighModes)
+        LOG(Message) << "Left: '" << par().left << "' Right: '" << par().right << "'" << std::endl;
     LOG(Message) << "Momenta:" << std::endl;
+
     for (auto &p: mom_)
     {
         LOG(Message) << "  " << p << std::endl;
     }
     LOG(Message) << "Spin bilinears:" << std::endl;
+
     for (auto &g: gamma_)
     {
         LOG(Message) << "  " << g << std::endl;
     }
+
     LOG(Message) << "Meson field size: " << nt << "*" << N_i << "*" << N_j 
                  << " (filesize " << sizeString(nt*N_i*N_j*sizeof(HADRONS_A2AM_IO_TYPE)) 
                  << "/momentum/bilinear)" << std::endl;
@@ -345,14 +361,37 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
         return md;
     };
 
-    Kernel      kernel(gamma_, ph, envGetGrid(FermionField));
-
     envGetTmp(Computation, computation);
 
+    Kernel      kernel(gamma_, ph, envGetGrid(FermionField));
+
     if(hasLowModes) {
-        auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
-        auto &lowModeVals = envGet(std::vector<ComplexD>, par().lowModes+"_eval");
-        computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, lowModeVecs, lowModeVals);
+        if (isCheckerBoarded) {
+            auto &action      = envGet(FMat, par().action);
+            auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVals = envGet(std::vector<ComplexD>, par().lowModes+"_eval");
+
+            std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModeVecs, &lowModeVals](int index)
+            {
+                ComplexD eval_D = ComplexD(0.0,lowModeVals[index].imag());
+                int cb = lowModeVecs[index].Checkerboard();
+                int cbNeg = (cb==Even) ? Odd : Even;
+
+                FermionField temp(lowModeVecs[index].Grid());
+                temp.Checkerboard() = cbNeg;
+                action.Meooe(lowModeVecs[index], temp);
+                lowModeVecs[index].Checkerboard() = cbNeg;
+                lowModeVecs[index] = (1.0/eval_D) * temp;
+            };
+
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVecs, lowModeVals, &swapEvecCheckerFn);
+        } else{
+            auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVals = envGet(std::vector<ComplexD>, par().lowModes+"_eval");
+
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVecs, lowModeVals);
+
+        }
     } else {
         computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn);
     }

@@ -146,9 +146,18 @@ void TLocalCoherenceLanczos<FImpl, nBasis, FImplIo>::setup(void)
     int  cNm = (par().doCoarse) ? par().coarseParams.Nm : 0;
 
     LOG(Message) << "Coarse grid: " << cg->GlobalDimensions() << std::endl;
-    envCreateDerived(BasePack, CoarsePack, getName(), Ls,
-                     par().fineParams.Nm, cNm, envGetRbGrid(Field, Ls), cg,
-                     gridIo, gridCoarseIo);
+
+    envCreate(std::vector<Field>,getName() + "_evec_fine", Ls, par().fineParams.Nm, envGetRbGrid(Field, Ls));
+    envCreate(std::vector<RealD>,getName() + "_eval_fine", Ls, par().fineParams.Nm);
+    envCreate(std::vector<CoarseField>,getName() + "_evec_coarse", Ls, cNm, cg);
+    envCreate(std::vector<RealD>,getName() + "_eval_coarse", Ls, cNm);
+
+    auto &evecOut       = envGet(std::vector<Field>,getName() + "_evec_fine");
+    auto &evalOut       = envGet(std::vector<RealD>,getName() + "_eval_fine");
+    auto &evecCoarseOut = envGet(std::vector<CoarseField>,getName() + "_evec_coarse");
+    auto &evalCoarseOut = envGet(std::vector<RealD>,getName() + "_eval_coarse");
+
+    envCreateDerived(BasePack, CoarsePack, getName(), Ls, evecOut, evalOut, evecCoarseOut, evalCoarseOut, gridIo, gridCoarseIo);
 
     auto &epack = envGetDerived(BasePack, CoarsePack, getName());
 

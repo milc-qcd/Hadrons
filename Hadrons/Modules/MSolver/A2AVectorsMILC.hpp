@@ -53,7 +53,6 @@ public:
                                   std::string, action,
                                   std::string, eigenPack,
                                   std::string, solver,
-                                  std::string, lowModes,
                                   std::string, highOutput,
                                   bool,        highMultiFile);
 };
@@ -82,12 +81,12 @@ public:
     virtual void execute(void);
 private:
     std::string  solverName_;
-    unsigned int Nl_{0},Nh_{0};
-    bool hasEpack_{false}, usesMultiRHS{false};
+    unsigned int Nh_{0};
+    bool hasEpack_{false};
 };
 
 MODULE_REGISTER_TMP(A2AVectorsMILC, 
-    ARG(TA2AVectorsMILC<STAGIMPL, BaseFermionEigenPack<STAGIMPL>>), MSolver);
+    ARG(TA2AVectorsMILC<STAGIMPL, BaseFermionEigenPack<STAGIMPL,Complex>>), MSolver);
 
 /******************************************************************************
  *                       TA2AVectorsMILC implementation                           *
@@ -102,21 +101,14 @@ TA2AVectorsMILC<FImpl, Pack>::TA2AVectorsMILC(const std::string name)
 template <typename FImpl, typename Pack>
 std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getInput(void)
 {
-    std::vector<std::string> in {par().action,par().solver};
+    std::vector<std::string> in {par().action,par().solver, par().noise};
 
     if (!par().eigenPack.empty()) {
-
         in.push_back(par().eigenPack);
-
-        if (IsStaggeredImpl<FImpl>()) {
-           in.push_back(par().eigenPack+"_mass");
-           in.push_back(par().eigenPack+"_evenEigen");
-        }
+        in.push_back(par().eigenPack+"_evec");
+        in.push_back(par().eigenPack+"_eval");
     }
     
-    if (!par().noise.empty())
-        in.push_back(par().noise);
-
     return in;
 }
 
@@ -130,11 +122,6 @@ std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getOutput(void)
         out.push_back(getName() + "_v");
     }
 
-    if (!par().eigenPack.empty()) {
-        out.push_back(getName() + "_evec");
-        out.push_back(getName() + "_eval");
-    }
-
     return out;
 }
 
@@ -146,42 +133,25 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
 {
     auto        &action     = envGet(FMat, par().action);
     auto        &solver     = envGet(Solver, par().solver);
-    int         actionLs    = env().getObjectLs(par().action);
-    int         solverLs    = env().getObjectLs(par().solver);
+    int         Ls          = env().getObjectLs(par().action);
 
     envTmp(A2A, "a2a", 1, action, solver);
 
     hasEpack_ = !par().eigenPack.empty();
-    if (hasEpack_) {
 
-        auto &epack = envGet(Pack, par().eigenPack);
-        Nl_ = epack.evec.size()*(IsStaggeredImpl<FImpl>()?2:1);
-        envCreate(std::vector<FermionField>, getName() + "_evec", actionLs, Nl_, envGetGrid(FermionField, actionLs));
-        envCreate(std::vector<ComplexD>, getName() + "_eval", actionLs, Nl_, 0);
-    }
-
-    if (actionLs > 1) {
+    if (Ls > 1) {
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
     }
 
 
-    if (!par().noise.empty()) {
+    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
-        auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+    Nh_ = noise.fermSize();
 
-        Nh_ = noise.fermSize();
-
-        if (solverLs == Nh_) {
-            usesMultiRHS = true;
-            envTmpLat(FermionField,"multiRHSource",solverLs);
-            envTmpLat(FermionField,"multiRHSolve",solverLs);
-        }
-
-        envCreate(std::vector<FermionField>, getName() + "_v", 1, 
-                  Nh_, envGetGrid(FermionField));
-        envCreate(std::vector<FermionField>, getName() + "_w", 1, 
-                  Nh_, envGetGrid(FermionField));
-    }
+    envCreate(std::vector<FermionField>, getName() + "_v", 1, 
+              Nh_, envGetGrid(FermionField));
+    envCreate(std::vector<FermionField>, getName() + "_w", 1, 
+              Nh_, envGetGrid(FermionField));
 }
 
 /******************************************************************************
@@ -192,143 +162,67 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
 {
     auto        &action    = envGet(FMat, par().action);
     auto        &solver    = envGet(Solver, par().solver);
-    int         solverLs   = env().getObjectLs(par().solver);
 
-    Real        mass;
     envGetTmp(A2A, a2a);
 
-    if (Nl_ > 0)
+    if (hasEpack_)
     {
-       if (Nh_ > 0)
-       {
-           LOG(Message) << "Computing all-to-all vectors "
-                        << " using eigenpack '" << par().eigenPack << "' ("
-                        << Nl_ << " low modes) and noise '"
-                        << par().noise << "' (" << Nh_ 
-                        << " noise vectors)" << std::endl;
-       } else {
-           LOG(Message) << "Computing all-to-all vectors "
-                        << " using eigenpack '" << par().eigenPack << "' ("
-                        << Nl_ << " low modes) and zero noise vectors" << std::endl;
-
-       }
-       LOG(Message) << "Eigenpack with conjugate pair evecs and corresponding evals available in '" 
-                    << getName() << "_evec,' and " << getName() << "_eval,' respectively"<< std::endl;
-
+       LOG(Message) << "Computing all-to-all vectors "
+                    << " using eigenpack '" << par().eigenPack << "' (low modes) and noise '"
+                    << par().noise << "' (" << Nh_ 
+                    << " noise vectors)" << std::endl;
     } else {
-
        LOG(Message) << "Computing all-to-all vectors "
                     << " using noise '" << par().noise << "' (" << Nh_ 
                     << " noise vectors)" << std::endl;
     }
 
-    typename std::vector<FermionField>::iterator it_evec, it_lowModeEvec;
     typename std::vector<Real>::iterator it_eval;
-    typename std::vector<ComplexD>::iterator it_lowModeEval;
 
-    if (Nl_ > 0) {
+    auto &v     = envGet(std::vector<FermionField>, getName() + "_v");
+    auto &w     = envGet(std::vector<FermionField>, getName() + "_w");
+    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
-       auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_evec");
-       auto &lowModeVals = envGet(std::vector<ComplexD>, getName() + "_eval");
-       auto &epack  = envGet(Pack, par().eigenPack);
-       it_evec = epack.evec.begin();
-       it_lowModeEvec = lowModeVecs.begin();
-       it_lowModeEval = lowModeVals.begin();
+    int nsrc = noise.size()/FImpl::Dimension;  
 
-       mass = (envGet(std::vector<Real>, par().eigenPack+"_mass"))[0];
+    // Normalization for the noise sources
+    RealD norm = 1.0/::sqrt(Real(nsrc));
 
-       // Low modes
-       for (auto it_eval = epack.eval.begin(); it_eval < epack.eval.end(); it_eval++)
-       {
-           int il = it_eval-epack.eval.begin();
+    std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
 
-           auto cbEven = (envGet(std::vector<bool>, par().eigenPack+"_evenEigen"))[0];
-           startTimer("low mode pair");
-           LOG(Message) << "Generating eigenvector pairs for i = " << 2*il << " and " << 2*il+1 << " (low mode)" << std::endl;
+    startTimer("W high mode");
+    for (int ih = 0; ih < Nh_; ih++) {
+        w[ih] = noise.getFerm(ih);
+        w[ih] = norm*w[ih];
+    }
+    if (hasEpack_) {
+        LOG(Message) << "Projecting low contribution from stochastic high mode sources" << std::endl;
 
-           a2a.makeLowModePairs(it_lowModeEvec, it_lowModeEval, it_evec, mass, *it_eval, cbEven);
+        auto &epack = envGet(Pack, par().eigenPack);
+        a2a.removeLowModeProj(w,epack.evec,epack.eval);
+    }
+    stopTimer("W high mode");
 
-           stopTimer("low mode pair");
+    for (int ih = 0; ih < Nh_; ih++)
+    {
+       startTimer("V high mode");
+       LOG(Message) << "V vector (solve) i = " << ih
+                    << " (" << ((hasEpack_) ? "high " : "") 
+                    << "stochastic mode)" << std::endl;
 
-           it_lowModeEvec+=2;
-           it_lowModeEval+=2;
-           it_evec++;
-       }
+       a2a.makeHighModeV(v[ih],w[ih]);
+
+       stopTimer("V high mode");
     }
 
-    // High modes
-    if (Nh_ > 0) {
-
-        auto        &v         = envGet(std::vector<FermionField>, getName() + "_v");
-        auto        &w         = envGet(std::vector<FermionField>, getName() + "_w");
-        auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
-
-        int nsrc = noise.size()/FImpl::Dimension;  
-
-        // Normalization for the noise sources
-        RealD norm = 1.0/::sqrt(Real(nsrc));
-
-        std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
-
-        FermionField *multiRHSource, *multiRHSolve;
-        if (usesMultiRHS) {
-            multiRHSource = env().template getObject<FermionField>(getName() + "_tmp_multiRHSource");
-            multiRHSolve = env().template getObject<FermionField>(getName() + "_tmp_multiRHSolve");
-        }
-
-        for (int ih = 0; ih < Nh_; ih++)
-        {
-           startTimer("W high mode");
-           LOG(Message) << "W vector i = " << Nl_ + ih
-                        << " (" << ((hasEpack_) ? "high " : "") 
-                        << "stochastic mode)" << std::endl;
-            if (hasEpack_ || !par().lowModes.empty()) {
-                if (hasEpack_) {
-                    auto &lowModeVecs = envGet(std::vector<FermionField>, getName() + "_evec");
-                    a2a.makeHighModeW(w[ih], noise.getFerm(ih),lowModeVecs,lowModeVecs.size());
-                } else {
-                    auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes + "_evec");
-                    a2a.makeHighModeW(w[ih], noise.getFerm(ih),lowModeVecs,lowModeVecs.size());
-                }
-            } else {
-                a2a.makeHighModeW(w[ih], noise.getFerm(ih));
-            }
-
-            w[ih] = norm*w[ih];
-            if (usesMultiRHS) {
-                InsertSlice(w[ih],*multiRHSource,ih,0);
-            }
-
-           stopTimer("W high mode");
-           if (!usesMultiRHS) {
-               startTimer("V high mode");
-               LOG(Message) << "V vector i = " << Nl_ + ih
-                            << " (" << ((hasEpack_) ? "high " : "") 
-                            << "stochastic mode)" << std::endl;
-
-               a2a.makeHighModeV(v[ih],w[ih]);
-
-               stopTimer("V high mode");
-           }
-        }
-
-        if (usesMultiRHS) {
-
-            a2a.makeHighModeV(*multiRHSolve,*multiRHSource);
-            for (int ih = 0; ih < Nh_; ih++) {
-                ExtractSlice(v[ih],*multiRHSolve,ih,0);
-            }
-        }
-
-        if (!par().highOutput.empty())
-        {
-           startTimer("V I/O");
-           A2AVectorsIo::write(par().highOutput + "_v", v, par().highMultiFile, vm().getTrajectory());
-           stopTimer("V I/O");
-           startTimer("W I/O");
-           A2AVectorsIo::write(par().highOutput + "_w", w, par().highMultiFile, vm().getTrajectory());
-           stopTimer("W I/O");
-        }
+    if (!par().highOutput.empty())
+    {
+       startTimer("V I/O");
+       A2AVectorsIo::write(par().highOutput + "_v", v, par().highMultiFile, vm().getTrajectory());
+       stopTimer("V I/O");
+       startTimer("W I/O");
+       A2AVectorsIo::write(par().highOutput + "_w", w, par().highMultiFile, vm().getTrajectory());
+       stopTimer("W I/O");
     }
 }
 

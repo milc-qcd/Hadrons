@@ -30,4 +30,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MSolver;
 
-template class Grid::Hadrons::MSolver::TA2AVectorsMILC<STAGIMPL, BaseFermionEigenPack<STAGIMPL>>;
+template class Grid::Hadrons::MSolver::TA2AVectorsMILC<STAGIMPL, BaseFermionEigenPack<STAGIMPL,Complex>>;

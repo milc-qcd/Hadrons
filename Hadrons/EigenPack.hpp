@@ -50,11 +50,12 @@ struct PackRecord
     std::string operatorXml, solverXml;
 };
 
+template <typename Teval = RealD>
 struct VecRecord: Serializable
 {
     GRID_SERIALIZABLE_CLASS_MEMBERS(VecRecord,
                                     unsigned int, index,
-                                    double,       eval);
+                                    Teval,       eval);
     VecRecord(void): index(0), eval(0.) {}
 };
 
@@ -76,7 +77,7 @@ namespace EigenPackIo
     void readElement(T &evec, RealD &eval, const unsigned int index,
                      ScidacReader &binReader, TIo *ioBuf = nullptr)
     {
-        VecRecord vecRecord;
+        VecRecord<RealD> vecRecord;
 
         LOG(Message) << "Reading eigenvector " << index << std::endl;
         if (ioBuf == nullptr)
@@ -140,6 +141,59 @@ namespace EigenPackIo
         }
     }
 
+    template <typename T, typename TIo = T>
+    static void readPack(std::vector<T> &evec, std::vector<ComplexD> &eval,
+                         PackRecord &record, const std::string filename, 
+                         const unsigned int size, bool multiFile, 
+                         GridBase *gridIo = nullptr)
+    {
+        std::unique_ptr<TIo> ioBuf{nullptr};
+        ScidacReader         binReader;
+
+        if (typeHash<T>() != typeHash<TIo>())
+        {
+            if (gridIo == nullptr)
+            {
+                HADRONS_ERROR(Definition, 
+                              "I/O type different from vector type but null I/O grid passed");
+            }
+            ioBuf.reset(new TIo(gridIo));
+        }
+
+        LOG(Warning) << "Assuming MASSLESS eigenvalues (lambda_D) of the Dirac Operator squarred." << std::endl;
+        LOG(Warning) << "Taking the square root of input eval to get lambda_D." << std::endl;
+
+        if (multiFile)
+        {
+            std::string fullFilename;
+
+            for(int k = 0; k < size; ++k) 
+            {
+                RealD evalTemp;
+                fullFilename = filename + "/v" + std::to_string(k) + ".bin";
+                binReader.open(fullFilename);
+                readHeader(record, binReader);
+                readElement(evec[k], evalTemp, k, binReader, ioBuf.get());
+                binReader.close();
+
+                eval[k] = ComplexD(0.0,::sqrt(evalTemp));
+            }
+        }
+        else
+        {
+            RealD evalTemp;
+            binReader.open(filename);
+            readHeader(record, binReader);
+            for(int k = 0; k < size; ++k) 
+            {
+
+                readElement(evec[k], evalTemp, k, binReader, ioBuf.get());
+                eval[k] = ComplexD(0.0,::sqrt(evalTemp));
+            }
+            binReader.close();
+        }
+    }
+
     inline void writeHeader(ScidacWriter &binWriter, PackRecord &record)
     {
         XmlWriter xmlWriter("", "eigenPackPar");
@@ -149,12 +203,12 @@ namespace EigenPackIo
         binWriter.writeLimeObject(1, 1, xmlWriter, "parameters", SCIDAC_FILE_XML);
     }
 
-    template <typename T, typename TIo = T>
-    void writeElement(ScidacWriter &binWriter, T &evec, RealD &eval, 
+    template <typename T, typename TIo = T, typename Teval = RealD>
+    void writeElement(ScidacWriter &binWriter, T &evec, Teval &eval, 
                       const unsigned int index, TIo *ioBuf, 
                       T *testBuf = nullptr)
     {
-        VecRecord vecRecord;
+        VecRecord<Teval> vecRecord;
 
         LOG(Message) << "Writing eigenvector " << index << std::endl;
         vecRecord.eval  = eval;
@@ -173,9 +227,9 @@ namespace EigenPackIo
         }   
     }
     
-    template <typename T, typename TIo = T>
+    template <typename T, typename TIo = T, typename Teval = RealD>
     static void writePack(const std::string filename, std::vector<T> &evec, 
-                          std::vector<RealD> &eval, PackRecord &record, 
+                          std::vector<Teval> &eval, PackRecord &record, 
                           const unsigned int size, bool multiFile, 
                           GridBase *gridIo = nullptr)
     {
@@ -223,21 +277,20 @@ namespace EigenPackIo
     }
 }
 
-template <typename F>
+template <typename F, typename Teval = RealD>
 class BaseEigenPack
 {
 public:
     typedef F Field;
 public:
-    std::vector<RealD> eval;
-    std::vector<F>     evec;
+    std::vector<Teval> &eval;
+    std::vector<F>     &evec;
     PackRecord         record;
 public:
     BaseEigenPack(void)          = default;
-    BaseEigenPack(const size_t size, GridBase *grid)
-    {
-        resize(size, grid);
-    }
+    BaseEigenPack(std::vector<F>& e, std::vector<Teval>& v)
+    :evec(e), eval(v)
+    {}
     virtual ~BaseEigenPack(void) = default;
     void resize(const size_t size, GridBase *grid)
     {
@@ -246,19 +299,19 @@ public:
     }
 };
 
-template <typename F, typename FIo = F>
-class EigenPack: public BaseEigenPack<F>
+template <typename F, typename FIo = F, typename Teval = RealD>
+class EigenPack: public BaseEigenPack<F,Teval>
 {
 public:
     typedef F   Field;
     typedef FIo FieldIo;
+    typedef Teval EvalType;
 public:
     EigenPack(void)          = default;
     virtual ~EigenPack(void) = default;
 
-    EigenPack(const size_t size, GridBase *grid, GridBase *gridIo = nullptr)
-    : BaseEigenPack<F>(size, grid)
-    {
+    EigenPack(std::vector<F>& e, std::vector<Teval>& v, GridBase *gridIo = nullptr)
+    : BaseEigenPack<F,Teval>(e, v), gridIo_(gridIo) {
         if (typeHash<F>() != typeHash<FIo>())
         {
             if (gridIo == nullptr)
@@ -267,9 +320,7 @@ public:
                               "I/O type different from vector type but null I/O grid passed");
             }
         }
-        gridIo_ = gridIo;
     }
-
     virtual void read(const std::string fileStem, const bool multiFile, const int traj = -1)
     {
         EigenPackIo::readPack<F, FIo>(this->evec, this->eval, this->record, 
@@ -303,24 +354,22 @@ protected:
 };
 
 template <typename FineF, typename CoarseF, 
-          typename FineFIo = FineF, typename CoarseFIo = CoarseF>
-class CoarseEigenPack: public EigenPack<FineF, FineFIo>
+          typename FineFIo = FineF, typename CoarseFIo = CoarseF, typename Teval = RealD>
+class CoarseEigenPack: public EigenPack<FineF, FineFIo, Teval>
 {
 public:
     typedef CoarseF   CoarseField;
     typedef CoarseFIo CoarseFieldIo;
 public:      
-    std::vector<CoarseF> evecCoarse;
-    std::vector<RealD>   evalCoarse;
+    std::vector<CoarseF> &evecCoarse;
+    std::vector<Teval>   &evalCoarse;
 public:
     CoarseEigenPack(void)          = default;
     virtual ~CoarseEigenPack(void) = default;
 
-    CoarseEigenPack(const size_t sizeFine, const size_t sizeCoarse, 
-                    GridBase *gridFine, GridBase *gridCoarse,
-                    GridBase *gridFineIo = nullptr, 
-                    GridBase *gridCoarseIo = nullptr)
-    {
+    CoarseEigenPack(std::vector<FineF>& e, std::vector<Teval>& v, std::vector<CoarseF>& ec, std::vector<Teval>& vc, 
+                    GridBase *gridFineIo = nullptr, GridBase *gridCoarseIo = nullptr)
+    : EigenPack<FineF,FineFIo, Teval>(e, v, gridFineIo), evecCoarse(ec), evalCoarse(vc), gridCoarseIo_(gridCoarseIo) {
         if (typeHash<FineF>() != typeHash<FineFIo>())
         {
             if (gridFineIo == nullptr)
@@ -337,22 +386,19 @@ public:
                               "Coarse I/O type different from vector type but null coarse I/O grid passed");
             }
         }
-        this->gridIo_ = gridFineIo;
-        gridCoarseIo_ = gridCoarseIo;
-        resize(sizeFine, sizeCoarse, gridFine, gridCoarse);
     }
 
     void resize(const size_t sizeFine, const size_t sizeCoarse, 
                 GridBase *gridFine, GridBase *gridCoarse)
     {
-        EigenPack<FineF, FineFIo>::resize(sizeFine, gridFine);
+        EigenPack<FineF, FineFIo, Teval>::resize(sizeFine, gridFine);
         evalCoarse.resize(sizeCoarse);
         evecCoarse.resize(sizeCoarse, gridCoarse);
     }
 
     void readFine(const std::string fileStem, const bool multiFile, const int traj = -1)
     {
-        EigenPack<FineF, FineFIo>::read(fileStem + "_fine", multiFile, traj);
+        EigenPack<FineF, FineFIo, Teval>::read(fileStem + "_fine", multiFile, traj);
     }
 
     void readCoarse(const std::string fileStem, const bool multiFile, const int traj = -1)
@@ -372,7 +418,7 @@ public:
 
     void writeFine(const std::string fileStem, const bool multiFile, const int traj = -1)
     {
-        EigenPack<FineF, FineFIo>::write(fileStem + "_fine", multiFile, traj);
+        EigenPack<FineF, FineFIo, Teval>::write(fileStem + "_fine", multiFile, traj);
     }
 
     void writeCoarse(const std::string fileStem, const bool multiFile, const int traj = -1)
@@ -391,13 +437,13 @@ private:
     GridBase *gridCoarseIo_;
 };
 
-template <typename FImpl>
-using BaseFermionEigenPack = BaseEigenPack<typename FImpl::FermionField>;
+template <typename FImpl, typename Teval = RealD>
+using BaseFermionEigenPack = BaseEigenPack<typename FImpl::FermionField, Teval>;
 
-template <typename FImpl, typename FImplIo = FImpl>
-using FermionEigenPack = EigenPack<typename FImpl::FermionField, typename FImplIo::FermionField>;
+template <typename FImpl, typename FImplIo = FImpl, typename Teval = RealD>
+using FermionEigenPack = EigenPack<typename FImpl::FermionField, typename FImplIo::FermionField, Teval>;
 
-template <typename FImpl, int nBasis, typename FImplIo = FImpl>
+template <typename FImpl, int nBasis, typename FImplIo = FImpl, typename Teval = RealD>
 using CoarseFermionEigenPack = CoarseEigenPack<
     typename FImpl::FermionField,
     typename LocalCoherenceLanczos<typename FImpl::SiteSpinor, 
@@ -406,7 +452,7 @@ using CoarseFermionEigenPack = CoarseEigenPack<
     typename FImplIo::FermionField,
     typename LocalCoherenceLanczos<typename FImplIo::SiteSpinor, 
                                    typename FImplIo::SiteComplex, 
-                                   nBasis>::CoarseField>;
+                                   nBasis>::CoarseField, Teval>;
 
 #undef HADRONS_DUMP_EP_METADATA
 

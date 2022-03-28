@@ -53,13 +53,17 @@ public:
     void makeLowModeW(FermionField &wout, const FermionField &evec, const Real &eval);
     void makeLowModeW5D(FermionField &wout_4d, FermionField &wout_5d, const FermionField &evec, const Real &eval);
 
+    void removeLowModeProj(std::vector<FermionField> &wout, const std::vector<FermionField> &evecs, const std::vector<ComplexD> evals);
+    inline void makeLowModeCBeooe(FermionField &out, const FermionField &evec, const Complex eval);
+    void makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, 
+                          const typename std::vector<FermionField>::iterator evec, const Complex eval);
     void makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
-                          const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
-    void makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<ComplexD>::iterator evalOut, 
-                          const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
+                          const typename std::vector<FermionField>::iterator evec, const Complex eval);
+    void makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<Complex>::iterator evalOut, 
+                          const typename std::vector<FermionField>::iterator evec, const Complex eval);
     void makeLowModePairs5D(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator vout5,
                                                 typename std::vector<FermionField>::iterator wout, typename std::vector<FermionField>::iterator wout5,
-                                                const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven = false);
+                                                const typename std::vector<FermionField>::iterator evec, const Complex eval);
 
     void makeHighModeV(FermionField &vout, const FermionField &noise);
     void makeHighModeV5D(FermionField &vout_4d, FermionField &vout_5d, 
@@ -214,60 +218,154 @@ void A2AVectorsSchur<FImpl>::makeLowModeW5D(FermionField &wout_4d,
 }
 
 template <typename FImpl>
-void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
-                                              const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven)
+inline void A2AVectorsSchur<FImpl>::makeLowModeCBeooe(FermionField &out, const FermionField &evec, const Complex eval)
 {
-    std::vector<ComplexD> evals(2);
-    makeLowModePairs(wout,evals.begin(),evec,mass,eval,cbEven);
+    int cb = evec.Checkerboard();
+    int cbNeg = (cb==Even) ? Odd : Even;
 
-    *vout = evals[0]*(*wout);
-    *(vout+1) = evals[1]*(*(wout+1));
-
+    out.Checkerboard() = cbNeg;
+    temp_.Checkerboard() = cbNeg;
+    action_.Meooe(evec, temp_);
+    out = (1.0/eval) * temp_;
 }
+
 template <typename FImpl>
-void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<ComplexD>::iterator evalOut, 
-                                              const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven)
+void A2AVectorsSchur<FImpl>::removeLowModeProj(std::vector<FermionField> &wout, const std::vector<FermionField> &evecs, const std::vector<ComplexD> evals)
 {
+    int cb = evecs[0].Checkerboard();
+    int cbNeg = (cb==Even) ? Odd : Even;
+    
+    FermionField Mevec(fGrid_), Mdagevec(fGrid_), evecNeg(frbGrid_);
+
+    evecNeg.Checkerboard() = cbNeg;
+
+    for (int i=0;i<evecs.size();i++) {
+        ComplexD eval_D = ComplexD(0.0,evals[i].imag());
+        makeLowModeCBeooe(evecNeg,evecs[i],eval_D);
+
+        setCheckerboard(Mevec,evecNeg);
+        setCheckerboard(Mevec,evecs[i]);
+
+        if (cb == Even) {
+            temp_.Checkerboard() = cbNeg;
+            temp_ = -evecNeg;
+            setCheckerboard(Mdagevec,temp_);
+            setCheckerboard(Mdagevec,evecs[i]);
+        } else {
+            temp_.Checkerboard() = cb;
+            temp_ = -evecs[i];
+            setCheckerboard(Mdagevec,temp_);
+            setCheckerboard(Mdagevec,evecNeg);
+        }
+
+        for (auto &w:wout) {
+            auto ip = innerProduct(Mevec,w);
+            w = w - ip*Mevec;
+            ip = innerProduct(Mdagevec,w);
+            w = w - ip*Mdagevec;
+        }
+    }
+    // int cb = evecs[0].Checkerboard();
+    // int cbNeg = (cb==Even) ? Odd : Even;
+    
+    // FermionField rbw(frbGrid_), rbwNeg(frbGrid_);
+
+    // rbw.Checkerboard() = cb;
+    // rbwNeg.Checkerboard() = cbNeg;
+
+    // for (auto &w:wout) {
+    //     pickCheckerboard(cb,rbw,w);
+    //     pickCheckerboard(cbNeg,rbwNeg,w);
+
+    //     // Add up W vector projection onto provided evec checkerboard
+    //     temp_ = Zero();
+    //     temp_.Checkerboard() = cb;
+    //     for (int i=0;i<evecs.size();i++) {
+    //       const FermionField& e = evecs[i];
+    //       axpy(temp_,TensorRemove(innerProduct(e,rbw)),e,temp_);
+    //     }
+    //     // Subtract projected component from original. (factor of 2 compensates for normalization of checkerboard to 1/2)
+    //     axpy(rbw,-2.0,temp_,rbw);
+    //     setCheckerboard(w,rbw);
+
+        
+    //     action_.Meooe(rbwNeg, rbw); // Move cbNeg component of W to cb
+
+    //     // Add up cbNeg checkerboard of W vector projection
+    //     temp_ = Zero();
+    //     for (int i=0;i<evecs.size();i++) {
+    //         RealD eval_Dinv = -1.0/pow(evals[i].imag(),2); // using Meooe twice brings two factors of 1/eval_D
+    //         const FermionField& e = evecs[i];
+    //         axpy(temp_,eval_Dinv*TensorRemove(innerProduct(e,rbw)),e,temp_);
+    //     }
+    //     rbw.Checkerboard() = cbNeg;
+    //     action_.Meooe(temp_, rbw); // Move projection back to cbNeg checkerboard
+    //     axpy(rbwNeg,-2.0,rbw,rbwNeg); // Subtract projected component from original. 
+    //     setCheckerboard(w,rbwNeg);
+    // }
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, 
+                                              const typename std::vector<FermionField>::iterator evec, const Complex eval)
+{
+    double cbEven = (*evec).Checkerboard() == Even;
     int cbParity = cbEven ? Even : Odd;
     int cbParityNeg = !cbEven ? Even : Odd;
 
-    //Expects eigenvalues of massive Dslash squarred
-    ComplexD eval_D = ComplexD(0,sqrt(eval-pow(mass,2)));
-    ComplexD norm = ComplexD(1.0/sqrt(2.0));
-    // Checkerboard evecs each have norm 1 -> divide by sqrt(2)
-    src_rb_ = norm*(*evec);
-    src_rb_.Checkerboard() = cbParity;
-    pickCheckerboard(cbParityNeg, sol_rb1_, *vecOut);
-    
-    action_.Meooe(src_rb_, temp_);
-    sol_rb1_ = (1.0/eval_D) * temp_;
+
+    //Expects eigenvalues of M
+    ComplexD eval_D = ComplexD(0.0,eval.imag());
+
+    makeLowModeCBeooe(sol_rb1_,evec,eval_D);
 
     setCheckerboard(*vecOut, sol_rb1_);
-    setCheckerboard(*vecOut, src_rb_);
+    setCheckerboard(*vecOut, *evec);
 
     if (cbEven){
         pickCheckerboard(cbParityNeg, temp_, *(vecOut+1));
         temp_ = -1.0 * sol_rb1_;
 
         setCheckerboard(*(vecOut+1), temp_);
-        setCheckerboard(*(vecOut+1), src_rb_);
+        setCheckerboard(*(vecOut+1), *evec);
     } else {
         pickCheckerboard(cbParity, temp_, *(vecOut+1));
-        temp_ = -1.0 * src_rb_;
+        temp_ = -1.0 * (*evec);
 
         setCheckerboard(*(vecOut+1), temp_);
         setCheckerboard(*(vecOut+1), sol_rb1_);
     }
-    *evalOut = (1.0/(mass+eval_D));
-    *(evalOut+1) = (1.0/(mass-eval_D));
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vecOut, typename std::vector<Complex>::iterator evalOut, 
+                                              const typename std::vector<FermionField>::iterator evec, const Complex eval)
+{
+    makeLowModePairs(vecOut,evec,eval);
+
+    *evalOut = 1.0/eval;
+    *(evalOut+1) = 1.0/conjugate(eval);
+}
+
+template <typename FImpl>
+void A2AVectorsSchur<FImpl>::makeLowModePairs(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator wout, 
+                                              const typename std::vector<FermionField>::iterator evec, const Complex eval)
+{
+    std::vector<ComplexD> evals(2);
+
+    makeLowModePairs(wout,evals.begin(),evec,eval);
+
+    *vout = evals[0]*(*wout);
+    *(vout+1) = evals[1]*(*(wout+1));
+
 }
 
 template <typename FImpl>
 void A2AVectorsSchur<FImpl>::makeLowModePairs5D(typename std::vector<FermionField>::iterator vout, typename std::vector<FermionField>::iterator vout5,
                                                 typename std::vector<FermionField>::iterator wout, typename std::vector<FermionField>::iterator wout5,
-                                                const typename std::vector<FermionField>::iterator evec, const Real mass, const Real eval, bool cbEven)
+                                                const typename std::vector<FermionField>::iterator evec, const Complex eval)
 {
-    makeLowModePairs(vout5,wout5, evec, mass, eval, cbEven);
+    makeLowModePairs(vout5,wout5, evec, eval);
     action_.ExportPhysicalFermionSolution(*vout5, *vout);
     action_.ExportPhysicalFermionSolution(*(vout5+1), *(vout+1));
     action_.DminusDag(temp5_, *wout5);
