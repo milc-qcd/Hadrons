@@ -61,6 +61,10 @@ public:
     GridCartesian                       *getGrid(void) const;
     // generate noise
     void generateNoise(GridParallelRNG &rng);
+    template <typename T = FImpl>
+    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
+    template <typename T = FImpl>
+    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
 private:
     template <typename T = FImpl>
     IfNotStag<T,void> setFerm(const int i);
@@ -74,10 +78,6 @@ private:
 protected:
     FermionField &    getFerm(void);
     int               getNd(void) const;
-    template <typename T = FImpl>
-    typename std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
-    template <typename T = FImpl>
-    typename std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T),int>::type getNsc(void) const;
     PropagatorField & getProp(void);
     template <typename T = FImpl>
     IfNotStag<T,void> setPropagator(LatticeComplex* eta);

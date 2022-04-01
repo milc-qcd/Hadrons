@@ -1,10 +1,9 @@
 /*
- * LoadCoarseEigenPackMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * ModifyEigenPackMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,13 +23,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MIO/LoadCoarseEigenPackMILC.hpp>
+#include <Hadrons/Modules/MUtilities/ModifyEigenPackMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MIO;
+using namespace MUtilities;
 
-template class Grid::Hadrons::MIO::TLoadCoarseEigenPackMILC<CoarseFermionEigenPack<STAGIMPL,HADRONS_DEFAULT_LANCZOS_NBASIS>>;
-#ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MIO::TLoadCoarseEigenPackMILC<CoarseFermionEigenPack<STAGIMPL,HADRONS_DEFAULT_LANCZOS_NBASIS, STAGIMPLF>>;
-#endif
+template class Grid::Hadrons::MUtilities::TModifyEigenPackMILC<BaseFermionEigenPack<STAGIMPL>>;

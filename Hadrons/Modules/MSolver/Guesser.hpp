@@ -51,8 +51,18 @@ makeGuesser(const std::string epackName)
     {
         guesserPt.reset(new ZeroGuesser<FermionField>());
     }
-    else
+    else if (env().hasObject(epackName + "_evec") && env().hasObject(epackName + "_eval"))
     {
+        auto &evec = envGet(std::vector<FermionField>, epackName + "_evec");
+        auto &eval = envGet(std::vector<RealD>, epackName + "_eval");
+        
+        LOG(Message) << "using low-mode deflation with eigenvectors '"
+                     << epackName << "_evec' (" 
+                     << evec.size() << " modes)" << std::endl;
+
+        guesserPt.reset(new FineGuesser(evec, eval));
+
+    } else {
         try
         {
             auto &epack = envGetDerived(EPack, CoarseEPack, epackName);

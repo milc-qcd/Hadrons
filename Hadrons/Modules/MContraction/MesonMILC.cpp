@@ -1,5 +1,5 @@
 /*
- * A2AVectorsMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * MesonMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -24,10 +24,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MSolver/A2AVectorsMILC.hpp>
+#include <Hadrons/Modules/MContraction/MesonMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MSolver;
+using namespace MContraction;
 
-template class Grid::Hadrons::MSolver::TA2AVectorsMILC<STAGIMPL>;
+template class Grid::Hadrons::MContraction::TMesonMILC<STAGIMPL>;
+

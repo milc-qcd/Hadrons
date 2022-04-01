@@ -1,5 +1,5 @@
 /*
- * LoadEigenPack.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LapEvec.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,17 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MIO/LoadEigenPackMILC.hpp>
+
+#include <Hadrons/Modules/MDistil/LapEvec.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MIO;
+using namespace MDistil;
 
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL,STAGIMPL,Complex>, GIMPL>;
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL>, GIMPL>;
-#ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF,STAGIMPLF,Complex>, GIMPLF>;
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF,Complex>, GIMPL>;
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPLF>, GIMPLF>;
-template class Grid::Hadrons::MIO::TLoadEigenPackMILC<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>;
-#endif
+template class Grid::Hadrons::MDistil::TLapEvec<GIMPL>;

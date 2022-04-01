@@ -91,7 +91,7 @@ std::vector<std::string> TTimeDilutedSpinColorDiagonal<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TTimeDilutedSpinColorDiagonal<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName(), getName()+"_vec", getName()+"_shift"};
     
     return out;
 }
@@ -103,17 +103,40 @@ void TTimeDilutedSpinColorDiagonal<FImpl>::setup(void)
     envCreateDerived(SpinColorDiagonalNoise<FImpl>, 
                      TimeDilutedNoise<FImpl>,
                      getName(), 1, envGetGrid(FermionField), par().nsrc);
+
+    envCreate(std::vector<FermionField>, getName() + "_vec", 1, 0, envGetGrid(FermionField));
+
+    envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
 void TTimeDilutedSpinColorDiagonal<FImpl>::execute(void)
 {
-    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, getName());
-    auto nt    = noise.getGrid()->GlobalDimensions()[Tp];
 
+    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, getName());
     LOG(Message) << "Generating time-diluted, spin-color diagonal noise" << std::endl;
     noise.generateNoise(rng4d());
+
+    auto &noisevec = envGet(std::vector<FermionField>,getName()+"_vec");
+
+    noisevec.resize(noise.fermSize(),envGetGrid(FermionField));
+    for (int i=0;i<noisevec.size();i++) {
+        noisevec[i] = noise.getFerm(i);
+    }
+
+    auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
+
+    int nt = envGetGrid(FermionField)->GlobalDimensions()[Tp];
+    int ti = -1;
+
+    time_shift.resize(noise.fermSize(),0);
+
+    for (int i = 0;i<time_shift.size();i++) {
+        if (i % noise.getNsc() == 0)
+            ti++;
+        time_shift[i] = ti%nt;
+    }
 }
 
 END_MODULE_NAMESPACE

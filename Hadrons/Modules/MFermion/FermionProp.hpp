@@ -164,10 +164,6 @@ void TStagFermionProp<FImpl>::solvePropagator(FermionField &prop,
     envGetTmp(FermionField, src);
     envGetTmp(FermionField, tmp);
 
-    LOG(Message) << "Inverting using solver '" << par().solver
-    << "' on source '" << par().source << "'" << std::endl;
-
-    LOG(Message) << "Import source" << std::endl;
     if (!env().isObject5d(par().source))
     {
         if (Ls_ == 1) {
@@ -187,12 +183,10 @@ void TStagFermionProp<FImpl>::solvePropagator(FermionField &prop,
             src = source;
         }
     }
-    LOG(Message) << "Solve" << std::endl;
-    //sol = zero;
+
     sol = Zero();
     solver(prop, src);
-    LOG(Message) << "Export solution" << std::endl;
-    //std::cout<< "color " << c << " sol= " << sol << std::endl;
+
     // create 4D propagators from 5D one if necessary
     if (Ls_ > 1)
     {
@@ -203,6 +197,9 @@ void TStagFermionProp<FImpl>::solvePropagator(FermionField &prop,
 template <typename FImpl>
 void TStagFermionProp<FImpl>::execute(void)
 {
+    LOG(Message) << "Inverting using solver '" << par().solver
+    << "' on source '" << par().source << "'" << std::endl;
+
     LOG(Message) << "Computing quark propagator '" << getName() << "'"
     << std::endl;
     

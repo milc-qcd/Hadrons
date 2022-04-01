@@ -1,5 +1,5 @@
 /*
- * A2AVectorsMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LMAProp.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -24,10 +24,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MSolver/A2AVectorsMILC.hpp>
+#include <Hadrons/Modules/MFermion/LMAProp.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MSolver;
+using namespace MFermion;
 
-template class Grid::Hadrons::MSolver::TA2AVectorsMILC<STAGIMPL>;
+template class Grid::Hadrons::MFermion::TLMAProp<STAGIMPL>;

@@ -94,13 +94,8 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::setup(void)
     {
         gridIo = getGrid<FieldIo>(par().redBlack, Ls);
     }
-    envCreate(std::vector<Field>,getName() + "_evec", Ls, par().lanczosParams.Nm, envGetRbGrid(Field, Ls));
-    envCreate(std::vector<RealD>,getName() + "_eval", Ls, par().lanczosParams.Nm);
-
-    auto &evecOut = envGet(std::vector<Field>,getName() + "_evec");
-    auto &evalOut = envGet(std::vector<RealD>,getName() + "_eval");
-
-    envCreateDerived(BasePack, Pack, getName(), Ls, evecOut, evalOut, gridIo);
+    envCreateDerived(BasePack, Pack, getName(), Ls, 
+                     par().lanczosParams.Nm, grid, gridIo);
 
     envTmp(Chebyshev<Field>, "cheby", Ls, par().lanczosParams.Cheby);
     envGetTmp(Chebyshev<Field>, cheby);

@@ -39,7 +39,6 @@ public:
     typedef std::function<void(FermionField &, 
                                const FermionField &)>         SolverFn;
 public:
-    Solver() = default;
     Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn) {}
 
     void operator()(FermionField &sol, const FermionField &src)

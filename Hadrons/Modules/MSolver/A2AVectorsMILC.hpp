@@ -34,7 +34,6 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Solver.hpp>
-#include <Hadrons/EigenPack.hpp>
 #include <Hadrons/A2AVectors.hpp>
 #include <Hadrons/DilutedNoise.hpp>
 
@@ -51,13 +50,13 @@ public:
   GRID_SERIALIZABLE_CLASS_MEMBERS(A2AVectorsMILCPar,
                                   std::string, noise,
                                   std::string, action,
-                                  std::string, eigenPack,
+                                  std::string, lowModes,
                                   std::string, solver,
                                   std::string, highOutput,
                                   bool,        highMultiFile);
 };
 
-template <typename FImpl, typename Pack>
+template <typename FImpl>
 class TA2AVectorsMILC : public Module<A2AVectorsMILCPar>
 {
 public:
@@ -80,40 +79,38 @@ public:
     // execute
     virtual void execute(void);
 private:
-    std::string  solverName_;
     unsigned int Nh_{0};
-    bool hasEpack_{false};
 };
 
 MODULE_REGISTER_TMP(A2AVectorsMILC, 
-    ARG(TA2AVectorsMILC<STAGIMPL, BaseFermionEigenPack<STAGIMPL,Complex>>), MSolver);
+    ARG(TA2AVectorsMILC<STAGIMPL>), MSolver);
 
 /******************************************************************************
  *                       TA2AVectorsMILC implementation                           *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl, typename Pack>
-TA2AVectorsMILC<FImpl, Pack>::TA2AVectorsMILC(const std::string name)
+template <typename FImpl>
+TA2AVectorsMILC<FImpl>::TA2AVectorsMILC(const std::string name)
 : Module<A2AVectorsMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl, typename Pack>
-std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getInput(void)
+template <typename FImpl>
+std::vector<std::string> TA2AVectorsMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in {par().action,par().solver, par().noise};
 
-    if (!par().eigenPack.empty()) {
-        in.push_back(par().eigenPack);
-        in.push_back(par().eigenPack+"_evec");
-        in.push_back(par().eigenPack+"_eval");
+    if (!par().lowModes.empty()) {
+        in.push_back(par().lowModes);
+        in.push_back(par().lowModes+"_evec");
+        in.push_back(par().lowModes+"_evalM");
     }
     
     return in;
 }
 
-template <typename FImpl, typename Pack>
-std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getOutput(void)
+template <typename FImpl>
+std::vector<std::string> TA2AVectorsMILC<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {};
 
@@ -128,8 +125,8 @@ std::vector<std::string> TA2AVectorsMILC<FImpl, Pack>::getOutput(void)
 /******************************************************************************
  *              TA2AVectorsMILC setup                                         *
  ******************************************************************************/
-template <typename FImpl, typename Pack>
-void TA2AVectorsMILC<FImpl, Pack>::setup(void)
+template <typename FImpl>
+void TA2AVectorsMILC<FImpl>::setup(void)
 {
     auto        &action     = envGet(FMat, par().action);
     auto        &solver     = envGet(Solver, par().solver);
@@ -137,7 +134,6 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
 
     envTmp(A2A, "a2a", 1, action, solver);
 
-    hasEpack_ = !par().eigenPack.empty();
 
     if (Ls > 1) {
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
@@ -157,18 +153,20 @@ void TA2AVectorsMILC<FImpl, Pack>::setup(void)
 /******************************************************************************
  *              TA2AVectorsMILC execution                                     *
  ******************************************************************************/
-template <typename FImpl, typename Pack>
-void TA2AVectorsMILC<FImpl, Pack>::execute(void)
+template <typename FImpl>
+void TA2AVectorsMILC<FImpl>::execute(void)
 {
     auto        &action    = envGet(FMat, par().action);
     auto        &solver    = envGet(Solver, par().solver);
 
     envGetTmp(A2A, a2a);
 
-    if (hasEpack_)
+    bool hasLow = !par().lowModes.empty();
+
+    if (hasLow)
     {
        LOG(Message) << "Computing all-to-all vectors "
-                    << " using eigenpack '" << par().eigenPack << "' (low modes) and noise '"
+                    << " using lowModes '" << par().lowModes << "' (low modes) and noise '"
                     << par().noise << "' (" << Nh_ 
                     << " noise vectors)" << std::endl;
     } else {
@@ -188,18 +186,19 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
     // Normalization for the noise sources
     RealD norm = 1.0/::sqrt(Real(nsrc));
 
-    std::cout << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
+    LOG(Message) << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
 
     startTimer("W high mode");
     for (int ih = 0; ih < Nh_; ih++) {
         w[ih] = noise.getFerm(ih);
         w[ih] = norm*w[ih];
     }
-    if (hasEpack_) {
+    if (hasLow) {
         LOG(Message) << "Projecting low contribution from stochastic high mode sources" << std::endl;
 
-        auto &epack = envGet(Pack, par().eigenPack);
-        a2a.removeLowModeProj(w,epack.evec,epack.eval);
+        auto &evec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+        auto &eval = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
+        a2a.removeLowModeProj(w,evec,eval);
     }
     stopTimer("W high mode");
 
@@ -207,7 +206,7 @@ void TA2AVectorsMILC<FImpl, Pack>::execute(void)
     {
        startTimer("V high mode");
        LOG(Message) << "V vector (solve) i = " << ih
-                    << " (" << ((hasEpack_) ? "high " : "") 
+                    << " (" << ((hasLow) ? "high " : "") 
                     << "stochastic mode)" << std::endl;
 
        a2a.makeHighModeV(v[ih],w[ih]);

@@ -177,7 +177,7 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getInput(void)
         if (!par().action.empty())
            in.push_back(par().action);
        in.push_back(par().lowModes+"_evec");
-       in.push_back(par().lowModes+"_eval");
+       in.push_back(par().lowModes+"_evalM");
     }
 
     return in;
@@ -270,9 +270,9 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
 
     if (hasLowModes)
     {
-        auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
-        N_i += (isCheckerBoarded?2:1)*lowModeVecs.size();
-        N_j += (isCheckerBoarded?2:1)*lowModeVecs.size();
+        auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+        N_i += (isCheckerBoarded?2:1)*lowModeVec.size();
+        N_j += (isCheckerBoarded?2:1)*lowModeVec.size();
     }
     int ngamma     = gamma_.size();
     int nmom       = mom_.size();
@@ -368,28 +368,28 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
     if(hasLowModes) {
         if (isCheckerBoarded) {
             auto &action      = envGet(FMat, par().action);
-            auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
-            auto &lowModeVals = envGet(std::vector<ComplexD>, par().lowModes+"_eval");
+            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
 
-            std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModeVecs, &lowModeVals](int index)
+            std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModeVec, &lowModeVal](int index)
             {
-                ComplexD eval_D = ComplexD(0.0,lowModeVals[index].imag());
-                int cb = lowModeVecs[index].Checkerboard();
+                ComplexD eval_D = ComplexD(0.0,lowModeVal[index].imag());
+                int cb = lowModeVec[index].Checkerboard();
                 int cbNeg = (cb==Even) ? Odd : Even;
 
-                FermionField temp(lowModeVecs[index].Grid());
+                FermionField temp(lowModeVec[index].Grid());
                 temp.Checkerboard() = cbNeg;
-                action.Meooe(lowModeVecs[index], temp);
-                lowModeVecs[index].Checkerboard() = cbNeg;
-                lowModeVecs[index] = (1.0/eval_D) * temp;
+                action.Meooe(lowModeVec[index], temp);
+                lowModeVec[index].Checkerboard() = cbNeg;
+                lowModeVec[index] = (1.0/eval_D) * temp;
             };
 
-            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVecs, lowModeVals, &swapEvecCheckerFn);
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal, &swapEvecCheckerFn);
         } else{
-            auto &lowModeVecs = envGet(std::vector<FermionField>, par().lowModes+"_evec");
-            auto &lowModeVals = envGet(std::vector<ComplexD>, par().lowModes+"_eval");
+            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
 
-            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVecs, lowModeVals);
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal);
 
         }
     } else {
