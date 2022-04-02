@@ -154,32 +154,35 @@ void TLMAProp<FImpl>::execute(void)
 
     evecNeg.Checkerboard() = cbNeg;
 
-    for (int i=0;i<source.size();i++) {
-        const FermionField &temp = source[i];
+    for (auto &f:ferm) {
+        f = Zero();
+    }
 
-        ferm[i] = Zero();
-        for (int j=0;j<evecs.size();j++) {
-            ComplexD eval_D = ComplexD(0.0,evals[j].imag());
+    for (int j=0;j<evecs.size();j++) {
+        ComplexD eval_D = ComplexD(0.0,evals[j].imag());
 
-            evecNeg.Checkerboard() = cbNeg;
+        evecNeg.Checkerboard() = cbNeg;
+        tempRb.Checkerboard() = cbNeg;
+        action.Meooe(evecs[j], tempRb);
+        evecNeg = (1.0/eval_D) * tempRb;
+
+        setCheckerboard(Mevec,evecNeg);
+        setCheckerboard(Mevec,evecs[j]);
+
+        if (cb == Even) {
             tempRb.Checkerboard() = cbNeg;
-            action.Meooe(evecs[j], tempRb);
-            evecNeg = (1.0/eval_D) * tempRb;
+            tempRb = -evecNeg;
+            setCheckerboard(Mdagevec,tempRb);
+            setCheckerboard(Mdagevec,evecs[j]);
+        } else {
+            tempRb.Checkerboard() = cb;
+            tempRb = -evecs[j];
+            setCheckerboard(Mdagevec,tempRb);
+            setCheckerboard(Mdagevec,evecNeg);
+        }
 
-            setCheckerboard(Mevec,evecNeg);
-            setCheckerboard(Mevec,evecs[j]);
-
-            if (cb == Even) {
-                tempRb.Checkerboard() = cbNeg;
-                tempRb = -evecNeg;
-                setCheckerboard(Mdagevec,tempRb);
-                setCheckerboard(Mdagevec,evecs[j]);
-            } else {
-                tempRb.Checkerboard() = cb;
-                tempRb = -evecs[j];
-                setCheckerboard(Mdagevec,tempRb);
-                setCheckerboard(Mdagevec,evecNeg);
-            }
+        for (int i=0;i<source.size();i++) {
+            const FermionField &temp = source[i];
 
             auto ip = innerProduct(Mevec,temp)/evals[j];
             ferm[i] += ip*Mevec;
