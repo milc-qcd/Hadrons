@@ -49,6 +49,7 @@ class FermionPropPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(FermionPropPar,
                                     std::string, source,
+                                    std::string, gammas,
                                     std::string, solver);
 };
 
@@ -93,6 +94,10 @@ template <typename FImpl>
 std::vector<std::string> TStagFermionProp<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().source, par().solver};
+
+    if (!par().gammas.empty()) {
+        in.push_back(par().gammas);
+    }
     
     return in;
 }

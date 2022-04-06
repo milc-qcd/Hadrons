@@ -120,22 +120,21 @@ void TTimeDilutedSpinColorDiagonal<FImpl>::execute(void)
 
     auto &noisevec = envGet(std::vector<FermionField>,getName()+"_vec");
 
-    noisevec.resize(noise.fermSize(),envGetGrid(FermionField));
-    for (int i=0;i<noisevec.size();i++) {
+    int nferm = noise.fermSize();
+    int nsc   = noise.getNsc();
+    int nt    = envGetGrid(FermionField)->GlobalDimensions()[Tp];
+
+    noisevec.resize(nferm,envGetGrid(FermionField));
+    for (int i=0;i<nferm;i++) {
         noisevec[i] = noise.getFerm(i);
     }
 
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
 
-    int nt = envGetGrid(FermionField)->GlobalDimensions()[Tp];
-    int ti = -1;
-
-    time_shift.resize(noise.fermSize(),0);
+    time_shift.resize(nferm,0);
 
     for (int i = 0;i<time_shift.size();i++) {
-        if (i % noise.getNsc() == 0)
-            ti++;
-        time_shift[i] = ti%nt;
+        time_shift[i] = (i/nsc)%nt;
     }
 }
 

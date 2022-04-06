@@ -165,7 +165,7 @@ SpinColorDiagonalNoise<FImpl>::SpinColorDiagonalNoise(GridCartesian *g,
                                                       const int nNoise)
 : SpinColorDiagonalNoise(g)
 {
-    resize(nNoise);
+    resize(this->getNsc()*nNoise);
 }
 
 template <typename FImpl>
@@ -302,7 +302,7 @@ SpinColorDiagonalNoise<FImpl>::getNsc(void) const
 template <typename FImpl>
 void SpinColorDiagonalNoise<FImpl>::resize(const int nNoise)
 {
-    noise_.resize(this->getNsc()*nNoise, grid_);
+    noise_.resize(nNoise, grid_);
 }
 
 template <typename FImpl>

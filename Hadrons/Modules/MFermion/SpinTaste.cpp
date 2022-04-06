@@ -1,9 +1,10 @@
 /*
- * GaugeProp.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SpinTaste.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,11 +24,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MFermion/GaugeProp.hpp>
+#include <Hadrons/Modules/MFermion/SpinTaste.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MFermion;
 
-template class Grid::Hadrons::MFermion::TGaugeProp<FIMPL>;
-template class Grid::Hadrons::MFermion::TGaugeProp<ZFIMPL>;
+template class Grid::Hadrons::MFermion::TSpinTaste<STAGIMPL>;
+
