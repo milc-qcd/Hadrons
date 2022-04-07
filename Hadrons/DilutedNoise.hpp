@@ -317,6 +317,8 @@ void SpinColorDiagonalNoise<FImpl>::generateNoise(GridParallelRNG &rng)
     Complex        shift(1., 1.);
     LatticeComplex eta(grid_);
 
+    eta = Zero();
+    
     for (int n = 0; n < noise_.size(); ++n)
     {
         bernoulli(rng, eta);

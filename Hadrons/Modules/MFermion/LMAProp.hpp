@@ -94,7 +94,7 @@ std::vector<std::string> TLMAProp<FImpl>::getInput(void)
     std::vector<std::string> in {par().action, par().source};
 
     if (!par().lowModes.empty()) {
-        in.push_back(par().lowModes+"_evec");
+        in.push_back(par().lowModes);
         in.push_back(par().lowModes+"_evalM");
     }
     
@@ -193,7 +193,7 @@ void TLMAProp<FImpl>::execute(void)
 
     auto &source  = envGet(std::vector<FermionField>, par().source);
     auto &evals   = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
-    auto &evecs   = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+    auto &evecs   = envGet(std::vector<FermionField>, par().lowModes);
 
     int cb = evecs[0].Checkerboard();
     int cbNeg = (cb==Even) ? Odd : Even;

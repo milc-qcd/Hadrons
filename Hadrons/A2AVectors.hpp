@@ -223,6 +223,7 @@ inline void A2AVectorsSchur<FImpl>::makeLowModeCBeooe(FermionField &out, const F
     int cb = evec.Checkerboard();
     int cbNeg = (cb==Even) ? Odd : Even;
 
+    temp_ = Zero();
     out.Checkerboard() = cbNeg;
     temp_.Checkerboard() = cbNeg;
     action_.Meooe(evec, temp_);

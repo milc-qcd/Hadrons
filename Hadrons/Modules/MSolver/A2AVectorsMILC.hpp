@@ -102,7 +102,6 @@ std::vector<std::string> TA2AVectorsMILC<FImpl>::getInput(void)
 
     if (!par().lowModes.empty()) {
         in.push_back(par().lowModes);
-        in.push_back(par().lowModes+"_evec");
         in.push_back(par().lowModes+"_evalM");
     }
     
@@ -148,6 +147,15 @@ void TA2AVectorsMILC<FImpl>::setup(void)
               Nh_, envGetGrid(FermionField));
     envCreate(std::vector<FermionField>, getName() + "_w", 1, 
               Nh_, envGetGrid(FermionField));
+
+    auto &w     = envGet(std::vector<FermionField>, getName() + "_w");
+    for (auto & vec: w) {
+        vec = Zero();
+    }
+    auto &v     = envGet(std::vector<FermionField>, getName() + "_v");
+    for (auto & vec: v) {
+        vec = Zero();
+    }
 }
 
 /******************************************************************************
@@ -196,7 +204,7 @@ void TA2AVectorsMILC<FImpl>::execute(void)
     if (hasLow) {
         LOG(Message) << "Projecting low contribution from stochastic high mode sources" << std::endl;
 
-        auto &evec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+        auto &evec = envGet(std::vector<FermionField>, par().lowModes);
         auto &eval = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
         a2a.removeLowModeProj(w,evec,eval);
     }

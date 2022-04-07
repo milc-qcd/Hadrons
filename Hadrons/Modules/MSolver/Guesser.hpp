@@ -51,7 +51,7 @@ makeGuesser(const std::string epackName)
     {
         guesserPt.reset(new ZeroGuesser<FermionField>());
     }
-    else if (env().hasObject(epackName + "_evec") && env().hasObject(epackName + "_eval"))
+    else if (envHasType(std::vector<FermionField>,epackName) && env().hasObject(epackName + "_eval"))
     {
         auto &evec = envGet(std::vector<FermionField>, epackName + "_evec");
         auto &eval = envGet(std::vector<RealD>, epackName + "_eval");

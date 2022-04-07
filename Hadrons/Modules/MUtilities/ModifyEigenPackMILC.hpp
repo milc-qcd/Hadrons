@@ -98,7 +98,7 @@ std::vector<std::string> TModifyEigenPackMILC<Pack>::getInput(void)
 template <typename Pack>
 std::vector<std::string> TModifyEigenPackMILC<Pack>::getOutput(void)
 {
-    std::vector<std::string> out = {getName() + "_evec", getName() + "_eval", getName() + "_evalM"};
+    std::vector<std::string> out = {getName(), getName() + "_eval", getName() + "_evalM"};
     
     return out;
 }
@@ -111,7 +111,7 @@ void TModifyEigenPackMILC<Pack>::setup(void)
 
     auto &epack = envGet(BasePack, par().eigenPack);
 
-    envCreate(std::vector<Field>,getName() + "_evec", Ls, 0, envGetRbGrid(Field, Ls));
+    envCreate(std::vector<Field>,getName(), Ls, 0, envGetRbGrid(Field, Ls));
     envCreate(std::vector<RealD>,getName() + "_eval", Ls, 0);
     envCreate(std::vector<ComplexD>,getName() + "_evalM", Ls, 0);
 }
@@ -122,7 +122,7 @@ void TModifyEigenPackMILC<Pack>::execute(void)
 {
     auto &epack = envGet(BasePack, par().eigenPack);
 
-    auto &evec = envGet(std::vector<Field>,getName() + "_evec");
+    auto &evec = envGet(std::vector<Field>,getName());
     auto &eval = envGet(std::vector<RealD>,getName() + "_eval");
     auto &evalM = envGet(std::vector<ComplexD>,getName() + "_evalM");
 

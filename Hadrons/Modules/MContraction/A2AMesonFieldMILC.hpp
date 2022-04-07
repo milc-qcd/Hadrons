@@ -176,7 +176,7 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getInput(void)
     if (!par().lowModes.empty()) {
         if (!par().action.empty())
            in.push_back(par().action);
-       in.push_back(par().lowModes+"_evec");
+       in.push_back(par().lowModes);
        in.push_back(par().lowModes+"_evalM");
     }
 
@@ -270,7 +270,7 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
 
     if (hasLowModes)
     {
-        auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+        auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
         N_i += (isCheckerBoarded?2:1)*lowModeVec.size();
         N_j += (isCheckerBoarded?2:1)*lowModeVec.size();
     }
@@ -368,7 +368,7 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
     if(hasLowModes) {
         if (isCheckerBoarded) {
             auto &action      = envGet(FMat, par().action);
-            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
             auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
 
             std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModeVec, &lowModeVal](int index)
@@ -386,7 +386,7 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
 
             computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal, &swapEvecCheckerFn);
         } else{
-            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes+"_evec");
+            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
             auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
 
             computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal);

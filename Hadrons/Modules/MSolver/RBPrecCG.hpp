@@ -104,11 +104,9 @@ std::vector<std::string> TRBPrecCG<FImpl, nBasis>::getReference(void)
     
     if (!par().eigenPack.empty())
     {
-        if (env().hasObject(par().eigenPack + "_evec") && env().hasObject(par().eigenPack + "_eval")) {
-            ref.push_back(par().eigenPack+"_evec");
+        ref.push_back(par().eigenPack);
+        if (env().hasObject(par().eigenPack + "_eval")) {
             ref.push_back(par().eigenPack+"_eval");
-        } else {
-            ref.push_back(par().eigenPack);
         }
     }
 
