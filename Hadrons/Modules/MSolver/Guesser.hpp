@@ -53,7 +53,7 @@ makeGuesser(const std::string epackName)
     }
     else if (envHasType(std::vector<FermionField>,epackName) && env().hasObject(epackName + "_eval"))
     {
-        auto &evec = envGet(std::vector<FermionField>, epackName + "_evec");
+        auto &evec = envGet(std::vector<FermionField>, epackName);
         auto &eval = envGet(std::vector<RealD>, epackName + "_eval");
         
         LOG(Message) << "using low-mode deflation with eigenvectors '"
