@@ -230,6 +230,7 @@ IfStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex * eta
     int nc  = FImpl::Dimension;
     std::div_t divs;
 
+    prop_ = Zero();
     for (int i=0; i<this->getNsc();i++) {
         pokeColour(prop_,eta[i],i,i);
     }
@@ -242,6 +243,8 @@ IfNotStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex * 
     int nc  = FImpl::Dimension;
     std::div_t divs;
     divs = std::div(nc, this->getNsc());
+
+    prop_ = Zero();
     for (int i=0; i<divs.quot; i++) {
         auto propTmp = peekSpin(prop_,i,i);
         for (int j=0; j<divs.rem; j++) {
@@ -484,8 +487,7 @@ void SparseNoise<FImpl>::setProp(const int i)
             subdivs = std::div(sparseIndex,nSparseT_);
 
         for (int j=0;j<nsc;j++) {
-            auto temp = where(coor_ == ((uint32_t) subdivs.rem), eta[j], 0.*eta[j]);
-            eta[j] = temp;
+            eta[j] = where(coor_ == ((uint32_t) subdivs.rem), eta[j], 0.*eta[j]);
         }
         sparseIndex = subdivs.quot;
     }

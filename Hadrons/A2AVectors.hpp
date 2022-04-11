@@ -233,77 +233,83 @@ inline void A2AVectorsSchur<FImpl>::makeLowModeCBeooe(FermionField &out, const F
 template <typename FImpl>
 void A2AVectorsSchur<FImpl>::removeLowModeProj(std::vector<FermionField> &wout, const std::vector<FermionField> &evecs, const std::vector<ComplexD> evals)
 {
+    // Alternate form
     int cb = evecs[0].Checkerboard();
     int cbNeg = (cb==Even) ? Odd : Even;
     
-    FermionField Mevec(fGrid_), Mdagevec(fGrid_), evecNeg(frbGrid_);
+    FermionField rbw(frbGrid_), rbwNeg(frbGrid_);
 
-    evecNeg.Checkerboard() = cbNeg;
+    rbw = Zero();
+    rbwNeg = Zero();
+    
+    for (auto &w:wout) {
+        rbw.Checkerboard() = cb;
+        rbwNeg.Checkerboard() = cbNeg;
 
-    for (int i=0;i<evecs.size();i++) {
-        ComplexD eval_D = ComplexD(0.0,evals[i].imag());
-        makeLowModeCBeooe(evecNeg,evecs[i],eval_D);
+        pickCheckerboard(cb,rbw,w);
+        pickCheckerboard(cbNeg,rbwNeg,w);
 
-        setCheckerboard(Mevec,evecNeg);
-        setCheckerboard(Mevec,evecs[i]);
-
-        if (cb == Even) {
-            temp_.Checkerboard() = cbNeg;
-            temp_ = -evecNeg;
-            setCheckerboard(Mdagevec,temp_);
-            setCheckerboard(Mdagevec,evecs[i]);
-        } else {
-            temp_.Checkerboard() = cb;
-            temp_ = -evecs[i];
-            setCheckerboard(Mdagevec,temp_);
-            setCheckerboard(Mdagevec,evecNeg);
+        // Add up W vector projection onto provided evec checkerboard
+        temp_ = Zero();
+        temp_.Checkerboard() = cb;
+        for (int i=0;i<evecs.size();i++) {
+          const FermionField& e = evecs[i];
+          axpy(temp_,TensorRemove(innerProduct(e,rbw)),e,temp_);
         }
+        // Subtract projected component from original. (factor of 2 compensates for normalization of checkerboard to 1/2)
+        axpy(rbw,-2.0,temp_,rbw);
+        setCheckerboard(w,rbw);
 
-        for (auto &w:wout) {
-            auto ip = innerProduct(Mevec,w);
-            w = w - ip*Mevec;
-            ip = innerProduct(Mdagevec,w);
-            w = w - ip*Mdagevec;
+        
+        action_.Meooe(rbwNeg, rbw); // Move cbNeg component of W to cb
+
+        // Add up cbNeg checkerboard of W vector projection
+        temp_ = Zero();
+        temp_.Checkerboard() = cb;
+        for (int i=0;i<evecs.size();i++) {
+            RealD eval_Dinv = -1.0/pow(evals[i].imag(),2); // using Meooe twice brings two factors of 1/eval_D
+            const FermionField& e = evecs[i];
+            axpy(temp_,eval_Dinv*TensorRemove(innerProduct(e,rbw)),e,temp_);
         }
+        rbw.Checkerboard() = cbNeg;
+        action_.Meooe(temp_, rbw); // Move projection back to cbNeg checkerboard
+        axpy(rbwNeg,-2.0,rbw,rbwNeg); // Subtract projected component from original. 
+        setCheckerboard(w,rbwNeg);
     }
+
     // int cb = evecs[0].Checkerboard();
     // int cbNeg = (cb==Even) ? Odd : Even;
     
-    // FermionField rbw(frbGrid_), rbwNeg(frbGrid_);
+    // FermionField Mevec(fGrid_), Mdagevec(fGrid_), evecNeg(frbGrid_);
 
-    // rbw.Checkerboard() = cb;
-    // rbwNeg.Checkerboard() = cbNeg;
+    // evecNeg.Checkerboard() = cbNeg;
 
-    // for (auto &w:wout) {
-    //     pickCheckerboard(cb,rbw,w);
-    //     pickCheckerboard(cbNeg,rbwNeg,w);
+    // for (int i=0;i<evecs.size();i++) {
+    //     ComplexD eval_D = ComplexD(0.0,evals[i].imag());
+    //     makeLowModeCBeooe(evecNeg,evecs[i],eval_D);
 
-    //     // Add up W vector projection onto provided evec checkerboard
-    //     temp_ = Zero();
-    //     temp_.Checkerboard() = cb;
-    //     for (int i=0;i<evecs.size();i++) {
-    //       const FermionField& e = evecs[i];
-    //       axpy(temp_,TensorRemove(innerProduct(e,rbw)),e,temp_);
+    //     setCheckerboard(Mevec,evecNeg);
+    //     setCheckerboard(Mevec,evecs[i]);
+
+    //     if (cb == Even) {
+    //         temp_.Checkerboard() = cbNeg;
+    //         temp_ = -evecNeg;
+    //         setCheckerboard(Mdagevec,temp_);
+    //         setCheckerboard(Mdagevec,evecs[i]);
+    //     } else {
+    //         temp_.Checkerboard() = cb;
+    //         temp_ = -evecs[i];
+    //         setCheckerboard(Mdagevec,temp_);
+    //         setCheckerboard(Mdagevec,evecNeg);
     //     }
-    //     // Subtract projected component from original. (factor of 2 compensates for normalization of checkerboard to 1/2)
-    //     axpy(rbw,-2.0,temp_,rbw);
-    //     setCheckerboard(w,rbw);
 
-        
-    //     action_.Meooe(rbwNeg, rbw); // Move cbNeg component of W to cb
-
-    //     // Add up cbNeg checkerboard of W vector projection
-    //     temp_ = Zero();
-    //     for (int i=0;i<evecs.size();i++) {
-    //         RealD eval_Dinv = -1.0/pow(evals[i].imag(),2); // using Meooe twice brings two factors of 1/eval_D
-    //         const FermionField& e = evecs[i];
-    //         axpy(temp_,eval_Dinv*TensorRemove(innerProduct(e,rbw)),e,temp_);
+    //     for (auto &w:wout) {
+    //         auto ip = innerProduct(Mevec,w);
+    //         w = w - ip*Mevec;
+    //         ip = innerProduct(Mdagevec,w);
+    //         w = w - ip*Mdagevec;
     //     }
-    //     rbw.Checkerboard() = cbNeg;
-    //     action_.Meooe(temp_, rbw); // Move projection back to cbNeg checkerboard
-    //     axpy(rbwNeg,-2.0,rbw,rbwNeg); // Subtract projected component from original. 
-    //     setCheckerboard(w,rbwNeg);
-    // }
+    // }    
 }
 
 template <typename FImpl>
