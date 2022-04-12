@@ -87,9 +87,9 @@ public:
     virtual ~MesonFieldMILCKernel(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left, 
                             const FermionField *right,
-                            const unsigned int orthogDim, double &t, double &tg)
+                            const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
     {
-        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, &t, &tg);
+        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
@@ -110,7 +110,7 @@ private:
 
  template<typename TFImpl, typename ... Args>
  IfStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::StagMesonFieldMILC(args...);
+     A2Autils<FImpl>::StagMesonFieldLocalMILC(args...);
  }
 
 private:

@@ -76,7 +76,7 @@ public:
     A2AKernel(void) = default;
     virtual ~A2AKernel(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const Field *left, const Field *right,
-                          const unsigned int orthogDim, double &time, double &tg) = 0;
+                          const unsigned int orthogDim, double *time = nullptr, double *tg = nullptr) = 0;
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
     virtual double bytes(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
 };
@@ -719,9 +719,8 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
             flops    = 0.0;
             bytes    = 0.0;
             t_kernel = 0.0;
-            t_gsum = 0.0;
 
-            double t, tg;
+            double t;
             int ii, jj, evec_ii, evec_jj, N_iii, N_jjj;
 
             for (int cbi=0;cbi<Ncb;cbi++) { // For checkered low modes, loop through cacheBlock twice.
@@ -777,10 +776,9 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                         A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
 
                         START_TIMER("kernel");
-                        kernel(mCacheBlock, l_temp, r_temp, orthogDim_, t, tg);
+                        kernel(mCacheBlock, l_temp, r_temp, orthogDim_, &t);
                         STOP_TIMER("kernel");
                         t_kernel += t;
-                        t_gsum   += tg;
                         flops    += kernel.flops(N_iii, N_jjj);
                         bytes    += kernel.bytes(N_iii, N_jjj);
 
@@ -824,6 +822,11 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                 }
             } // End for(cbi) loop
 
+            if (checkerboarded_low) {
+                t_gsum = -usecond();
+                grid_->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
+                t_gsum += usecond();
+            }
             // perf
             LOG(Message) << "Kernel perf " << flops/t_kernel/1.0e3/nodes 
                          << " Gflop/s/node " << std::endl;
