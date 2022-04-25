@@ -34,6 +34,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/DilutedNoise.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -57,8 +58,8 @@ class RandomWallPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallPar,
-                                    unsigned int, tW,
-                                    unsigned int, size);
+                                    unsigned int, tStep,
+                                    unsigned int, nSrc);
 };
 
 template <typename FImpl>
@@ -79,9 +80,6 @@ protected:
     virtual void setup(void);
     // execution
     virtual void execute(void);
-private:
-    bool        hasT_{false};
-    std::string tName_;
 };
 
 // MODULE_REGISTER_TMP(RandomWall, TRandomWall<FIMPL>, MSource);
@@ -94,7 +92,6 @@ MODULE_REGISTER_TMP(StagRandomWall, TRandomWall<STAGIMPL>, MSource);
 template <typename FImpl>
 TRandomWall<FImpl>::TRandomWall(const std::string name)
 : Module<RandomWallPar>(name)
-, tName_ (name + "_t")
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
@@ -109,7 +106,7 @@ std::vector<std::string> TRandomWall<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TRandomWall<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName(), getName()+"_shift"};
     
     return out;
 }
@@ -118,84 +115,47 @@ std::vector<std::string> TRandomWall<FImpl>::getOutput(void)
 template <typename FImpl>
 void TRandomWall<FImpl>::setup(void)
 {
-    if (par().size && par().size > 1) {
-        envCreate(std::vector<FermionField>, getName(), 1, par().size, envGetGrid(FermionField));
-    } else {
-        envCreate(std::vector<FermionField>, getName(), 1, 1, envGetGrid(FermionField));
-    }
-    envCache(Lattice<iScalar<vInteger>>, tName_,    1, envGetGrid(LatticeComplex));
+    envTmp(TimeDilutedNoise<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
+
+    envCreate(std::vector<FermionField>, getName(), 1, 0, envGetGrid(FermionField));
+
+    envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
 void TRandomWall<FImpl>::execute(void)
 {    
-    typedef typename FermionField::scalar_object scalar_object;
-    typedef typename FermionField::scalar_type scalar_type;
+    envGetTmp(TimeDilutedNoise<FImpl>, noise);
+    LOG(Message) << "Generating " << par().nSrc << " time-diluted, spin-color diagonal noise sources at every " << par().tStep << " time step(s)" << std::endl;
+    noise.generateNoise(rng4d());
+
+    auto &noisevec = envGet(std::vector<FermionField>,getName());
+    auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
+
+    int nt    = envGetGrid(FermionField)->GlobalDimensions()[Tp];
+
+    int tStep = par().tStep;
+    int nSources = par().nSrc;
+
+    int nsc   = noise.getNsc();
+    int nSlices = nt/tStep;
+    int nVecs = nSources*nSlices*nsc;
 
 
-    LOG(Message) << "Generating random wall source at t = " << par().tW 
-                 << std::endl;
-    
-    auto  &t   = envGet(Lattice<iScalar<vInteger>>, tName_);
-    auto  nc   = FImpl::Dimension;
-    auto  &vec = envGet(std::vector<FermionField>, getName());
-    
-    if (!hasT_)
-    {
-        LatticeCoordinate(t, Tp);
-        hasT_ = true;
-    }
+    time_shift.resize(nVecs,0);
 
-    auto &rng      = rng4d();
-    GridBase *grid = rng.Grid();
+    noisevec.resize(nVecs,envGetGrid(FermionField));
 
-    int multiplicity = RNGfillable_general(grid, vec[0].Grid()); // src has finer or same grid
-    int Nsimd        = grid->Nsimd();  // guaranteed to be the same for src.Grid() too
-    int osites       = grid->oSites();  // guaranteed to be <= src.Grid()->oSites() by a factor multiplicity
-    int words        = sizeof(scalar_object) / sizeof(scalar_type);
-
-    const Integer tW(par().tW);
-
-    autoView(t_v  , t, CpuRead);
-
-    for (auto& src: vec) {
-
-        autoView(src_v, src, CpuWrite);
-
-        thread_for( ss, osites, {
-
-            ExtractBuffer<scalar_object> buf(Nsimd);
-            ExtractBuffer<Integer> tbuf(Nsimd);
-
-            for (int m = 0; m < multiplicity; m++) {  // Draw from same generator multiplicity times
-
-                int sm = multiplicity * ss + m;  // Maps the generator site to the fine site
-
-                extract(t_v[sm],tbuf);
-
-                for (int si = 0; si < Nsimd; si++) {
-
-                    scalar_type *pointer = (scalar_type *)&buf[si];
-
-                    if (tbuf[si] == tW) {
-                        int gdx = rng.generator_idx(ss, si);  // index of generator state
-                        rng._gaussian[gdx].reset();
-                        for (int idx = 0; idx < words; idx++) {
-
-                            fillScalar(pointer[idx], rng._gaussian[gdx], rng._generators[gdx]);
-
-                            // Normalize complex number
-                            Complex c = pointer[idx];
-                            pointer[idx] = c/sqrt(c*adj(c));
-                        }
-                    } else {
-                        *pointer = 0.;
-                    }
-                }
-                merge(src_v[sm], buf);
+    for (int i=0;i<nSources;i++) {
+        for (int j=0;j<nSlices;j++) {
+            for (int k=0;k<nsc;k++) {
+                int idx = i*nSlices*nsc+j*nsc+k;
+                int offset = i*nt*nsc+j*tStep*nsc+k;
+                noisevec[idx] = noise.getFerm(offset);
+                time_shift[idx] = j*tStep;
             }
-        });
+        }
     }
 }
 
