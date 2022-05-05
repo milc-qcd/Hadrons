@@ -20,6 +20,7 @@ public:
                                     LanczosParams, lanczosParams,
                                     std::string,   op,
                                     std::string,   output,
+                                    std::string,   epackIn,
                                     bool,          redBlack,
                                     bool,          evenEigen,
                                     bool,          multiFile);
@@ -65,6 +66,10 @@ template <typename Field, typename FieldIo>
 std::vector<std::string> TImplicitlyRestartedLanczos<Field, FieldIo>::getInput(void)
 {
     std::vector<std::string> in = {par().op};
+
+    if (!par().epackIn.empty()) {
+        in.push_back(par().epackIn);
+    }
     
     return in;
 }
@@ -109,6 +114,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::setup(void)
         par().lanczosParams.MinRes);
     envTmp(Field, "gauss", Ls, getGrid<Field>(false, Ls));
     envTmp(Field, "src", Ls, grid);
+    envTmp(Field, "polyVec", Ls, grid);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -117,7 +123,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
 {
     int          nconv;
     auto         &epack = envGetDerived(BasePack, Pack, getName());
-    GridBase     *grid = nullptr, *gridIo = nullptr;
+    GridBase     *grid = nullptr;
     unsigned int Ls = env().getObjectLs(par().op);
     
     envGetTmp(ImplicitlyRestartedLanczos<Field>, irl);
@@ -125,10 +131,6 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     envGetTmp(Field, gauss);
 
     grid = getGrid<Field>(par().redBlack, Ls);
-    if (typeHash<Field>() != typeHash<FieldIo>())
-    {
-        gridIo = getGrid<FieldIo>(par().redBlack, Ls);
-    }
     if (par().redBlack)
     {
         envGetTmp(Field, gauss);
@@ -137,7 +139,25 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     } else {
         gaussian(rng4d(), src);
     }
-    irl.calc(epack.eval, epack.evec, src, nconv, false);
+
+    int offset = 0;
+    if (!par().epackIn.empty()) {
+        envGetTmp(Field, polyVec);
+        envGetTmp(FunctionHermOp<Field>, chebyOp);
+        auto &epackIn = envGet(BasePack, par().epackIn);
+
+        offset = epackIn.evec.size();
+        for (int i=0;i<offset;i++) {
+            epackIn.evec[i].Checkerboard() = (par().evenEigen?Even:Odd);
+            chebyOp(epackIn.evec[i],polyVec);
+            epack.eval[i] = real(innerProduct(epackIn.evec[i],polyVec));
+            epack.evec[i] = epackIn.evec[i];
+        }
+
+        basisOrthogonalize(epackIn.evec,src,offset);
+    }
+
+    irl.calc(epack.eval, epack.evec, src, nconv, false,offset);
     epack.eval.resize(par().lanczosParams.Nstop);
     epack.evec.resize(par().lanczosParams.Nstop, grid);
     epack.record.operatorXml = vm().getModule(env().getObjectModule(par().op))->parString();

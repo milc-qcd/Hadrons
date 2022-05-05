@@ -227,9 +227,6 @@ template <typename FImpl>
 template <typename T>
 IfStag<T,void> SpinColorDiagonalNoise<FImpl>::setPropagator(LatticeComplex * eta)
 {
-    int nc  = FImpl::Dimension;
-    std::div_t divs;
-
     prop_ = Zero();
     for (int i=0; i<this->getNsc();i++) {
         pokeColour(prop_,eta[i],i,i);

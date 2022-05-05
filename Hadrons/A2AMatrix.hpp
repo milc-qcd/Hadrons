@@ -646,9 +646,13 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
     bool checkerboarded_low = (swapEvecCheckerFn != nullptr);
     int Ncb = checkerboarded_low?2:1; // Ncb == 2 if the low modes are checkerboarded
 
+    RealD norm = 1.0;
+
     int N_low = 0;
-    if (evecs != nullptr) 
+    if (evecs != nullptr) {
+        norm = 1.0/::sqrt(norm2(evecs->at(0))); //Calculate norm of eigenvectors
         N_low = Ncb*evecs->size(); // N_low is the number of evecs for M + evecs for Mdag
+    }
 
     int    N_i = left.size()+N_low; // Total number of bra vectors to contract
     int    N_j = right.size()+N_low; // Total number of ket vectors to contract
@@ -657,6 +661,8 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
     double nodes = grid_->NodeCount();
     
     if (checkerboarded_low) {
+        norm = norm/::sqrt(2); // Reduce checkerboarded norm to 1/sqrt(2)
+
         if (blockSize_%2 != 0 || cacheBlockSize_%2 != 0) {
             HADRONS_ERROR(Implementation, "Blocksize must be divisible by 2 for checkerboarded low modes");
         }
@@ -783,20 +789,27 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                         bytes    += kernel.bytes(N_iii, N_jjj);
 
                         START_TIMER("cache copy");
-                        ComplexD eval;
+                        ComplexD coeff;
                         int evec_jjj=evec_j+evec_jj;
                         for(int jjj=0;jjj< N_jjj;jjj++) {
 
                             // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
-                            if (low_jj) {
-                                if (jjj & 0x1) {
-                                    eval = 1.0/conjugate(evals[evec_jjj]); // Mdaginv evals
-                                    evec_jjj+=1;
-                                } else {
-                                    eval = 1.0/evals[evec_jjj]; // Minv evals
+                            if (low_ii || low_jj) {
+                                coeff = ComplexD(norm); // Normalize low modes appropriately
+                                if (low_ii && low_jj) {
+                                    coeff *= coeff;
                                 }
                             } else {
-                                eval = ComplexD(1.0);
+                                coeff = ComplexD(1.0);
+                            }
+
+                            if (low_jj) {
+                                if (jjj & 0x1) {
+                                    coeff = coeff/conjugate(evals[evec_jjj]); // Mdaginv evals
+                                    evec_jjj+=1;
+                                } else {
+                                    coeff = coeff/evals[evec_jjj]; // Minv evals
+                                }
                             }
 
                             thread_for_collapse(4,e,next_,{
@@ -804,9 +817,9 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
                               for(int s = 0;s < nstr_;s++)
                               for(int t = 0;t < nt_  ;t++) {
                                 if (cbi)
-                                    mBlock(e,s,t,ii+iii,jj+jjj) += eval*mCacheBlock(e,s,t,iii,jjj);
+                                    mBlock(e,s,t,ii+iii,jj+jjj) += coeff*mCacheBlock(e,s,t,iii,jjj);
                                 else
-                                    mBlock(e,s,t,ii+iii,jj+jjj)  = eval*mCacheBlock(e,s,t,iii,jjj);
+                                    mBlock(e,s,t,ii+iii,jj+jjj)  = coeff*mCacheBlock(e,s,t,iii,jjj);
                             }});
                         }
                         STOP_TIMER("cache copy");

@@ -241,7 +241,10 @@ void A2AVectorsSchur<FImpl>::removeLowModeProj(std::vector<FermionField> &wout, 
 
     rbw = Zero();
     rbwNeg = Zero();
-    
+ 
+    // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)
+    RealD norm = 1/::sqrt(2*norm2(evecs[0]));
+
     for (auto &w:wout) {
         rbw.Checkerboard() = cb;
         rbwNeg.Checkerboard() = cbNeg;
@@ -257,7 +260,7 @@ void A2AVectorsSchur<FImpl>::removeLowModeProj(std::vector<FermionField> &wout, 
           axpy(temp_,TensorRemove(innerProduct(e,rbw)),e,temp_);
         }
         // Subtract projected component from original. (factor of 2 compensates for normalization of checkerboard to 1/2)
-        axpy(rbw,-2.0,temp_,rbw);
+        axpy(rbw,-2.0*norm,temp_,rbw);
         setCheckerboard(w,rbw);
 
         
@@ -273,7 +276,7 @@ void A2AVectorsSchur<FImpl>::removeLowModeProj(std::vector<FermionField> &wout, 
         }
         rbw.Checkerboard() = cbNeg;
         action_.Meooe(temp_, rbw); // Move projection back to cbNeg checkerboard
-        axpy(rbwNeg,-2.0,rbw,rbwNeg); // Subtract projected component from original. 
+        axpy(rbwNeg,-2.0*norm,rbw,rbwNeg); // Subtract projected component from original. 
         setCheckerboard(w,rbwNeg);
     }
 

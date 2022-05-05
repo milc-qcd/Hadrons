@@ -201,6 +201,10 @@ void TLMAProp<FImpl>::execute(void)
 
     evecNeg.Checkerboard() = cbNeg;
 
+    // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)
+    RealD norm = 1/::sqrt(2*norm2(evecs[0]));
+
+
     for (int j=0;j<evecs.size();j++) {
         ComplexD eval_D = ComplexD(0.0,evals[j].imag());
 
@@ -223,6 +227,9 @@ void TLMAProp<FImpl>::execute(void)
             setCheckerboard(Mdagevec,tempRb);
             setCheckerboard(Mdagevec,evecNeg);
         }
+        
+        Mevec    = norm*Mevec;
+        Mdagevec = norm*Mdagevec;
 
         if (hasGammas_) {
             auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
