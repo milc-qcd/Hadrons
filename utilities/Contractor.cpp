@@ -241,16 +241,24 @@ int main(int argc, char* argv[])
     // parse command line
     std::string   parFilename;
 
-    if (argc != 2)
+    if (argc < 2)
     {
-        std::cerr << "usage: " << argv[0] << " <parameter file>";
+        std::cerr << "usage: " << argv[0] << " <parameter file> <grid flags>";
         std::cerr << std::endl;
         
         return EXIT_FAILURE;
     }
     parFilename = argv[1];
 
-    // parse parameter file
+     Grid_init(&argc, &argv);
+    HadronsLogError.Active(GridLogError.isActive());
+    HadronsLogWarning.Active(GridLogWarning.isActive());
+    HadronsLogMessage.Active(GridLogMessage.isActive());
+    HadronsLogIterative.Active(GridLogIterative.isActive());
+    HadronsLogDebug.Active(GridLogDebug.isActive());
+    LOG(Message) << "Grid initialized" << std::endl;
+
+   // parse parameter file
     ContractorPar par;
     //    unsigned int  nMat,nCont;
     XmlReader     reader(parFilename);
@@ -272,6 +280,10 @@ int main(int argc, char* argv[])
         a2aMat.emplace(p.name, EigenDiskVector<ComplexD>(dirName, par.global.nt, p.cacheSize));
     }
 
+    std::vector<int> latt({32,32,32,32});
+    GridCartesian*    grid     = SpaceTimeGrid::makeFourDimGrid(latt,
+                                     GridDefaultSimd(Nd,vComplex::Nsimd()),
+                                     GridDefaultMpi());
     // trajectory loop
     for (unsigned int traj = par.global.trajCounter.start; 
          traj < par.global.trajCounter.end; traj += par.global.trajCounter.step)
@@ -290,7 +302,7 @@ int main(int argc, char* argv[])
 
             A2AMatrixIo<HADRONS_A2AM_IO_TYPE> a2aIo(filename, p.dataset, par.global.nt,p.ni,p.nj);
 
-            a2aIo.load(a2aMat.at(p.name), &t);
+            a2aIo.load(a2aMat.at(p.name), &t,grid);
             std::cout << "Read " << a2aIo.getSize() << " bytes in " << t/1.0e6 
                     << " sec, " << a2aIo.getSize()/t*1.0e6/1024/1024 << " MB/s" << std::endl;
         }
@@ -453,6 +465,10 @@ int main(int argc, char* argv[])
             printTimeProfile(tAr.getTimings(), tAr.getTimer("Total"));
         }
     }
+    // epilogue
+    LOG(Message) << "Grid is finalizing now" << std::endl;
+    Grid_finalize();
+
     
     return EXIT_SUCCESS;
 }

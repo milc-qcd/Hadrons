@@ -178,7 +178,7 @@ public:
         if ((MatLeft::Options  == RowMajor) and
             (MatRight::Options == ColMajor))
         {
-  	  thread_for(r,a.rows(),
+      thread_for(r,a.rows(),
             {
                 C tmp;
 #ifdef USE_MKL
@@ -193,7 +193,7 @@ public:
             });
         }
         else
-	  {
+      {
             thread_for(c,a.cols(),
             {
                 C tmp;
@@ -208,6 +208,67 @@ public:
                 }
             });
         }
+//         const int RowMajor = Eigen::RowMajor;
+//         const int ColMajor = Eigen::ColMajor;
+// #ifdef USE_MKL
+//         if ((MatLeft::Options  == RowMajor) and
+//             (MatRight::Options == ColMajor)) {
+//       	  thread_for(r,a.rows(),
+//                 {
+//                     C tmp;
+//                     dotuRow(tmp, r, a, b);
+//                     thread_critical
+//                     {
+//                         acc += tmp;
+//                     }
+//                 });
+//         } else {
+//             thread_for(c,a.cols(),
+//                 {
+//                     C tmp;
+//                     dotuCol(tmp, c, a, b);
+//                     thread_critical
+//                     {
+//                         acc += tmp;
+//                     }
+//                 });
+//         }
+// #else
+//         int aRows = a.rows();
+//         int aCols = a.cols();
+//         int bRows = b.rows();
+//         int bCols = b.cols();
+//         const C *aPt = a.data();
+//         const C *bPt = b.data();
+
+//         Vector<C> res(aRows,0.0);
+//         C *resPt = &res[0];
+
+//         if ((MatLeft::Options  == RowMajor) and
+//             (MatRight::Options == ColMajor)) {
+//             accelerator_for(r,aRows, 1,{
+//                 C tmp = 0.0;
+//                 for (int c = 0;c < aCols;c++) {
+//                     tmp += innerProduct(*(aPt + r*aCols + c),*(bPt+r*bRows + c));
+//                 }
+//                 *(resPt+r) = tmp;
+//             });
+
+//         } else {
+//             accelerator_for(c,aCols, 1,{
+//                 C tmp = 0.0;
+//                 for (int r = 0;r < aRows;r++) {
+//                     tmp += innerProduct(*(aPt + c*aRows + r),*(bPt+c*bCols + r));
+//                 }
+//                 *(resPt+c) = tmp;
+//             });
+
+
+//         }
+//         for (int r=0;r<aRows;r++) {
+//             acc += res[r];
+//         }
+// #endif
     }
 
     template <typename MatLeft, typename MatRight>
@@ -570,33 +631,57 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
     std::cout << "Loading timeslice";
     std::cout.flush();
     *tRead = 0.;
-    for (unsigned int tp1 = nt_; tp1 > 0; --tp1)
-    {
-        unsigned int         t      = tp1 - 1;
-        std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
-        
-        if (t % 10 == 0)
-        {
-            std::cout << " " << t;
-            std::cout.flush();
+    if (grid) {
+        grid->Barrier();
+        unsigned int myRank = grid->ThisRank(), nRank  = grid->RankCount();
+
+        for (unsigned int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
+
+            unsigned int         t      = tp1 - 1;
+            std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
+
+            if (t % 10 == 0)
+            {
+                std::cout << " " << t;
+                std::cout.flush();
+            }
+            if (grid->IsBoss())
+            {
+                dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
+                                          stride.data(), block.data());
+            }
+            if (tRead) *tRead -= usecond();
+            dataset.read(buf.data(), datatype, memspace, dataspace);
+
+            v[t] = buf.template cast<VecT>();
+            if (!grid->IsBoss()) {
+                grid->SendToRecvFrom(buf.data(),myRank,(void *)&v[t],grid->BossRank(), broadcastSize);
+            }
+
+            if (tRead) *tRead += usecond();
         }
-        if (!(grid) || grid->IsBoss())
+        grid->Barrier();
+    } else {
+
+        for (unsigned int tp1 = nt_; tp1 > 0; --tp1)
         {
+            unsigned int         t      = tp1 - 1;
+            std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
+            
+            if (t % 10 == 0)
+            {
+                std::cout << " " << t;
+                std::cout.flush();
+            }
             dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
                                       stride.data(), block.data());
-        }
-        if (tRead) *tRead -= usecond();
-        if (!(grid) || grid->IsBoss())
-        {
+            if (tRead) *tRead -= usecond();
             dataset.read(buf.data(), datatype, memspace, dataspace);
+            if (tRead) *tRead += usecond();
+            v[t] = buf.template cast<VecT>();
         }
-        if (grid)
-        {
-            grid->Broadcast(grid->BossRank(), buf.data(), broadcastSize);
-        }
-        if (tRead) *tRead += usecond();
-        v[t] = buf.template cast<VecT>();
     }
+
     std::cout << std::endl;
 #else
     HADRONS_ERROR(Implementation, "all-to-all matrix I/O needs HDF5 library");
