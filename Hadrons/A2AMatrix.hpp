@@ -618,8 +618,6 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
         grid->Broadcast(grid->BossRank(), &nj_, sizeof(unsigned int));
     }
 
-    A2AMatrix<T>         buf(ni_, nj_);
-    int broadcastSize =  sizeof(T) * buf.size();
     std::vector<hsize_t> count    = {1, static_cast<hsize_t>(ni_),
                                      static_cast<hsize_t>(nj_)},
                          stride   = {1, 1, 1},
@@ -632,8 +630,11 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
     std::cout.flush();
     *tRead = 0.;
     if (grid) {
-        grid->Barrier();
         unsigned int myRank = grid->ThisRank(), nRank  = grid->RankCount();
+
+        Vector<A2AMatrix<T>>         buf(nt_, A2AMatrix<T>(ni_, nj_));
+        int broadcastSize =  sizeof(T) * buf[0].size();
+        grid->Barrier();
 
         for (unsigned int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
 
@@ -651,18 +652,22 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
                                           stride.data(), block.data());
             }
             if (tRead) *tRead -= usecond();
-            dataset.read(buf.data(), datatype, memspace, dataspace);
+            dataset.read(buf[t].data(), datatype, memspace, dataspace);
 
-            v[t] = buf.template cast<VecT>();
-            if (!grid->IsBoss()) {
-                grid->SendToRecvFrom(buf.data(),myRank,(void *)&v[t],grid->BossRank(), broadcastSize);
+            if (nRank > 1) {
+                grid->Broadcast(myRank, buf[t].data(), broadcastSize);
             }
 
             if (tRead) *tRead += usecond();
         }
         grid->Barrier();
+        for (int t=0;t<nt_;t++) {
+            v[t] = buf[t].template cast<VecT>();
+        }
     } else {
 
+        A2AMatrix<T>         buf(ni_, nj_);
+        int broadcastSize =  sizeof(T) * buf.size();
         for (unsigned int tp1 = nt_; tp1 > 0; --tp1)
         {
             unsigned int         t      = tp1 - 1;
