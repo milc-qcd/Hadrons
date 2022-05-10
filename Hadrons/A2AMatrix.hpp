@@ -581,41 +581,39 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
     H5NS::DataSpace      dataspace;
     H5NS::CompType       datatype;
 
-    if (!(grid) || grid->IsBoss())
-    {
-        Hdf5Reader reader(filename_);
-        push(reader, dataname_);
-        auto &group = reader.getGroup();
-        dataset = group.openDataSet(HADRONS_A2AM_NAME);
-        datatype = dataset.getCompType();
-        dataspace = dataset.getSpace();
-        hdim.resize(dataspace.getSimpleExtentNdims());
-        dataspace.getSimpleExtentDims(hdim.data());
-        if ((nt_ * ni_ * nj_ != 0) and
-            ((hdim[0] < nt_) or (hdim[1] < ni_) or (hdim[2] < nj_)))
-        {
-            HADRONS_ERROR(Size, "all-to-all matrix size mismatch (got "
-                + std::to_string(hdim[0]) + "x" + std::to_string(hdim[1]) + "x"
-                + std::to_string(hdim[2]) + ", expected "
-                + std::to_string(nt_) + "x" + std::to_string(ni_) + "x"
-                + std::to_string(nj_));
-        }
-        else if (ni_*nj_ == 0)
-        {
-            if (hdim[0] != nt_)
-            {
-                HADRONS_ERROR(Size, "all-to-all time size mismatch (got "
-                    + std::to_string(hdim[0]) + ", expected "
-                    + std::to_string(nt_) + ")");
-            }
-            ni_ = hdim[1];
-            nj_ = hdim[2];
-        }
+    unsigned int myRank = 0, nRank = 1;
+    if (grid) {
+        myRank = grid->ThisRank(), nRank  = grid->RankCount();
     }
-    if (grid)
+
+    Hdf5Reader reader(filename_);
+    push(reader, dataname_);
+    auto &group = reader.getGroup();
+    dataset = group.openDataSet(HADRONS_A2AM_NAME);
+    datatype = dataset.getCompType();
+    dataspace = dataset.getSpace();
+    hdim.resize(dataspace.getSimpleExtentNdims());
+    dataspace.getSimpleExtentDims(hdim.data());
+
+    if ((nt_ * ni_ * nj_ != 0) and
+        ((hdim[0] < nt_) or (hdim[1] < ni_) or (hdim[2] < nj_)))
     {
-        grid->Broadcast(grid->BossRank(), &ni_, sizeof(unsigned int));
-        grid->Broadcast(grid->BossRank(), &nj_, sizeof(unsigned int));
+        HADRONS_ERROR(Size, "all-to-all matrix size mismatch (got "
+            + std::to_string(hdim[0]) + "x" + std::to_string(hdim[1]) + "x"
+            + std::to_string(hdim[2]) + ", expected "
+            + std::to_string(nt_) + "x" + std::to_string(ni_) + "x"
+            + std::to_string(nj_));
+    }
+    else if (ni_*nj_ == 0)
+    {
+        if (hdim[0] != nt_)
+        {
+            HADRONS_ERROR(Size, "all-to-all time size mismatch (got "
+                + std::to_string(hdim[0]) + ", expected "
+                + std::to_string(nt_) + ")");
+        }
+        ni_ = hdim[1];
+        nj_ = hdim[2];
     }
 
     std::vector<hsize_t> count    = {1, static_cast<hsize_t>(ni_),
@@ -630,39 +628,49 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
     std::cout.flush();
     *tRead = 0.;
     if (grid) {
-        unsigned int myRank = grid->ThisRank(), nRank  = grid->RankCount();
-
-        Vector<A2AMatrix<T>>         buf(nt_, A2AMatrix<T>(ni_, nj_));
+        Vector<A2AMatrix<T>> buf(0, A2AMatrix<T>(ni_, nj_));
+        if (grid->IsBoss()) {
+            buf.resize(nt_, A2AMatrix<T>(ni_, nj_));
+        } else {
+            buf.resize((nt_+nRank-1)/nRank, A2AMatrix<T>(ni_, nj_));
+        }
         int broadcastSize =  sizeof(T) * buf[0].size();
-        grid->Barrier();
+        int idx = 0;
+        for (int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
 
-        for (unsigned int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
-
-            unsigned int         t      = tp1 - 1;
+            int  t = tp1 - 1;
             std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
 
-            if (t % 10 == 0)
-            {
-                std::cout << " " << t;
-                std::cout.flush();
-            }
-            if (grid->IsBoss())
-            {
-                dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
-                                          stride.data(), block.data());
-            }
+            std::cout << " " << t;
+            std::cout.flush();
+
+            dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
+                                      stride.data(), block.data());
+
             if (tRead) *tRead -= usecond();
-            dataset.read(buf[t].data(), datatype, memspace, dataspace);
-
-            if (nRank > 1) {
-                grid->Broadcast(myRank, buf[t].data(), broadcastSize);
+            if (grid->IsBoss()) {
+                dataset.read(buf[t].data(), datatype, memspace, dataspace);
+            } else {
+                dataset.read(buf[idx].data(), datatype, memspace, dataspace);
             }
-
             if (tRead) *tRead += usecond();
+
+            idx++;
         }
         grid->Barrier();
-        for (int t=0;t<nt_;t++) {
-            v[t] = buf[t].template cast<VecT>();
+        if (!grid->IsBoss()) {
+            int idx = 0;
+            for (int t = nt_-myRank-1; t >= 0; t-=nRank) {
+                // grid->Broadcast(myRank, buf[t].data(), broadcastSize);
+                grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[t].data(),broadcastSize);
+                idx++;
+            }
+        }
+        grid->Barrier();
+        if (grid->IsBoss()) {
+            for (int t=0;t<nt_;t++) {
+                v[t] = buf[t].template cast<VecT>();
+            }
         }
     } else {
 

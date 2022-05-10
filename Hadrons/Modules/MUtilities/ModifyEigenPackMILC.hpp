@@ -44,6 +44,7 @@ class ModifyEigenPackMILCPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(ModifyEigenPackMILCPar,
                                     std::string,  eigenPack,
+                                    std::string,  checkerSwapAction,
                                     bool,         evenEigen,
                                     bool,         normalizeCheckerboard,
                                     double,       mass);
@@ -54,13 +55,14 @@ public:
     };
 };
 
-template <typename Pack>
+template <typename FImpl, typename Pack>
 class TModifyEigenPackMILC: public Module<ModifyEigenPackMILCPar>
 {
 public:
     typedef typename Pack::Field   Field;
     typedef BaseEigenPack<Field>   BasePack;
 
+    FERM_TYPE_ALIASES(FImpl,);
 public:
     // constructor
     TModifyEigenPackMILC(const std::string name);
@@ -75,28 +77,28 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(ModifyEigenPackMILC, TModifyEigenPackMILC<BaseFermionEigenPack<STAGIMPL> >, MUtilities);
+MODULE_REGISTER_TMP(ModifyEigenPackMILC, ARG(TModifyEigenPackMILC<STAGIMPL,BaseFermionEigenPack<STAGIMPL> >), MUtilities);
 
 /******************************************************************************
  *                    TModifyEigenPackMILC implementation                           *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename Pack>
-TModifyEigenPackMILC<Pack>::TModifyEigenPackMILC(const std::string name)
+template <typename FImpl, typename Pack>
+TModifyEigenPackMILC<FImpl,Pack>::TModifyEigenPackMILC(const std::string name)
 : Module<ModifyEigenPackMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename Pack>
-std::vector<std::string> TModifyEigenPackMILC<Pack>::getInput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TModifyEigenPackMILC<FImpl,Pack>::getInput(void)
 {
     std::vector<std::string> in = {par().eigenPack};
 
     return in;
 }
 
-template <typename Pack>
-std::vector<std::string> TModifyEigenPackMILC<Pack>::getOutput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TModifyEigenPackMILC<FImpl,Pack>::getOutput(void)
 {
     std::vector<std::string> out = {getName(), getName() + "_eval", getName() + "_evalM"};
     
@@ -104,8 +106,8 @@ std::vector<std::string> TModifyEigenPackMILC<Pack>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename Pack>
-void TModifyEigenPackMILC<Pack>::setup(void)
+template <typename FImpl, typename Pack>
+void TModifyEigenPackMILC<FImpl,Pack>::setup(void)
 {
     auto Ls = env().getObjectLs(par().eigenPack);
 
@@ -114,12 +116,14 @@ void TModifyEigenPackMILC<Pack>::setup(void)
     envCreate(std::vector<Field>,getName(), Ls, 0, envGetRbGrid(Field, Ls));
     envCreate(std::vector<RealD>,getName() + "_eval", Ls, 0);
     envCreate(std::vector<ComplexD>,getName() + "_evalM", Ls, 0);
+    envGetTmp(FermionField,tempRb);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename Pack>
-void TModifyEigenPackMILC<Pack>::execute(void)
+template <typename FImpl, typename Pack>
+void TModifyEigenPackMILC<FImpl,Pack>::execute(void)
 {
+    int  Ls = env().getObjectLs(par().eigenPack);
     auto &epack = envGet(BasePack, par().eigenPack);
 
     auto &evec = envGet(std::vector<Field>,getName());
@@ -130,7 +134,6 @@ void TModifyEigenPackMILC<Pack>::execute(void)
     bool evenEigen             = par().evenEigen;
     double mass                = par().mass;
 
-    evec.insert(evec.end(),epack.evec.begin(),epack.evec.end());
     eval.insert(eval.end(),epack.eval.begin(),epack.eval.end());
     evalM.resize(eval.size(),0.0);
 
@@ -150,6 +153,32 @@ void TModifyEigenPackMILC<Pack>::execute(void)
         LOG(Message) << "Shifted eigenvalues by mass (including MILC factor of 2) = " << m << std::endl;
     }
 
+    int cb = (evenEigen ? Even : Odd);
+    if (!par().checkerSwapAction.empty()) {
+
+        evec.resize(epack.evec.size(),envGetRbGrid(Field, Ls));
+
+        auto &action = envGet(FMat, par().checkerSwapAction);
+        int cbNeg = (!evenEigen ? Even : Odd);
+
+        envGetTmp(FermionField,tempRb);
+        tempRb = Zero();
+        tempRb.Checkerboard() = cb;
+
+        for (int i = 0; i < epack.evec.size();i++) {
+
+            epack.evec[i].Checkerboard() = cbNeg;
+            action.Meooe(epack.evec[i],tempRb);
+
+            if (mass == 0.0) {
+                evec[i] = (1.0/evalM[i])*tempRb;
+            } else {
+                evec[i] = (1.0/(evalM[i]-evalM[i].real()))*tempRb;
+            }
+        }
+    } else {
+        evec.insert(evec.end(),epack.evec.begin(),epack.evec.end());
+    }
 
     ComplexD norm(1.0,0.0);
     if (normalizeCheckerboard) {
@@ -159,7 +188,7 @@ void TModifyEigenPackMILC<Pack>::execute(void)
     LOG(Message) << "Setting eigenvector checkerboard to " << (evenEigen ? "'Even'" : "'Odd'" ) << std::endl;
     for (auto &e:evec) {
         e *= norm;
-        e.Checkerboard() = (evenEigen ? Even : Odd);
+        e.Checkerboard() = cb;
     }
 }
 

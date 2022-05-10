@@ -20,7 +20,7 @@ public:
                                     LanczosParams, lanczosParams,
                                     std::string,   op,
                                     std::string,   output,
-                                    std::string,   epackIn,
+                                    std::string,   evecsIn,
                                     bool,          redBlack,
                                     bool,          evenEigen,
                                     bool,          multiFile);
@@ -67,8 +67,8 @@ std::vector<std::string> TImplicitlyRestartedLanczos<Field, FieldIo>::getInput(v
 {
     std::vector<std::string> in = {par().op};
 
-    if (!par().epackIn.empty()) {
-        in.push_back(par().epackIn);
+    if (!par().evecsIn.empty()) {
+        in.push_back(par().evecsIn);
     }
     
     return in;
@@ -141,20 +141,21 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     }
 
     int offset = 0;
-    if (!par().epackIn.empty()) {
+    if (!par().evecsIn.empty()) {
         envGetTmp(Field, polyVec);
         envGetTmp(FunctionHermOp<Field>, chebyOp);
-        auto &epackIn = envGet(BasePack, par().epackIn);
+        auto &evecsIn = envGet(std::vector<Field>, par().evecsIn);
+//        auto &evalsIn = envGet(std::vector<ComplexD>, par().evecsIn + "_evalM");
 
-        offset = epackIn.evec.size();
+        offset = evecsIn.size();
         for (int i=0;i<offset;i++) {
-            epackIn.evec[i].Checkerboard() = (par().evenEigen?Even:Odd);
-            chebyOp(epackIn.evec[i],polyVec);
-            epack.eval[i] = real(innerProduct(epackIn.evec[i],polyVec));
-            epack.evec[i] = epackIn.evec[i];
+            evecsIn[i].Checkerboard() = (par().evenEigen?Even:Odd);
+            chebyOp(evecsIn[i],polyVec);
+            epack.eval[i] = real(innerProduct(evecsIn[i],polyVec));
+            epack.evec[i] = evecsIn[i];
         }
 
-        basisOrthogonalize(epackIn.evec,src,offset);
+        basisOrthogonalize(evecsIn,src,offset);
     }
 
     irl.calc(epack.eval, epack.evec, src, nconv, false,offset);
