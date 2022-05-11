@@ -116,7 +116,7 @@ void TModifyEigenPackMILC<FImpl,Pack>::setup(void)
     envCreate(std::vector<Field>,getName(), Ls, 0, envGetRbGrid(Field, Ls));
     envCreate(std::vector<RealD>,getName() + "_eval", Ls, 0);
     envCreate(std::vector<ComplexD>,getName() + "_evalM", Ls, 0);
-    envGetTmp(FermionField,tempRb);
+    envTmp(FermionField, "tempRb", 1, envGetRbGrid(FermionField));
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -155,6 +155,7 @@ void TModifyEigenPackMILC<FImpl,Pack>::execute(void)
 
     int cb = (evenEigen ? Even : Odd);
     if (!par().checkerSwapAction.empty()) {
+        LOG(Message) << "Swapping checkerboard from " << (evenEigen?"Odd to":"Even to") << (evenEigen?"Even":"Odd")<< std::endl;
 
         evec.resize(epack.evec.size(),envGetRbGrid(Field, Ls));
 

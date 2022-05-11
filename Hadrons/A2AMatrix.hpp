@@ -662,7 +662,7 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
             int idx = 0;
             for (int t = nt_-myRank-1; t >= 0; t-=nRank) {
                 // grid->Broadcast(myRank, buf[t].data(), broadcastSize);
-                grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[t].data(),broadcastSize);
+                grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[t].data(),myRank,broadcastSize);
                 idx++;
             }
         }
