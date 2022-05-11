@@ -628,14 +628,9 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
     std::cout.flush();
     *tRead = 0.;
     if (grid) {
-        Vector<A2AMatrix<T>> buf(0, A2AMatrix<T>(ni_, nj_));
-        if (grid->IsBoss()) {
-            buf.resize(nt_, A2AMatrix<T>(ni_, nj_));
-        } else {
-            buf.resize((nt_+nRank-1)/nRank, A2AMatrix<T>(ni_, nj_));
-        }
+        Vector<A2AMatrix<T>> buf(nt_, A2AMatrix<T>(ni_, nj_));
+
         int broadcastSize =  sizeof(T) * buf[0].size();
-        int idx = 0;
         for (int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
 
             int  t = tp1 - 1;
@@ -648,29 +643,19 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
                                       stride.data(), block.data());
 
             if (tRead) *tRead -= usecond();
-            if (grid->IsBoss()) {
-                dataset.read(buf[t].data(), datatype, memspace, dataspace);
-            } else {
-                dataset.read(buf[idx].data(), datatype, memspace, dataspace);
-            }
+            dataset.read(buf[t].data(), datatype, memspace, dataspace);
             if (tRead) *tRead += usecond();
-
-            idx++;
         }
-        grid->Barrier();
-        if (!grid->IsBoss()) {
-            int idx = 0;
-            for (int t = nt_-myRank-1; t >= 0; t-=nRank) {
-                // grid->Broadcast(myRank, buf[t].data(), broadcastSize);
-                grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[t].data(),myRank,broadcastSize);
-                idx++;
-            }
-        }
-        grid->Barrier();
-        if (grid->IsBoss()) {
-            for (int t=0;t<nt_;t++) {
-                v[t] = buf[t].template cast<VecT>();
-            }
+        grid->Barrier();                                                                                                                                                                                           
+        for (int t=0;t<nt_;t++) {                                                                                                                                                                                  
+          int rank = t%nRank;                                                                                                                                                                                      
+          int idx = nt_-t-1;                                                                                                                                                                                       
+          grid->Broadcast(rank, buf[idx].data(), broadcastSize);                                                                                                                                                   
+          //grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[idx].data(),rank,broadcastSize);                                                                                                             
+        }                                                                                                                                                                                                          
+        grid->Barrier();                                                                                                                                                                                           
+        for (int t=0;t<nt_;t++) {                                                                                                                                                                                  
+          v[t] = buf[t].template cast<VecT>();                                                                                                                                                                     
         }
     } else {
 
