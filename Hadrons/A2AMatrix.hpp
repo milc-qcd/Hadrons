@@ -631,9 +631,8 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
         Vector<A2AMatrix<T>> buf(nt_, A2AMatrix<T>(ni_, nj_));
 
         int broadcastSize =  sizeof(T) * buf[0].size();
-        for (int tp1 = nt_-myRank; tp1 > 0; tp1-=nRank) {
+        for (int t = myRank; t < nt_; t+=nRank) {
 
-            int  t = tp1 - 1;
             std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
 
             std::cout << " " << t;
@@ -649,8 +648,7 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid)
         grid->Barrier();                                                                                                                                                                                           
         for (int t=0;t<nt_;t++) {                                                                                                                                                                                  
           int rank = t%nRank;                                                                                                                                                                                      
-          int idx = nt_-t-1;                                                                                                                                                                                       
-          grid->Broadcast(rank, buf[idx].data(), broadcastSize);                                                                                                                                                   
+          grid->Broadcast(rank, buf[t].data(), broadcastSize);                                                                                                                                                   
           //grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[idx].data(),rank,broadcastSize);                                                                                                             
         }                                                                                                                                                                                                          
         grid->Barrier();                                                                                                                                                                                           
