@@ -282,8 +282,8 @@ int main(int argc, char* argv[])
         std::string dirName = par.global.diskVectorDir + "/" + p.name;
         if (!grid->IsBoss()) {
             int rank = grid->ThisRank();
-            dirname += "-tmp-";
-            dirname += std::to_string(rank);
+            dirName += "-tmp-";
+            dirName += std::to_string(rank);
         }
 
         a2aMat.emplace(p.name, EigenDiskVector<ComplexD>(dirName, par.global.nt, p.cacheSize));
