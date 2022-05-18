@@ -58,6 +58,8 @@ class TLMAProp : public Module<LMAPropPar>
 public:
     FERM_TYPE_ALIASES(FImpl,);
     typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
+private:
+    HADRONS_DEFINE_setProp_setFerm(FImpl);
 public:
     // constructor
     TLMAProp(const std::string name);
@@ -128,26 +130,36 @@ void TLMAProp<FImpl>::setup(void)
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
     }
 
-    auto &source = envGet(std::vector<FermionField>, par().source);
+    auto &source = envGet(std::vector<PropagatorField>, par().source);
 
-    envTmpLat(FermionField, "Mevec");
-    envTmpLat(FermionField, "Mdagevec");
+    envTmpLat(FermionField, "evecM");
+    envTmpLat(FermionField, "evecMDag");
+    envTmpLat(PropagatorField, "prop");
+    envTmpLat(PropagatorField, "propDag");
     envTmpLat(FermionField, "ferm");
     envTmpLat(LatticeComplex,"stagPhase");
+    envTmpLat(LatticeComplex,"flipOddcb");
     envTmp(FermionField, "tempRb", 1, envGetRbGrid(FermionField));
+    envTmp(LatticeComplex, "tempRbScalar", 1, envGetRbGrid(LatticeComplex));
     envTmp(FermionField, "evecNeg", 1, envGetRbGrid(FermionField));
 
-    envGetTmp(FermionField,Mevec);
-    envGetTmp(FermionField,Mdagevec);
+    envGetTmp(FermionField,evecM);
+    envGetTmp(FermionField,evecMDag);
     envGetTmp(FermionField,tempRb);
+    envGetTmp(LatticeComplex,tempRbScalar);
     envGetTmp(FermionField,evecNeg);
     envGetTmp(FermionField, ferm);
+    envGetTmp(PropagatorField, prop);
+    envGetTmp(PropagatorField, propDag);
 
-    Mevec    = Zero();
-    Mdagevec = Zero();
+    evecM    = Zero();
+    evecMDag = Zero();
     tempRb   = Zero();
     ferm     = Zero();
+    prop     = Zero();
+    propDag  = Zero();
     evecNeg  = Zero();
+    tempRbScalar   = Zero();
 
     envTmp(std::vector<Gamma::Algebra>,"gammaList",1,0);
     envGetTmp(std::vector<Gamma::Algebra>,gammaList);
@@ -156,19 +168,19 @@ void TLMAProp<FImpl>::setup(void)
     if (hasGammas_)  {
         gammaList = strToVec<Gamma::Algebra>(par().gammas);
 
-        std::map<Gamma::Algebra,std::vector<FermionField>> dummy;
-        envCreate(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName(), 1, dummy);
-        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
+        std::map<Gamma::Algebra,std::vector<PropagatorField>> dummy;
+        envCreate(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName(), 1, dummy);
+        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
         for (auto & gamma:gammaList) {
-            sol.insert({gamma,std::vector<FermionField>(source.size(),envGetGrid(FermionField))});
+            sol.insert({gamma,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
             for (auto & s:sol.at(gamma)) {
                 s = Zero();
             }
         }
     } else {
-        envCreate(std::vector<FermionField>, getName(), 1, 
-                  source.size(), envGetGrid(FermionField));
-        auto &sol = envGet(std::vector<FermionField>,getName());
+        envCreate(std::vector<PropagatorField>, getName(), 1, 
+                  source.size(), envGetGrid(PropagatorField));
+        auto &sol = envGet(std::vector<PropagatorField>,getName());
         for (auto & s:sol) {
             s = Zero();
         }
@@ -181,17 +193,21 @@ void TLMAProp<FImpl>::setup(void)
 template <typename FImpl>
 void TLMAProp<FImpl>::execute(void)
 {
-    envGetTmp(FermionField,Mevec);
-    envGetTmp(FermionField,Mdagevec);
+    envGetTmp(LatticeComplex,flipOddcb);
+    envGetTmp(LatticeComplex,tempRbScalar);
+    envGetTmp(FermionField,evecM);
+    envGetTmp(FermionField,evecMDag);
     envGetTmp(FermionField,tempRb);
     envGetTmp(FermionField,evecNeg);
     envGetTmp(FermionField,ferm);
+    envGetTmp(PropagatorField,prop);
+    envGetTmp(PropagatorField,propDag);
 
     auto &action = envGet(FMat, par().action);
 
     typename std::vector<Real>::iterator it_eval;
 
-    auto &source  = envGet(std::vector<FermionField>, par().source);
+    auto &source  = envGet(std::vector<PropagatorField>, par().source);
     auto &evals   = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
     auto &evecs   = envGet(std::vector<FermionField>, par().lowModes);
 
@@ -199,61 +215,80 @@ void TLMAProp<FImpl>::execute(void)
     int cbNeg = (cb==Even) ? Odd : Even;
     
 
-    evecNeg.Checkerboard() = cbNeg;
-
     // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)
     RealD norm = 1/::sqrt(2*norm2(evecs[0]));
 
+    // Build scalar field that is negative on Odd cb. Used for MDag evecs
+    flipOddcb = 1.;
+    tempRbScalar.Checkerboard() = Odd;
+    tempRbScalar = -1.;
+    setCheckerboard(flipOddcb,tempRbScalar);
 
-    for (int j=0;j<evecs.size();j++) {
-        ComplexD eval_D = ComplexD(0.0,evals[j].imag());
+    evecNeg.Checkerboard() = cbNeg;
+    tempRb.Checkerboard() = cbNeg;
 
-        evecNeg.Checkerboard() = cbNeg;
-        tempRb.Checkerboard() = cbNeg;
-        action.Meooe(evecs[j], tempRb);
+    for (int i=0;i<evecs.size();i++) {
+
+        ComplexD eval_D = ComplexD(0.0,evals[i].imag());
+
+        // Build complementary checkerboard for evec
+        action.Meooe(evecs[i], tempRb);
         evecNeg = (1.0/eval_D) * tempRb;
 
-        setCheckerboard(Mevec,evecNeg);
-        setCheckerboard(Mevec,evecs[j]);
-
-        if (cb == Even) {
-            tempRb.Checkerboard() = cbNeg;
-            tempRb = -evecNeg;
-            setCheckerboard(Mdagevec,tempRb);
-            setCheckerboard(Mdagevec,evecs[j]);
-        } else {
-            tempRb.Checkerboard() = cb;
-            tempRb = -evecs[j];
-            setCheckerboard(Mdagevec,tempRb);
-            setCheckerboard(Mdagevec,evecNeg);
-        }
+        setCheckerboard(evecM,evecNeg);
+        setCheckerboard(evecM,evecs[i]);
         
-        Mevec    = norm*Mevec;
-        Mdagevec = norm*Mdagevec;
+        // Normalize eigenvectors to 1
+        evecM *= norm;
+
+        // Build MDag evec by flipping sign of Odd checkerboard
+        evecMDag = flipOddcb*evecM;
+
+        auto evalInv    = 1.0/evals[i];
+        auto evalDagInv = conjugate(evalInv);
 
         if (hasGammas_) {
-            auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
             envGetTmp(std::vector<Gamma::Algebra>,gammaList);
             envGetTmp(LatticeComplex,stagPhase);
+
+            auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
             auto &func = envGet(GammaFn, par().gammaFunc);
+
             for (auto &gamma:gammaList) {
                 stagPhase = func(gamma);
-                for (int i=0;i<source.size();i++) {
-                    ferm = stagPhase*source[i];
-                    auto ip = innerProduct(Mevec,ferm)/evals[j];
-                    sol.at(gamma)[i] += ip*Mevec;
-                    ip = innerProduct(Mdagevec,ferm)/conjugate(evals[j]);
-                    sol.at(gamma)[i] += ip*Mdagevec;
+                for (int j=0;j<source.size();j++) {
+                    const PropagatorField &src = source[j];
+
+                    for (int k=0;k<FImpl::Dimension;k++) {
+                        setFerm(ferm,src,k);
+                        ferm *= stagPhase;
+                        auto ip = innerProduct(evecM,ferm)*evalInv;
+                        auto ipDag = innerProduct(evecMDag,ferm)*evalDagInv;
+                        ferm = ip*evecM;
+                        setProp(prop,ferm,k);
+                        ferm = ipDag*evecMDag;
+                        setProp(propDag,ferm,k);
+                    }
+                    sol.at(gamma)[j] += prop;
+                    sol.at(gamma)[j] += propDag;
                 }
             }
         } else {
-            auto &sol   = envGet(std::vector<FermionField>, getName());
-            for (int i=0;i<source.size();i++) {
-                const FermionField &temp = source[i];
-                auto ip = innerProduct(Mevec,temp)/evals[j];
-                sol[i] += ip*Mevec;
-                ip = innerProduct(Mdagevec,temp)/conjugate(evals[j]);
-                sol[i] += ip*Mdagevec;
+            auto &sol   = envGet(std::vector<PropagatorField>, getName());
+            for (int j=0;j<source.size();j++) {
+                const PropagatorField &src = source[j];
+
+                for (int k=0;k<FImpl::Dimension;k++) {
+                    setFerm(ferm,src,k);
+                    auto ip = innerProduct(evecM,ferm)*evalInv;
+                    auto ipDag = innerProduct(evecMDag,ferm)*evalDagInv;
+                    ferm = ip*evecM;
+                    setProp(prop,ferm,k);
+                    ferm = ipDag*evecMDag;
+                    setProp(propDag,ferm,k);
+                }
+                sol[j] += prop;
+                sol[j] += propDag;
             }
         }
     }

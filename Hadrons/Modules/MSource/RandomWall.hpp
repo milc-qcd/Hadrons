@@ -117,7 +117,7 @@ void TRandomWall<FImpl>::setup(void)
 {
     envTmp(TimeDilutedNoise<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
 
-    envCreate(std::vector<FermionField>, getName(), 1, 0, envGetGrid(FermionField));
+    envCreate(std::vector<PropagatorField>, getName(), 1, 0, envGetGrid(PropagatorField));
 
     envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
 }
@@ -130,31 +130,29 @@ void TRandomWall<FImpl>::execute(void)
     LOG(Message) << "Generating " << par().nSrc << " time-diluted, spin-color diagonal noise sources at every " << par().tStep << " time step(s)" << std::endl;
     noise.generateNoise(rng4d());
 
-    auto &noisevec = envGet(std::vector<FermionField>,getName());
+    auto &noisevec = envGet(std::vector<PropagatorField>,getName());
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
 
-    int nt    = envGetGrid(FermionField)->GlobalDimensions()[Tp];
+    int nt    = envGetGrid(PropagatorField)->GlobalDimensions()[Tp];
 
     int tStep = par().tStep;
     int nSources = par().nSrc;
 
     int nsc   = noise.getNsc();
     int nSlices = nt/tStep;
-    int nVecs = nSources*nSlices*nsc;
+    int nVecs = nSources*nSlices;
 
 
     time_shift.resize(nVecs,0);
 
-    noisevec.resize(nVecs,envGetGrid(FermionField));
+    noisevec.resize(nVecs,envGetGrid(PropagatorField));
 
     for (int i=0;i<nSources;i++) {
         for (int j=0;j<nSlices;j++) {
-            for (int k=0;k<nsc;k++) {
-                int idx = i*nSlices*nsc+j*nsc+k;
-                int offset = i*nt*nsc+j*tStep*nsc+k;
-                noisevec[idx] = noise.getFerm(offset);
-                time_shift[idx] = j*tStep;
-            }
+            int idx = i*nSlices+j;
+            int offset = i*nt+j*tStep;
+            noisevec[idx] = noise.getProp(offset);
+            time_shift[idx] = j*tStep;
         }
     }
 }

@@ -300,6 +300,29 @@ HADRONS_TYPEDEF_BRANCH_STAGGERED(name,FImpl,HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERE
 template <typename T, typename U = int> using IfStag = Invoke<std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
 template <typename T, typename U = int> using IfNotStag = Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
 
+#define HADRONS_DEFINE_setProp_setFerm(FImpl)\
+template <typename T = FImpl>\
+IfNotStag<T,void> setFerm(FermionField& ferm, const PropagatorField& prop, const int s, const int c=0)\
+{\
+    PropToFerm<FImpl>(ferm, prop, s, c);\
+}\
+\
+template <typename T = FImpl>\
+IfStag<T,void> setFerm(FermionField& ferm, const PropagatorField& prop, const int c)\
+{\
+    PropToFerm<FImpl>(ferm, prop, c);\
+}\
+template <typename T = FImpl>\
+IfNotStag<T,void> setProp(PropagatorField& prop, const FermionField& ferm, const int s, const int c=0)\
+{\
+    FermToProp<FImpl>(prop, ferm, s, c);\
+}\
+\
+template <typename T = FImpl>\
+IfStag<T,void> setProp(PropagatorField& prop, const FermionField& ferm, const int c)\
+{\
+    FermToProp<FImpl>(prop, ferm, c);\
+}
 
 template <typename T, IfStag<T> = 0>
 static bool IsStaggeredImpl(){ return true; }
