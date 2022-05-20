@@ -125,7 +125,7 @@ void TRandomPoint<FImpl>::execute(void)
     int nt = env().getDim(Nd-1);
 
     std::vector<int> position(Nd,0);
-    std::vector<int> times(nt);
+    std::vector<int> times(0);
     SitePropagator   id;
     RealD rnum;
 
@@ -133,15 +133,6 @@ void TRandomPoint<FImpl>::execute(void)
 
     auto &src        = envGet(std::vector<PropagatorField>, getName());
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
-
-    if (par().uniqueT && par().nSrc > nt) {
-        LOG(Error) << "Requested unique time indices, but requested sources (" << par().nSrc 
-                    << ") > lattice time slices (" << nt << ")." << std::endl;
-    }
-
-    for (int i=0;i<nt;i++) {
-        times[i] = i;
-    }
 
     id = 1.;
     for (int i=0;i<par().nSrc;i++) {
@@ -152,6 +143,13 @@ void TRandomPoint<FImpl>::execute(void)
             rng->fill(rnum,rng->_uniform);
             int idx = int(N*rnum);
             if (par().uniqueT && j == Nd-1) {
+                if (times.size() == 0){
+                    times.resize(nt);
+                    for (int i=0;i<nt;i++) {
+                        times[i] = i;
+                    }
+                }
+
                 N = times.size();
                 int tidx = int(N*rnum);
                 idx = times[tidx];

@@ -74,7 +74,8 @@ namespace Contractor
                                         std::string, terms,
                                         std::vector<std::string>, times,
                                         std::string, translations,
-                                        bool, translationAverage);
+                                        bool, translationAverage,
+                                        bool, spaceNormalize);
     };
 
     class CorrelatorResult: Serializable
@@ -277,6 +278,12 @@ int main(int argc, char* argv[])
                                      GridDefaultSimd(Nd,vComplex::Nsimd()),
                                      GridDefaultMpi());
 
+    auto &dims = grid->_gdimensions;
+    RealD vol = 1.;
+    for (int idx=0;idx < dims.size()-1;idx++) {
+        vol *= dims[idx];
+    }
+
     for (auto &p: par.a2aMatrix)
     {
         std::string dirName = par.global.diskVectorDir + "/" + p.name;
@@ -450,8 +457,16 @@ int main(int argc, char* argv[])
                         std::cout << Sec(tAr.getDTimer("tr(A*B)") - busec) << " "
                                 << Flops(flops, tAr.getDTimer("tr(A*B)") - fusec) << " " 
                                 << Bytes(bytes, tAr.getDTimer("tr(A*B)") - busec) << std::endl;
+
                         if (!p.translationAverage)
                         {
+                            if (p.spaceNormalize) {
+                                for (unsigned int tLast = 0; tLast < par.global.nt; ++tLast)
+                                {
+                                    result.correlator[tLast] /= vol;
+                                }
+                            }
+
                             saveCorrelator(result, par.global.output, dt, traj);
                             for (unsigned int tLast = 0; tLast < par.global.nt; ++tLast)
                             {
@@ -464,7 +479,11 @@ int main(int argc, char* argv[])
                     {
                         for (unsigned int tLast = 0; tLast < par.global.nt; ++tLast)
                         {
-                            result.correlator[tLast] /= translations.size();
+                            if (p.spaceNormalize) {
+                                result.correlator[tLast] /= vol*translations.size();
+                            } else {
+                                result.correlator[tLast] /= translations.size();
+                            }
                         }
                         saveCorrelator(result, par.global.output, 0, traj);
                     }
