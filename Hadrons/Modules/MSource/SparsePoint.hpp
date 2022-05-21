@@ -94,7 +94,6 @@ void TSparsePoint<FImpl>::execute(void)
 {
     typedef typename PropagatorField::scalar_object siteField;
     LatticeInteger coor(envGetGrid(PropagatorField));
-    std::div_t     divs;
     int            nSparse   = par().nsparse;
     auto           &fields   = envGet(std::vector<PropagatorField>,getName());
     auto           &time_shift   = envGet(std::vector<Integer>,getName()+"_shift");

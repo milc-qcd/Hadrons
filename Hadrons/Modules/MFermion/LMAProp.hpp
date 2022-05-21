@@ -128,21 +128,26 @@ void TLMAProp<FImpl>::setup(void)
     auto &source = envGet(std::vector<PropagatorField>, par().source);
 
     envTmpLat(FermionField, "ferm");
+    envTmpLat(PropagatorField, "prop");
     envTmpLat(LatticeComplex,"stagPhase");
     envTmp(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
+    envTmp(FermionField, "rbTempNeg1", 1, envGetRbGrid(FermionField));
+    envTmp(FermionField, "rbTempNeg2", 1, envGetRbGrid(FermionField));
 
     envGetTmp(FermionField, ferm);
+    envGetTmp(PropagatorField, prop);
     envGetTmp(FermionField, rbTemp);
-    envGetTmp(FermionField, rbTempNeg);
+    envGetTmp(FermionField, rbTempNeg1);
+    envGetTmp(FermionField, rbTempNeg2);
     envGetTmp(FermionField, rbFerm);
     envGetTmp(FermionField, rbFermNeg);
     envGetTmp(FermionField, MrbFermNeg);
 
     ferm       = Zero();
+    prop       = Zero();
     rbFerm     = Zero();
     rbFermNeg  = Zero();
     MrbFermNeg = Zero();
@@ -171,8 +176,10 @@ template <typename FImpl>
 void TLMAProp<FImpl>::execute(void)
 {
     envGetTmp(FermionField,ferm);
+    envGetTmp(PropagatorField,prop);
     envGetTmp(FermionField,rbTemp);
-    envGetTmp(FermionField,rbTempNeg);
+    envGetTmp(FermionField,rbTempNeg1);
+    envGetTmp(FermionField,rbTempNeg2);
     envGetTmp(FermionField,rbFerm);
     envGetTmp(FermionField,rbFermNeg);
     envGetTmp(FermionField,MrbFermNeg);
@@ -195,20 +202,24 @@ void TLMAProp<FImpl>::execute(void)
     // Extra factor of 2 accounts for contributions from M and Mdag evecs
     RealD norm = 1./::sqrt(norm2(evecs[0]));
 
-    for (int i=0;i<source.size();i++) {
-        const PropagatorField& src = source[i];
+    for (auto &gamma:gammaList) {
+        stagPhase = func(gamma);
 
-        for (int j=0;j<FImpl::Dimension;j++) {
+        for (int i=0;i<source.size();i++) {
+            const PropagatorField& src = source[i];
 
-            for (auto &gamma:gammaList) {
-                setFerm(ferm,src,j);
-                stagPhase = func(gamma);
-                ferm *= stagPhase;
+            prop = stagPhase*src;
+
+            for (int j=0;j<FImpl::Dimension;j++) {
+
+                setFerm(ferm,prop,j);
 
                 rbTemp = Zero();
                 rbTemp.Checkerboard() = cb;
-                rbTempNeg = Zero();
-                rbTempNeg.Checkerboard() = cb;
+                rbTempNeg1 = Zero();
+                rbTempNeg1.Checkerboard() = cb;
+                rbTempNeg2 = Zero();
+                rbTempNeg2.Checkerboard() = cb;
 
                 rbFerm.Checkerboard() = cb;
                 rbFermNeg.Checkerboard() = cbNeg;
@@ -220,22 +231,26 @@ void TLMAProp<FImpl>::execute(void)
                 action.Meooe(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb
 
                 // Add up source vector projection onto provided evec checkerboard
-                // [ lam*(|e> + |o>)(<e| + <o|)  +  lam^dag*(|e> - |o>)(<e| - <o|) ] |psi>
-                for (int k=0;k<evecs.size();k++) {
+                // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>
+                for (int k=evecs.size()-1;k >= 0;k--) {
                     const FermionField& e = evecs[k];
 
                     const RealD mass     = evals[k].real();
                     const RealD lam_D    = evals[k].imag();
                     const RealD invlam_D = 1./lam_D; 
                     const RealD invmag   = 1./(pow(mass,2)+pow(lam_D,2));
-                    const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm));
-                    const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg));
+                    const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;
+                    const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;
 
-                    axpy(rbTempNeg,invmag*(ip-mass*ipNeg*invlam_D*invlam_D),e,rbTempNeg);
-                    axpy(rbTemp,   invmag*(mass*ip+ipNeg),                  e,rbTemp);
+                    axpy(rbTemp,     mass*ip-ipNeg,   e,rbTemp);
+                    axpy(rbTempNeg1, ip,                          e,rbTempNeg1);
+                    // Try to avoid losing precision; sum up the smallest term separately starting from smallest coefficients (small invlam_D)
+                    axpy(rbTempNeg2,mass*ipNeg*invlam_D*invlam_D,e,rbTempNeg2); 
                 }
 
-                action.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard
+                rbTempNeg1 += rbTempNeg2;
+                action.Meooe(rbTempNeg1, rbFermNeg); // Move projection back to cbNeg checkerboard
+
                 setCheckerboard(ferm,rbTemp);
                 setCheckerboard(ferm,rbFermNeg);
 

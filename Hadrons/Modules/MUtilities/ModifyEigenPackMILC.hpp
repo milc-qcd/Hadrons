@@ -155,7 +155,7 @@ void TModifyEigenPackMILC<FImpl,Pack>::execute(void)
 
     int cb = (evenEigen ? Even : Odd);
     if (!par().checkerSwapAction.empty()) {
-        LOG(Message) << "Swapping checkerboard from " << (evenEigen?"Odd to":"Even to") << (evenEigen?"Even":"Odd")<< std::endl;
+        LOG(Message) << "Swapping checkerboard from " << (evenEigen?"Odd to ":"Even to ") << (evenEigen?"Even":"Odd")<< std::endl;
 
         evec.resize(epack.evec.size(),envGetRbGrid(Field, Ls));
 

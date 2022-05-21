@@ -129,7 +129,7 @@ void TRandomPoint<FImpl>::execute(void)
     SitePropagator   id;
     RealD rnum;
 
-    auto rng = env().getSerialRng();
+    auto& rng = rngSerial();
 
     auto &src        = envGet(std::vector<PropagatorField>, getName());
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
@@ -140,7 +140,7 @@ void TRandomPoint<FImpl>::execute(void)
 
         for (int j=0;j<Nd;j++) {
             auto N = env().getDim(j);
-            rng->fill(rnum,rng->_uniform);
+            rng.fill(rnum,rng._uniform);
             int idx = int(N*rnum);
             if (par().uniqueT && j == Nd-1) {
                 if (times.size() == 0){
