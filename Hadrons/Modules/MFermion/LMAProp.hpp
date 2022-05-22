@@ -134,14 +134,12 @@ void TLMAProp<FImpl>::setup(void)
     envTmp(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbTempNeg1", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbTempNeg2", 1, envGetRbGrid(FermionField));
+    envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
 
     envGetTmp(FermionField, ferm);
     envGetTmp(PropagatorField, prop);
     envGetTmp(FermionField, rbTemp);
-    envGetTmp(FermionField, rbTempNeg1);
-    envGetTmp(FermionField, rbTempNeg2);
+    envGetTmp(FermionField, rbTempNeg);
     envGetTmp(FermionField, rbFerm);
     envGetTmp(FermionField, rbFermNeg);
     envGetTmp(FermionField, MrbFermNeg);
@@ -178,8 +176,7 @@ void TLMAProp<FImpl>::execute(void)
     envGetTmp(FermionField,ferm);
     envGetTmp(PropagatorField,prop);
     envGetTmp(FermionField,rbTemp);
-    envGetTmp(FermionField,rbTempNeg1);
-    envGetTmp(FermionField,rbTempNeg2);
+    envGetTmp(FermionField,rbTempNeg);
     envGetTmp(FermionField,rbFerm);
     envGetTmp(FermionField,rbFermNeg);
     envGetTmp(FermionField,MrbFermNeg);
@@ -216,10 +213,8 @@ void TLMAProp<FImpl>::execute(void)
 
                 rbTemp = Zero();
                 rbTemp.Checkerboard() = cb;
-                rbTempNeg1 = Zero();
-                rbTempNeg1.Checkerboard() = cb;
-                rbTempNeg2 = Zero();
-                rbTempNeg2.Checkerboard() = cb;
+                rbTempNeg = Zero();
+                rbTempNeg.Checkerboard() = cb;
 
                 rbFerm.Checkerboard() = cb;
                 rbFermNeg.Checkerboard() = cbNeg;
@@ -243,13 +238,10 @@ void TLMAProp<FImpl>::execute(void)
                     const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;
 
                     axpy(rbTemp,     mass*ip-ipNeg,   e,rbTemp);
-                    axpy(rbTempNeg1, ip,                          e,rbTempNeg1);
-                    // Try to avoid losing precision; sum up the smallest term separately starting from smallest coefficients (small invlam_D)
-                    axpy(rbTempNeg2,mass*ipNeg*invlam_D*invlam_D,e,rbTempNeg2); 
+                    axpy(rbTempNeg, ip+mass*ipNeg*invlam_D*invlam_D,                          e,rbTempNeg);
                 }
 
-                rbTempNeg1 += rbTempNeg2;
-                action.Meooe(rbTempNeg1, rbFermNeg); // Move projection back to cbNeg checkerboard
+                action.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard
 
                 setCheckerboard(ferm,rbTemp);
                 setCheckerboard(ferm,rbFermNeg);
