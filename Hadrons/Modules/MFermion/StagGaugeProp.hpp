@@ -154,7 +154,14 @@ void TStagGaugeProp<FImpl>::setupHelper() {
             envCreateLat(TField, getName());
         }
     } else {
-        auto &src = envGet(std::vector<TField>, par().source);
+        int srcSize = 0;
+        if (envHasType(ARG(std::map<Gamma::Algebra,std::vector<TField> >),par().source)) {
+            auto &src = envGet(ARG(std::map<Gamma::Algebra,std::vector<TField> >), par().source);
+            srcSize = src.at(Gamma::Algebra::Gamma5).size();
+        } else {
+            auto &src = envGet(std::vector<TField>, par().source);
+            srcSize = src.size();
+        }
 
         if (hasGammas_) {
             envGetTmp(std::vector<Gamma::Algebra>,gammaList);
@@ -162,13 +169,13 @@ void TStagGaugeProp<FImpl>::setupHelper() {
             envCreate(ARG(std::map<Gamma::Algebra,std::vector<TField>>), getName(), 1, dummy);
             auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<TField>>), getName());
             for (auto & gamma:gammaList) {
-                sol.insert({gamma,std::vector<TField>(src.size(),envGetGrid(TField))});
+                sol.insert({gamma,std::vector<TField>(srcSize,envGetGrid(TField))});
                 for (auto & s:sol.at(gamma)) {
                     s = Zero();
                 }
             }
         } else {
-            envCreate(std::vector<TField>, getName(), 1, src.size(),
+            envCreate(std::vector<TField>, getName(), 1, srcSize,
                       envGetGrid(TField));
         }
     }
@@ -186,9 +193,9 @@ void TStagGaugeProp<FImpl>::setup(void)
         gammaList = strToVec<Gamma::Algebra>(par().gammas);
     }
     
-    if (envHasType(PropagatorField,par().source) || envHasType(std::vector<PropagatorField>,par().source)) {
+    if (envHasType(PropagatorField,par().source) || envHasType(std::vector<PropagatorField>,par().source) || envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >),par().source)) {
         setupHelper<PropagatorField>();
-    } else if (envHasType(FermionField,par().source) || envHasType(std::vector<FermionField>,par().source)) {
+    } else if (envHasType(FermionField,par().source) || envHasType(std::vector<FermionField>,par().source)|| envHasType(ARG(std::map<Gamma::Algebra,std::vector<FermionField> >),par().source)) {
         setupHelper<FermionField>();
     } else {
         HADRONS_ERROR(Logic,"Type of source '" + par().source + "' not recognized.");
@@ -289,14 +296,21 @@ void TStagGaugeProp<FImpl>::execute(void)
             auto &sol = envGet(PropagatorField,getName());
             solvePropagator(sol,src);
         }
-    } else if (envHasType(std::vector<PropagatorField>, par().source)) {
-        auto &src = envGet(std::vector<PropagatorField>, par().source);
+    } else if (envHasType(std::vector<PropagatorField>, par().source) || envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >), par().source)) {
+        std::vector<PropagatorField> *src;
+        if (envHasType(std::vector<PropagatorField>, par().source)) {
+            auto &srctmp = envGet(std::vector<PropagatorField>, par().source);
+            src = &srctmp;
+        } else {
+            auto &srctmp = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >), par().source);
+            src = &(srctmp.at(Gamma::Algebra::Gamma5));
+        }
         if (hasGammas_) {
-            auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>),getName());
-            solvePropagator(sol,src);
+            auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >),getName());
+            solvePropagator(sol,*src);
         } else {
             auto &sol = envGet(std::vector<PropagatorField>,getName());
-            solvePropagator(sol,src);
+            solvePropagator(sol,*src);
         }
     } else if (envHasType(FermionField,par().source)) {
         auto &src = envGet(FermionField,par().source);
@@ -308,13 +322,20 @@ void TStagGaugeProp<FImpl>::execute(void)
             solvePropagator(sol,src);
         }
     } else {
-        auto &src = envGet(std::vector<FermionField>, par().source);
+        std::vector<FermionField> *src;
+        if (envHasType(std::vector<FermionField>, par().source)) {
+            auto &srctmp = envGet(std::vector<FermionField>, par().source);
+            src = &srctmp;
+        } else {
+            auto &srctmp = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField> >), par().source);
+            src = &(srctmp.at(Gamma::Algebra::Gamma5));
+        }
         if (hasGammas_) {
             auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>),getName());
-            solvePropagator(sol,src);
+            solvePropagator(sol,*src);
         } else {
             auto &sol = envGet(std::vector<FermionField>,getName());
-            solvePropagator(sol,src);
+            solvePropagator(sol,*src);
         }
     }
 }
