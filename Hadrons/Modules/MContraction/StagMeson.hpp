@@ -84,7 +84,10 @@ public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
-                                        std::vector<Complex>, corr);
+                                        std::vector<Complex>, corr,
+                                        std::vector<std::vector<Complex> >, srcCorrs,
+                                        std::vector<Integer>, timeShifts,
+                                        Real,                 scaling);
     };
 public:
     // constructor
@@ -97,7 +100,7 @@ public:
     void parseGammaString();
 protected:
     template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(Result &ret, const TField &fSink, const TField &fSrc, Real scale = 1.0, Integer shift = 0);
+    EnableIf<is_lattice<TField>,void> contract(Result &ret, const TField &fSink, const TField &fSrc, Integer index = 0);
     template<typename TField>
     EnableIf<is_lattice<TField>,void> contract(Result &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc);
     template<typename TField>
@@ -136,7 +139,6 @@ protected:
     virtual void setup(void);
     // execution
     virtual void execute(void);
-private:
 };
 
 MODULE_REGISTER_TMP(StagMeson, TStagMeson<STAGIMPL>, MContraction);
@@ -208,7 +210,7 @@ void TStagMeson<FImpl>::parseGammaString()
 // execution ///////////////////////////////////////////////////////////////////
 template<typename FImpl>
 template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const TField &fSink, const TField &fSrc, Real scale, Integer shift) {
+EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const TField &fSink, const TField &fSrc, Integer index) {
 
     int offset, nt = env().getDim(Tp);
     std::vector<TComplex>     buf;
@@ -219,14 +221,19 @@ EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const
 
     buildProp(op, fSink,fSrc,ret.gamma_snk);
 
+    Integer shift;
+    shift = (index < ret.timeShifts.size()) ? ret.timeShifts[index] : 0;
+    if (shift != 0) {
+        LOG(Message) << "Shifting correlator to (t0 = " << ret.timeShifts[index] << ")" << std::endl;
+    }
+
     buf = sink(trace(op));
     for (unsigned int t = 0; t < nt; ++t)
     {
         offset = mod(t+shift,nt);
-        if (scale > 0.0)
-            ret.corr[t] += (TensorRemove(buf[offset])/scale);
-        else 
-            ret.corr[t] += TensorRemove(buf[offset]);
+        auto ct = TensorRemove(buf[offset]);
+        ret.corr[t] += ct*ret.scaling; // Save correlator average
+        ret.srcCorrs[index][t] = ct; // Save corr for individual source
     }
 }
 
@@ -234,19 +241,10 @@ template<typename FImpl>
 template<typename TField>
 EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc) {
 
-    std::vector<Integer> shifts;
-    if (!par().sourceShift.empty()) {
-        shifts = envGet(std::vector<Integer>, par().sourceShift);
-    }
-
     for (int i = 0; i < fSink.size(); i++) {
         LOG(Message) << "Contracting element i = " << i << std::endl;
-        if (!par().sourceShift.empty()) {
-            LOG(Message) << "Shifting correlator to (t0 = " << shifts[i] << ")" << std::endl;
-            contract(ret,fSink[i],fSrc[i],fSink.size(), shifts[i]);
-        } else {
-            contract(ret,fSink[i],fSrc[i],fSink.size());
-        }
+        ret.scaling = 1.0/fSrc.size();
+        contract(ret,fSink[i],fSrc[i],i);
     }
 }
 template<typename FImpl>
@@ -289,58 +287,81 @@ void TStagMeson<FImpl>::execute(void)
                  << " quarks '" << par().q1 << "' and '" << par().q2 << "'"
                  << std::endl;
 
-    std::vector<Result> result;
+    std::vector<Result> res;
     unsigned int nt = env().getDim(Tp);
 
     parseGammaString();
 
     envGetTmp(std::vector<GammaPair>,gammaList);
-    result.resize(gammaList.size());
 
-    for (unsigned int i = 0; i < result.size(); ++i)
+    res.resize(gammaList.size());
+
+    std::vector<Integer> shifts;
+    for (unsigned int i = 0; i < res.size(); ++i)
     {
-        result[i].gamma_snk = gammaList[i].first;
-        result[i].gamma_src = gammaList[i].second;
-        result[i].corr.resize(nt, 0.0);
+        res[i].gamma_snk = gammaList[i].first;
+        res[i].gamma_src = gammaList[i].second;
+        res[i].srcCorrs.resize(1, std::vector<Complex>(nt,0.0));
+        res[i].corr.resize(nt, 0.0);
+        res[i].scaling = 1.0;
+        if (!par().sourceShift.empty()) {
+            res[i].timeShifts = envGet(std::vector<Integer>, par().sourceShift);
+        }
     }
 
     if (envHasType(PropagatorField, par().q1)) {
         auto &q1  = envGet(PropagatorField, par().q1);
         auto &q2  = envGet(PropagatorField, par().q2);
 
-        contract(result,q1,q2);
+        contract(res,q1,q2);
 
     } else if (envHasType(std::vector<PropagatorField>, par().q1)) {
         auto &q1  = envGet(std::vector<PropagatorField>, par().q1);
         auto &q2  = envGet(std::vector<PropagatorField>, par().q2);
 
-        contract(result,q1,q2);
+        for (unsigned int i = 0; i < res.size(); ++i)
+        {
+            res[i].srcCorrs.resize(q1.size(), std::vector<Complex>(nt,0.0));
+        }
+        contract(res,q1,q2);
 
     } else if (envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q1)) {
         auto &q1  = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q1);
         auto &q2  = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q2);
 
-        contract(result,q1,q2);
+        for (unsigned int i = 0; i < res.size(); ++i)
+        {
+            res[i].srcCorrs.resize(q1.at(Gamma::Algebra::Gamma5).size(), std::vector<Complex>(nt,0.0));
+        }
+        contract(res,q1,q2);
 
     } else if (envHasType(FermionField, par().q1)) {
         auto &q1  = envGet(FermionField, par().q1);
         auto &q2  = envGet(FermionField, par().q2);
 
-        contract(result,q1,q2);
+        contract(res,q1,q2);
 
     } else if (envHasType(std::vector<FermionField>, par().q1)) {
         auto &q1  = envGet(std::vector<FermionField>, par().q1);
         auto &q2  = envGet(std::vector<FermionField>, par().q2);
 
-        contract(result,q1,q2);
+        for (unsigned int i = 0; i < res.size(); ++i)
+        {
+            res[i].srcCorrs.resize(q1.size(), std::vector<Complex>(nt,0.0));
+        }
+        contract(res,q1,q2);
     } else {
         auto &q1  = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q1);
         auto &q2  = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q2);
 
-        contract(result,q1,q2);
+        for (unsigned int i = 0; i < res.size(); ++i)
+        {
+            res[i].srcCorrs.resize(q1.at(Gamma::Algebra::Gamma5).size(), std::vector<Complex>(nt,0.0));
+        }
+        contract(res,q1,q2);
     }
 
-    saveResult(par().output, "meson", result);
+    saveResult(par().output, "meson", res);
 }
 
 END_MODULE_NAMESPACE
