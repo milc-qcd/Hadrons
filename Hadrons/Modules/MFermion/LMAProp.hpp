@@ -97,7 +97,7 @@ std::vector<std::string> TLMAProp<FImpl>::getInput(void)
     in.push_back(par().lowModes+"_evalM");
     in.push_back(par().gammaFunc);
     if (par().gammas.empty()) {
-        LOG(Error) << "Must provide a list of gammas to " << getName() << std::endl;
+        HADRONS_ERROR(Logic,"Must provide a list of gammas to " + getName());
     }
 
 

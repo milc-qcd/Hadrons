@@ -126,8 +126,8 @@ void TRandomWall<FImpl>::setup(void)
     envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
 
     if (!par().reuset0.empty()) {
-        if (!(std::istringstream(par().reuset0) >> reuset0_)) {
-            LOG(Error) << "parameter reuset0='" << par().reuset0 << "' must be 'true' or 'false'";
+        if (!(std::istringstream(par().reuset0) >> std::boolalpha >> reuset0_)) {
+            HADRONS_ERROR(Logic,"parameter reuset0='" + par().reuset0 + "' must be 'true' or 'false'");
         }
     }
 }
@@ -158,6 +158,10 @@ void TRandomWall<FImpl>::execute(void)
     noisevec.resize(nVecs,envGetGrid(PropagatorField));
 
     envGetTmp(PropagatorField,shiftedField);
+
+    if (reuset0_) {
+        LOG(Message) << "Reusing noise vectors at t=0 and shifting by " << par().tStep << std::endl;
+    }
 
     for (int i=0;i<nSources;i++) {
         if (reuset0_) {
