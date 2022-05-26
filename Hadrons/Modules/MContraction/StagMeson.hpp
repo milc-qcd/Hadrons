@@ -241,9 +241,10 @@ template<typename FImpl>
 template<typename TField>
 EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc) {
 
+    ret.scaling = 1.0/fSrc.size();
+
     for (int i = 0; i < fSink.size(); i++) {
         LOG(Message) << "Contracting element i = " << i << std::endl;
-        ret.scaling = 1.0/fSrc.size();
         contract(ret,fSink[i],fSrc[i],i);
     }
 }
@@ -296,7 +297,6 @@ void TStagMeson<FImpl>::execute(void)
 
     res.resize(gammaList.size());
 
-    std::vector<Integer> shifts;
     for (unsigned int i = 0; i < res.size(); ++i)
     {
         res[i].gamma_snk = gammaList[i].first;

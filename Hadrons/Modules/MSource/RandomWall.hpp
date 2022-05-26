@@ -59,7 +59,8 @@ class RandomWallPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallPar,
                                     unsigned int, tStep,
-                                    unsigned int, nSrc);
+                                    unsigned int, nSrc,
+                                    std::string, reuset0);
 };
 
 template <typename FImpl>
@@ -80,6 +81,8 @@ protected:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    bool reuset0_ = false;
 };
 
 // MODULE_REGISTER_TMP(RandomWall, TRandomWall<FIMPL>, MSource);
@@ -116,10 +119,17 @@ template <typename FImpl>
 void TRandomWall<FImpl>::setup(void)
 {
     envTmp(TimeDilutedNoise<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
+    envTmp(PropagatorField, "shiftedField", 1, envGetGrid(PropagatorField));
 
     envCreate(std::vector<PropagatorField>, getName(), 1, 0, envGetGrid(PropagatorField));
 
     envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
+
+    if (!par().reuset0.empty()) {
+        if (!(std::istringstream(par().reuset0) >> reuset0_)) {
+            LOG(Error) << "parameter reuset0='" << par().reuset0 << "' must be 'true' or 'false'";
+        }
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -147,11 +157,23 @@ void TRandomWall<FImpl>::execute(void)
 
     noisevec.resize(nVecs,envGetGrid(PropagatorField));
 
+    envGetTmp(PropagatorField,shiftedField);
+
     for (int i=0;i<nSources;i++) {
+        if (reuset0_) {
+            shiftedField = noise.getProp(i*nt);
+            noisevec[i*nSlices] = shiftedField;
+        }
         for (int j=0;j<nSlices;j++) {
             int idx = i*nSlices+j;
             int offset = i*nt+j*tStep;
-            noisevec[idx] = noise.getProp(offset);
+            if (!reuset0_) {
+                noisevec[idx] = noise.getProp(offset);                
+            } else {
+                if (j != 0) {
+                    noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
+                }
+            }
             time_shift[idx] = j*tStep;
         }
     }
