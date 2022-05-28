@@ -49,7 +49,8 @@ public:
                                     std::string , action,
                                     unsigned int, maxIteration,
                                     double      , residual,
-                                    std::string , eigenPack);
+                                    std::string , eigenPack,
+                                    bool        , mustConverge);
 };
 
 template <typename FImpl, int nBasis = HADRONS_DEFAULT_LANCZOS_NBASIS>
@@ -139,11 +140,14 @@ void TRBPrecCG<FImpl, nBasis>::setup(void)
     auto &mat      = envGet(FMat, par().action);
     auto guesserPt = makeGuesser<FImpl, nBasis>(par().eigenPack);
 
-    auto makeSolver = [&mat, guesserPt, this](bool subGuess) {
+    bool mustConverge = par().mustconverge;
+
+    auto makeSolver = [&mat, guesserPt, mustConverge, this](bool subGuess) {
         return [&mat, guesserPt, subGuess, this](FermionField &sol,
                                      const FermionField &source) {
             ConjugateGradient<FermionField> cg(par().residual,
-                                               par().maxIteration);
+                                               par().maxIteration,
+                                               mustConverge);
             schurSolve_t<FermionField> schurSolver(cg,false,false);
             schurSolver.subtractGuess(subGuess);
             schurSolver(mat, source, sol, *guesserPt);
