@@ -140,10 +140,10 @@ void TRBPrecCG<FImpl, nBasis>::setup(void)
     auto &mat      = envGet(FMat, par().action);
     auto guesserPt = makeGuesser<FImpl, nBasis>(par().eigenPack);
 
-    bool mustConverge = par().mustconverge;
+    bool mustConverge = par().mustConverge;
 
     auto makeSolver = [&mat, guesserPt, mustConverge, this](bool subGuess) {
-        return [&mat, guesserPt, subGuess, this](FermionField &sol,
+        return [&mat, guesserPt, subGuess, mustConverge, this](FermionField &sol,
                                      const FermionField &source) {
             ConjugateGradient<FermionField> cg(par().residual,
                                                par().maxIteration,
