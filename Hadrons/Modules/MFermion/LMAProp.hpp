@@ -74,6 +74,8 @@ public:
 
     // execute
     virtual void execute(void);
+
+    inline void projectHelper(FermionField& sol, const FermionField& src);
 };
 
 MODULE_REGISTER_TMP(StagLMAProp, TLMAProp<STAGIMPL>, MFermion);
@@ -125,9 +127,8 @@ void TLMAProp<FImpl>::setup(void)
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
     }
 
-    auto &source = envGet(std::vector<PropagatorField>, par().source);
-
     envTmpLat(FermionField, "ferm");
+    envTmpLat(FermionField, "ferm2");
     envTmpLat(PropagatorField, "prop");
     envTmpLat(LatticeComplex,"stagPhase");
     envTmp(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
@@ -137,6 +138,7 @@ void TLMAProp<FImpl>::setup(void)
     envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
 
     envGetTmp(FermionField, ferm);
+    envGetTmp(FermionField, ferm2);
     envGetTmp(PropagatorField, prop);
     envGetTmp(FermionField, rbTemp);
     envGetTmp(FermionField, rbTempNeg);
@@ -145,6 +147,7 @@ void TLMAProp<FImpl>::setup(void)
     envGetTmp(FermionField, MrbFermNeg);
 
     ferm       = Zero();
+    ferm2       = Zero();
     prop       = Zero();
     rbFerm     = Zero();
     rbFermNeg  = Zero();
@@ -156,39 +159,46 @@ void TLMAProp<FImpl>::setup(void)
 
     gammaList = strToVec<Gamma::Algebra>(par().gammas);
 
-    std::map<Gamma::Algebra,std::vector<PropagatorField>> dummy;
-    envCreate(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName(), 1, dummy);
-    auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
-    for (auto & gamma:gammaList) {
-        sol.insert({gamma,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
-        for (auto & s:sol.at(gamma)) {
-            s = Zero();
+    if ( envHasType(std::vector<PropagatorField>,par().source)) {
+        auto &source = envGet(std::vector<PropagatorField>, par().source);
+
+        std::map<Gamma::Algebra,std::vector<PropagatorField>> dummy;
+        envCreate(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName(), 1, dummy);
+        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
+        for (auto & gamma:gammaList) {
+            sol.insert({gamma,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
+            for (auto & s:sol.at(gamma)) {
+                s = Zero();
+            }
         }
+    } else if ( envHasType(std::vector<FermionField>,par().source)) {
+        auto &source = envGet(std::vector<FermionField>, par().source);
+
+        std::map<Gamma::Algebra,std::vector<FermionField>> dummy;
+        envCreate(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName(), 1, dummy);
+        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
+        for (auto & gamma:gammaList) {
+            sol.insert({gamma,std::vector<FermionField>(source.size(),envGetGrid(FermionField))});
+            for (auto & s:sol.at(gamma)) {
+                s = Zero();
+            }
+        }
+    } else {
+       HADRONS_ERROR(Argument, "source parameter: '" + par().source + "' must be a vector of FermionFields or PropagatorFields.");
     }
 }
 
-/******************************************************************************
- *              TLMAProp execution                                     *
- ******************************************************************************/
 template <typename FImpl>
-void TLMAProp<FImpl>::execute(void)
-{
-    envGetTmp(FermionField,ferm);
-    envGetTmp(PropagatorField,prop);
+inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField& src) {
+
     envGetTmp(FermionField,rbTemp);
     envGetTmp(FermionField,rbTempNeg);
     envGetTmp(FermionField,rbFerm);
     envGetTmp(FermionField,rbFermNeg);
     envGetTmp(FermionField,MrbFermNeg);
-    envGetTmp(LatticeComplex,stagPhase);
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
 
     auto &action = envGet(FMat, par().action);
 
-    auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
-    auto &func = envGet(GammaFn, par().gammaFunc);
-
-    auto &source  = envGet(std::vector<PropagatorField>, par().source);
     auto &evals   = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
     auto &evecs   = envGet(std::vector<FermionField>, par().lowModes);
 
@@ -199,58 +209,95 @@ void TLMAProp<FImpl>::execute(void)
     // Extra factor of 2 accounts for contributions from M and Mdag evecs
     RealD norm = 1./::sqrt(norm2(evecs[0]));
 
-    for (auto &gamma:gammaList) {
-        stagPhase = func(gamma);
+    rbTemp = Zero();
+    rbTemp.Checkerboard() = cb;
+    rbTempNeg = Zero();
+    rbTempNeg.Checkerboard() = cb;
 
-        for (int i=0;i<source.size();i++) {
-            const PropagatorField& src = source[i];
+    rbFerm.Checkerboard() = cb;
+    rbFermNeg.Checkerboard() = cbNeg;
+    MrbFermNeg.Checkerboard() = cb;
 
-            prop = stagPhase*src;
+    pickCheckerboard(cb,rbFerm,src);
+    pickCheckerboard(cbNeg,rbFermNeg,src);
 
-            for (int j=0;j<FImpl::Dimension;j++) {
+    action.Meooe(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb
 
-                setFerm(ferm,prop,j);
+    // Add up source vector projection onto provided evec checkerboard
+    // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>
+    for (int k=evecs.size()-1;k >= 0;k--) {
+        const FermionField& e = evecs[k];
 
-                rbTemp = Zero();
-                rbTemp.Checkerboard() = cb;
-                rbTempNeg = Zero();
-                rbTempNeg.Checkerboard() = cb;
+        const RealD mass     = evals[k].real();
+        const RealD lam_D    = evals[k].imag();
+        const RealD invlam_D = 1./lam_D; 
+        const RealD invmag   = 1./(pow(mass,2)+pow(lam_D,2));
+        const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;
+        const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;
 
-                rbFerm.Checkerboard() = cb;
-                rbFermNeg.Checkerboard() = cbNeg;
-                MrbFermNeg.Checkerboard() = cb;
+        axpy(rbTemp,     mass*ip-ipNeg,   e,rbTemp);
+        axpy(rbTempNeg, ip+mass*ipNeg*invlam_D*invlam_D,                          e,rbTempNeg);
+    }
 
-                pickCheckerboard(cb,rbFerm,ferm);
-                pickCheckerboard(cbNeg,rbFermNeg,ferm);
+    action.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard
 
-                action.Meooe(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb
+    setCheckerboard(sol,rbTemp);
+    setCheckerboard(sol,rbFermNeg);
 
-                // Add up source vector projection onto provided evec checkerboard
-                // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>
-                for (int k=evecs.size()-1;k >= 0;k--) {
-                    const FermionField& e = evecs[k];
+    sol *= norm;
+}
 
-                    const RealD mass     = evals[k].real();
-                    const RealD lam_D    = evals[k].imag();
-                    const RealD invlam_D = 1./lam_D; 
-                    const RealD invmag   = 1./(pow(mass,2)+pow(lam_D,2));
-                    const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;
-                    const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;
+/******************************************************************************
+ *              TLMAProp execution                                     *
+ ******************************************************************************/
+template <typename FImpl>
+void TLMAProp<FImpl>::execute(void)
+{
+    envGetTmp(FermionField,ferm);
+    envGetTmp(FermionField,ferm2);
+    envGetTmp(PropagatorField,prop);
+    envGetTmp(LatticeComplex,stagPhase);
+    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
 
-                    axpy(rbTemp,     mass*ip-ipNeg,   e,rbTemp);
-                    axpy(rbTempNeg, ip+mass*ipNeg*invlam_D*invlam_D,                          e,rbTempNeg);
+    auto &func  = envGet(GammaFn, par().gammaFunc);
+
+    if ( envHasType(std::vector<PropagatorField>,par().source)) {
+        auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
+        auto &source  = envGet(std::vector<PropagatorField>, par().source);
+
+        for (auto &gamma:gammaList) {
+            stagPhase = func(gamma);
+
+            for (int i=0;i<source.size();i++) {
+                const PropagatorField& src = source[i];
+
+                prop = stagPhase*src;
+
+                for (int j=0;j<FImpl::Dimension;j++) {
+
+                    setFerm(ferm,prop,j);
+
+                    projectHelper(ferm2,ferm);
+                    setProp(sol.at(gamma)[i],ferm2,j);
                 }
-
-                action.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard
-
-                setCheckerboard(ferm,rbTemp);
-                setCheckerboard(ferm,rbFermNeg);
-
-                ferm *= norm;
-                setProp(sol.at(gamma)[i],ferm,j);
             }
         }
+    } else {
+        auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
+        auto &source  = envGet(std::vector<FermionField>, par().source);
 
+        for (auto &gamma:gammaList) {
+            stagPhase = func(gamma);
+
+            for (int i=0;i<source.size();i++) {
+                const FermionField& src = source[i];
+
+                ferm = stagPhase*src;
+                projectHelper(ferm2,ferm);
+
+                sol.at(gamma)[i] = ferm2;
+            }
+        }
     }
 }
 

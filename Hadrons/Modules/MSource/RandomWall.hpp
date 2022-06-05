@@ -60,7 +60,8 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallPar,
                                     unsigned int, tStep,
                                     unsigned int, nSrc,
-                                    std::string, reuset0);
+                                    std::string, reuset0,
+                                    bool,        colorDiag);
 };
 
 template <typename FImpl>
@@ -68,6 +69,7 @@ class TRandomWall: public Module<RandomWallPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
+    HADRONS_DEFINE_setProp_setFerm(FImpl);
 public:
     // constructor
     TRandomWall(const std::string name);
@@ -119,9 +121,14 @@ template <typename FImpl>
 void TRandomWall<FImpl>::setup(void)
 {
     envTmp(TimeDilutedNoise<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
-    envTmp(PropagatorField, "shiftedField", 1, envGetGrid(PropagatorField));
+    envTmpLat(PropagatorField, "shiftedField");
+    envTmpLat(FermionField,"ferm");
 
-    envCreate(std::vector<PropagatorField>, getName(), 1, 0, envGetGrid(PropagatorField));
+    if (par().colorDiag) {
+        envCreate(std::vector<PropagatorField>, getName(), 1, 0, envGetGrid(PropagatorField));
+    } else {
+        envCreate(std::vector<FermionField>, getName(), 1, 0, envGetGrid(FermionField));
+    }
 
     envCreate(std::vector<Integer>, getName()+"_shift", 1, 0, 0);
 
@@ -137,10 +144,12 @@ template <typename FImpl>
 void TRandomWall<FImpl>::execute(void)
 {    
     envGetTmp(TimeDilutedNoise<FImpl>, noise);
+    envGetTmp(PropagatorField,shiftedField);
+    envGetTmp(FermionField,ferm);
+
     LOG(Message) << "Generating " << par().nSrc << " time-diluted, spin-color diagonal noise sources at every " << par().tStep << " time step(s)" << std::endl;
     noise.generateNoise(rng4d());
 
-    auto &noisevec = envGet(std::vector<PropagatorField>,getName());
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
 
     int nt    = envGetGrid(PropagatorField)->GlobalDimensions()[Tp];
@@ -148,37 +157,67 @@ void TRandomWall<FImpl>::execute(void)
     int tStep = par().tStep;
     int nSources = par().nSrc;
 
-    int nsc   = noise.getNsc();
     int nSlices = nt/tStep;
     int nVecs = nSources*nSlices;
 
-
     time_shift.resize(nVecs,0);
-
-    noisevec.resize(nVecs,envGetGrid(PropagatorField));
-
-    envGetTmp(PropagatorField,shiftedField);
 
     if (reuset0_) {
         LOG(Message) << "Reusing noise vectors at t=0 and shifting by " << par().tStep << std::endl;
     }
 
-    for (int i=0;i<nSources;i++) {
-        if (reuset0_) {
-            shiftedField = noise.getProp(i*nt);
-            noisevec[i*nSlices] = shiftedField;
+
+    if (par().colorDiag) {
+        auto &noisevec = envGet(std::vector<PropagatorField>,getName());
+        noisevec.resize(nVecs,envGetGrid(PropagatorField));
+
+        for (int i=0;i<nSources;i++) {
+            if (reuset0_) {
+                shiftedField = noise.getProp(i*nt);
+                noisevec[i*nSlices] = shiftedField;
+            }
+            for (int j=0;j<nSlices;j++) {
+                int idx = i*nSlices+j;
+                int offset = i*nt+j*tStep;
+                if (!reuset0_) {
+                    noisevec[idx] = noise.getProp(offset);                
+                } else {
+                    if (j != 0) {
+                        noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
+                    }
+                }
+                time_shift[idx] = j*tStep;
+            }
         }
-        for (int j=0;j<nSlices;j++) {
-            int idx = i*nSlices+j;
-            int offset = i*nt+j*tStep;
-            if (!reuset0_) {
-                noisevec[idx] = noise.getProp(offset);                
-            } else {
-                if (j != 0) {
-                    noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
+    } else {
+        auto &noisevec = envGet(std::vector<FermionField>,getName());
+        noisevec.resize(nVecs,envGetGrid(FermionField));
+
+        for (int i=0;i<nSources;i++) {
+            if (reuset0_) {
+                shiftedField = noise.getProp(i*nt);
+                noisevec[i*nSlices] = Zero();
+                for (int j=0;j<FImpl::Dimension;j++) {
+                    setFerm(ferm,shiftedField,j);
+                    noisevec[i*nSlices] += ferm;
                 }
             }
-            time_shift[idx] = j*tStep;
+            for (int j=0;j<nSlices;j++) {
+                int idx = i*nSlices+j;
+                int offset = i*nt+j*tStep;
+                noisevec[idx] = Zero();
+                if (!reuset0_) {
+                    for (int k=0;k<FImpl::Dimension;k++) {
+                        setFerm(ferm,noise.getProp(offset),k);
+                        noisevec[idx] += ferm;
+                    }
+                } else {
+                    if (j != 0) {
+                        noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
+                    }
+                }
+                time_shift[idx] = j*tStep;
+            }
         }
     }
 }
