@@ -52,7 +52,8 @@ public:
                                     std::string, source,
                                     std::string, gammas,
                                     std::string, gammaFunc,
-                                    std::string, solver);
+                                    std::string, solver,
+                                    std::string, guess);
 };
 
 template <typename FImpl>
@@ -79,8 +80,8 @@ protected:
     // execution
     virtual void execute(void);
 private:
-    void solvePropagator(FermionField &prop, const FermionField &src);
-    void solvePropagator(PropagatorField &prop, const PropagatorField &src);
+    void solvePropagator(FermionField &prop, const FermionField &src, const FermionField* guess = nullptr);
+    void solvePropagator(PropagatorField &prop, const PropagatorField &src, const PropagatorField* guess = nullptr);
 
     template <typename TField>
     void solvePropagator(std::map<Gamma::Algebra,TField> &prop, const TField &src);
@@ -113,6 +114,10 @@ std::vector<std::string> TStagGaugeProp<FImpl>::getInput(void)
     if (hasGammas_) {
         in.push_back(par().gammaFunc);
     }
+
+    if (!par().guess.empty()) {
+        in.push_back(par().guess);
+    }
     
     return in;
 }
@@ -130,14 +135,17 @@ template <typename FImpl>
 template <typename TField>
 void TStagGaugeProp<FImpl>::setupHelper() {
     envTmpLat(TField, "field");
-    envTmpLat(FermionField, "ferm1");
-    envTmpLat(FermionField, "ferm2");
+    envTmpLat(FermionField, "fermIn");
+    envTmpLat(FermionField, "fermOut");
+    envTmpLat(FermionField, "fermGuess");
     envTmpLat(LatticeComplex,"stagPhase");
 
-    envGetTmp(FermionField, ferm1);
-    envGetTmp(FermionField, ferm2);
-    ferm1 = Zero();
-    ferm2 = Zero();
+    envGetTmp(FermionField, fermIn);
+    envGetTmp(FermionField, fermOut);
+    envGetTmp(FermionField, fermGuess);
+    fermIn = Zero();
+    fermOut = Zero();
+    fermGuess = Zero();
 
     if (envHasType(TField,par().source)) {
         if (hasGammas_) {
@@ -205,27 +213,37 @@ void TStagGaugeProp<FImpl>::setup(void)
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TStagGaugeProp<FImpl>::solvePropagator(FermionField &sol, const FermionField &src)
+void TStagGaugeProp<FImpl>::solvePropagator(FermionField &sol, const FermionField &src, const FermionField *guess)
 {
     auto &solver  = envGet(Solver, par().solver);
     
-    solver(sol, src);
+    if (guess != nullptr) {
+        solver(sol, src,*guess);
+    } else {
+        solver(sol, src);
+    }
 }
 
 template <typename FImpl>
 void TStagGaugeProp<FImpl>::solvePropagator(PropagatorField &sol, 
-                                            const PropagatorField &src)
+                                            const PropagatorField &src, const PropagatorField *guess)
 {
     auto &solver  = envGet(Solver, par().solver);
     
-    envGetTmp(FermionField, ferm1);
-    envGetTmp(FermionField, ferm2);
+    envGetTmp(FermionField, fermIn);
+    envGetTmp(FermionField, fermOut);
+    envGetTmp(FermionField, fermGuess);
 
     for (unsigned int c = 0; c < FImpl::Dimension; ++c)
     {
-        PropToFerm<FImpl>(ferm1, src, c);
-        solver(ferm2, ferm1);
-        FermToProp<FImpl>(sol, ferm2, c);
+        PropToFerm<FImpl>(fermIn, src, c);
+        if (guess != nullptr) {
+            PropToFerm<FImpl>(fermGuess,*guess,c);
+            solver(fermOut, fermIn,fermGuess);
+        } else {
+            solver(fermOut, fermIn);
+        }
+        FermToProp<FImpl>(sol, fermOut, c);
     }
 }
 
@@ -248,12 +266,27 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol
     envGetTmp(LatticeComplex,stagPhase);
     auto &func = envGet(GammaFn, par().gammaFunc);
 
+    std::map<Gamma::Algebra,TField> *guess;
+    if (!par().guess.empty()) {
+        if (!envHasType(ARG(std::map<Gamma::Algebra,TField>),par().guess)) {
+            HADRONS_ERROR(Argument, "guess parameter '" + par().guess + "' must have same data structure as source, '"+par().source+"'");
+        }
+        guess = env().getObject<std::map<Gamma::Algebra,TField>>(par().guess);
+    }
+
     for (auto &gamma:gammaList) {
+
         std::string gammaStr = Gamma::name[gamma];
         LOG(Message) << "Solve for '" << par().source << "' with '" << gammaStr << "'" << std::endl;
         stagPhase = func(gamma);
         field = stagPhase*src;
-        solvePropagator(sol.at(gamma),field);
+
+        if (!par().guess.empty()) {
+            const TField& guessField = guess->at(gamma);
+            solvePropagator(sol.at(gamma),field,&guessField);
+        } else {
+            solvePropagator(sol.at(gamma),field);
+        }
 
     }
 }
@@ -267,6 +300,14 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<
     envGetTmp(LatticeComplex,stagPhase);
     auto &func = envGet(GammaFn, par().gammaFunc);
 
+    std::map<Gamma::Algebra,std::vector<TField> > *guess;
+    if (!par().guess.empty()) {
+        if (!envHasType(ARG(std::map<Gamma::Algebra,std::vector<TField> >),par().guess)) {
+            HADRONS_ERROR(Argument, "guess parameter '" + par().guess + "' must have same data structure as source, '"+par().source+"'");
+        }
+        guess = env().getObject<std::map<Gamma::Algebra,std::vector<TField> >>(par().guess);
+    }
+
     for (auto &gamma:gammaList) {
         std::string gammaStr = Gamma::name[gamma];
         LOG(Message) << "Solve for '" << gammaStr << "'" << std::endl;
@@ -275,8 +316,15 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<
         for (int i = 0;i<src.size();i++) {
             LOG(Message) << "Solving element " << i << " of '" << par().source << "'" << std::endl;
             const TField& srctmp = src[i];
+
             field = stagPhase*srctmp;
-            solvePropagator(sol.at(gamma)[i],field);
+
+            if (!par().guess.empty()) {
+                const TField& guessField = guess->at(gamma)[i];
+                solvePropagator(sol.at(gamma)[i],field,&guessField);
+            } else {
+                solvePropagator(sol.at(gamma)[i],field);
+            }
         }
     }
 }

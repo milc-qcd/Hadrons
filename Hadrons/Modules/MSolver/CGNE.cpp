@@ -5,3 +5,4 @@ using namespace Hadrons;
 using namespace MSolver;
 
 template class Grid::Hadrons::MSolver::TCGNE<FIMPL>;
+template class Grid::Hadrons::MSolver::TCGNE<STAGIMPL>;

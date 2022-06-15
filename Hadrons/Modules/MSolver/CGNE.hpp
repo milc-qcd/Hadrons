@@ -22,7 +22,8 @@ public:
                                     std::string , action,
                                     unsigned int, maxIteration,
                                     double      , residual,
-                                    std::string , eigenPack);
+                                    std::string , eigenPack,
+                                    bool        , mustConverge);
 };
 
 template <typename FImpl, int nBasis = HADRONS_DEFAULT_LANCZOS_NBASIS>
@@ -47,6 +48,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(CGNE, TCGNE<FIMPL>, MSolver);
+MODULE_REGISTER_TMP(StagCGNE, TCGNE<STAGIMPL>, MSolver);
 
 /******************************************************************************
  *                 TCGNE implementation                             *
@@ -105,16 +107,19 @@ void TCGNE<FImpl, nBasis>::setup(void)
     auto &mat      = envGet(FMat, par().action);
     auto guesserPt = makeGuesser<FImpl, nBasis>(par().eigenPack);
 
-    auto makeSolver = [&mat, guesserPt, this](bool subGuess) 
+    bool mustConverge = par().mustConverge;
+
+    auto makeSolver = [&mat, guesserPt, mustConverge, this](bool subGuess) 
     {
-        return [&mat, guesserPt, subGuess, this](FermionField &sol,
+        return [&mat, guesserPt, mustConverge, subGuess, this](FermionField &sol,
                                                  const FermionField &source) 
         {
             GridBase                                *g = sol.Grid();
             FermionField                            guess(g), tmp(g);
             MdagMLinearOperator<FMat, FermionField> hermOp(mat);
             ConjugateGradient<FermionField>         cg(par().residual,
-                                                       par().maxIteration);
+                                                       par().maxIteration,
+                                                       mustConverge);
 
             guess = sol;
             mat.Mdag(source, tmp);
@@ -126,10 +131,36 @@ void TCGNE<FImpl, nBasis>::setup(void)
             }
         };
     };
+
+    auto makeGuessSolver = [&mat, mustConverge, this](bool subGuess) 
+    {
+        return [&mat, mustConverge, subGuess, this](FermionField &sol,
+                                                 const FermionField &source, const FermionField &guess) 
+        {
+            GridBase                                *g = sol.Grid();
+            FermionField                            tmp(g);
+            MdagMLinearOperator<FMat, FermionField> hermOp(mat);
+            ConjugateGradient<FermionField>         cg(par().residual,
+                                                       par().maxIteration,
+                                                       mustConverge);
+
+            sol = guess;
+            mat.Mdag(source, tmp);
+
+            cg(hermOp, tmp, sol);
+            if (subGuess)
+            {
+                sol -= guess;
+            }
+        };
+    };
+
     auto solver = makeSolver(false);
-    envCreate(Solver, getName(), Ls, solver, mat);
+    auto guessSolver = makeGuessSolver(false);
+    envCreate(Solver, getName(), Ls, solver, guessSolver, mat);
     auto solver_subtract = makeSolver(true);
-    envCreate(Solver, getName() + "_subtract", Ls, solver_subtract, mat);
+    auto guessSolver_subtract = makeGuessSolver(true);
+    envCreate(Solver, getName() + "_subtract", Ls, solver_subtract, guessSolver_subtract, mat);
 }
 
 // execution ///////////////////////////////////////////////////////////////////

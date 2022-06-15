@@ -38,12 +38,20 @@ public:
     typedef FermionOperator<FImpl>                            FMat; 
     typedef std::function<void(FermionField &, 
                                const FermionField &)>         SolverFn;
+    typedef std::function<void(FermionField &, 
+                               const FermionField &, const FermionField&)>         SolverGuessFn;
 public:
     Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn) {}
+    Solver(SolverFn fn, SolverGuessFn gfn, FMat &mat): mat_(mat), fn_(fn), gfn_(gfn) {}
 
     void operator()(FermionField &sol, const FermionField &src)
     {
         fn_(sol, src);
+    }
+
+    void operator()(FermionField &sol, const FermionField &src, const FermionField& guess)
+    {
+        gfn_(sol, src, guess);
     }
 
     FMat & getFMat(void)
@@ -53,6 +61,7 @@ public:
 private:
     FMat     &mat_;
     SolverFn fn_;
+    SolverGuessFn gfn_;
 };
 
 END_HADRONS_NAMESPACE

@@ -127,8 +127,8 @@ void TLMAProp<FImpl>::setup(void)
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
     }
 
-    envTmpLat(FermionField, "ferm");
-    envTmpLat(FermionField, "ferm2");
+    envTmpLat(FermionField, "fermSrc");
+    envTmpLat(FermionField, "fermSol");
     envTmpLat(PropagatorField, "prop");
     envTmpLat(LatticeComplex,"stagPhase");
     envTmp(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
@@ -137,8 +137,8 @@ void TLMAProp<FImpl>::setup(void)
     envTmp(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
 
-    envGetTmp(FermionField, ferm);
-    envGetTmp(FermionField, ferm2);
+    envGetTmp(FermionField, fermSrc);
+    envGetTmp(FermionField, fermSol);
     envGetTmp(PropagatorField, prop);
     envGetTmp(FermionField, rbTemp);
     envGetTmp(FermionField, rbTempNeg);
@@ -146,8 +146,8 @@ void TLMAProp<FImpl>::setup(void)
     envGetTmp(FermionField, rbFermNeg);
     envGetTmp(FermionField, MrbFermNeg);
 
-    ferm       = Zero();
-    ferm2       = Zero();
+    fermSrc    = Zero();
+    fermSol    = Zero();
     prop       = Zero();
     rbFerm     = Zero();
     rbFermNeg  = Zero();
@@ -164,6 +164,7 @@ void TLMAProp<FImpl>::setup(void)
 
         std::map<Gamma::Algebra,std::vector<PropagatorField>> dummy;
         envCreate(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName(), 1, dummy);
+
         auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
         for (auto & gamma:gammaList) {
             sol.insert({gamma,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
@@ -176,6 +177,7 @@ void TLMAProp<FImpl>::setup(void)
 
         std::map<Gamma::Algebra,std::vector<FermionField>> dummy;
         envCreate(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName(), 1, dummy);
+
         auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
         for (auto & gamma:gammaList) {
             sol.insert({gamma,std::vector<FermionField>(source.size(),envGetGrid(FermionField))});
@@ -221,7 +223,7 @@ inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField
     pickCheckerboard(cb,rbFerm,src);
     pickCheckerboard(cbNeg,rbFermNeg,src);
 
-    action.Meooe(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb
+    action.MeooeDag(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb
 
     // Add up source vector projection onto provided evec checkerboard
     // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>
@@ -235,8 +237,8 @@ inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField
         const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;
         const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;
 
-        axpy(rbTemp,     mass*ip-ipNeg,   e,rbTemp);
-        axpy(rbTempNeg, ip+mass*ipNeg*invlam_D*invlam_D,                          e,rbTempNeg);
+        axpy(rbTemp,    mass*ip+ipNeg,   e,rbTemp);
+        axpy(rbTempNeg, mass*ipNeg*invlam_D*invlam_D-ip, e,rbTempNeg);
     }
 
     action.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard
@@ -253,8 +255,8 @@ inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField
 template <typename FImpl>
 void TLMAProp<FImpl>::execute(void)
 {
-    envGetTmp(FermionField,ferm);
-    envGetTmp(FermionField,ferm2);
+    envGetTmp(FermionField,fermSrc);
+    envGetTmp(FermionField,fermSol);
     envGetTmp(PropagatorField,prop);
     envGetTmp(LatticeComplex,stagPhase);
     envGetTmp(std::vector<Gamma::Algebra>,gammaList);
@@ -275,10 +277,9 @@ void TLMAProp<FImpl>::execute(void)
 
                 for (int j=0;j<FImpl::Dimension;j++) {
 
-                    setFerm(ferm,prop,j);
-
-                    projectHelper(ferm2,ferm);
-                    setProp(sol.at(gamma)[i],ferm2,j);
+                    setFerm(fermSrc,prop,j);
+                    projectHelper(fermSol,fermSrc);
+                    setProp(sol.at(gamma)[i],fermSol,j);
                 }
             }
         }
@@ -292,10 +293,8 @@ void TLMAProp<FImpl>::execute(void)
             for (int i=0;i<source.size();i++) {
                 const FermionField& src = source[i];
 
-                ferm = stagPhase*src;
-                projectHelper(ferm2,ferm);
-
-                sol.at(gamma)[i] = ferm2;
+                fermSrc = stagPhase*src;
+                projectHelper(sol.at(gamma)[i],fermSrc);
             }
         }
     }
