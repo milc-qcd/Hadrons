@@ -189,9 +189,10 @@ void TA2AVectorsMILC<FImpl>::execute(void)
     auto &w     = envGet(std::vector<FermionField>, getName() + "_w");
     auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
 
-    int nsrc = noise.size()/FImpl::Dimension;  
+    int nsrc = noise.size();
 
-    // Normalization for the noise sources
+    // Normalization for the noise sources. 
+    // We have to scale up spin/color diluted noise norm to match eigenvector norm.
     RealD norm = 1.0/::sqrt(Real(nsrc));
 
     LOG(Message) << "Normalizing stochastic vectors by 1/sqrt(" << nsrc << ")" << std::endl;
@@ -206,7 +207,7 @@ void TA2AVectorsMILC<FImpl>::execute(void)
 
         auto &evec = envGet(std::vector<FermionField>, par().lowModes);
         auto &eval = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
-        a2a.removeLowModeProj(w,evec,eval);
+        a2a.removeLowModeProjection(w,evec,eval);
     }
     stopTimer("W high mode");
 

@@ -165,7 +165,7 @@ SpinColorDiagonalNoise<FImpl>::SpinColorDiagonalNoise(GridCartesian *g,
                                                       const int nNoise)
 : SpinColorDiagonalNoise(g)
 {
-    resize(this->getNsc()*nNoise);
+    resize(nNoise);
 }
 
 template <typename FImpl>
@@ -269,7 +269,7 @@ SpinColorDiagonalNoise<FImpl>::getProp(const int i)
 template <typename FImpl>
 int SpinColorDiagonalNoise<FImpl>::size(void) const
 {
-    return noise_.size();
+    return noise_.size()/this->getNsc();
 }
 
 template <typename FImpl>
@@ -302,7 +302,7 @@ SpinColorDiagonalNoise<FImpl>::getNsc(void) const
 template <typename FImpl>
 void SpinColorDiagonalNoise<FImpl>::resize(const int nNoise)
 {
-    noise_.resize(nNoise, grid_);
+    noise_.resize(this->getNsc()*nNoise, grid_);
 }
 
 template <typename FImpl>
@@ -340,7 +340,7 @@ template <typename FImpl>
 int TimeDilutedNoise<FImpl>::dilutionSize() const
 {
     auto nt = this->getGrid()->GlobalDimensions()[Tp];
-    return nt*this->size();
+    return nt*this->getNsc()*this->size();
 }
 
 template <typename FImpl>
@@ -380,7 +380,7 @@ FullVolumeNoise(GridCartesian *g, int nNoise)
 template <typename FImpl>
 int FullVolumeNoise<FImpl>::dilutionSize() const
 {
-    return this->size();
+    return this->getNsc()*this->size();
 }
 
 template <typename FImpl>
@@ -412,7 +412,7 @@ CheckerboardNoise(GridCartesian *g, int nNoise, int nSparse)
 template <typename FImpl>
 int CheckerboardNoise<FImpl>::dilutionSize() const
 {
-    return this->size();
+    return this->getNsc()*this->size();
 }
 
 template <typename FImpl>
@@ -456,7 +456,7 @@ template <typename FImpl>
 int SparseNoise<FImpl>::dilutionSize() const
 {
     auto nd  = this->getNd();
-    return this->size()*pow(nSparseL_, nd-1)*nSparseT_;
+    return this->getNsc()*this->size()*pow(nSparseL_, nd-1)*nSparseT_;
 }
 
 template <typename FImpl>
