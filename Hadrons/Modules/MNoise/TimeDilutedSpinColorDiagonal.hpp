@@ -121,8 +121,8 @@ void TTimeDilutedSpinColorDiagonal<FImpl>::execute(void)
     auto &noisevec = envGet(std::vector<FermionField>,getName()+"_vec");
 
     int nferm = noise.fermSize();
-    int nsc   = noise.getNsc();
     int nt    = envGetGrid(FermionField)->GlobalDimensions()[Tp];
+    int nsc   = (int)(nferm/(noise.size()*nt));
 
     noisevec.resize(nferm,envGetGrid(FermionField));
     for (int i=0;i<nferm;i++) {

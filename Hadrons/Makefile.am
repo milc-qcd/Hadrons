@@ -25,6 +25,8 @@ nobase_libHadrons_a_HEADERS = \
 	Database.hpp              \
 	DilutedNoise.hpp          \
 	DiskVector.hpp            \
+	DistilMatrix.hpp          \
+	DistillationVectors.hpp   \
 	EigenPack.hpp             \
 	Environment.hpp           \
 	Exceptions.hpp            \
@@ -33,13 +35,14 @@ nobase_libHadrons_a_HEADERS = \
 	GeneticScheduler.hpp      \
 	Global.hpp                \
 	Graph.hpp                 \
-	StatLogger.hpp            \
+	LatticeUtilities.hpp      \
 	Module.hpp                \
 	Modules.hpp               \
 	ModuleFactory.hpp         \
   NamedTensor.hpp           \
 	Solver.hpp                \
 	SqlEntry.hpp              \
+	StatLogger.hpp            \
 	TimerArray.hpp            \
 	VirtualMachine.hpp        \
 	sqlite/sqlite3.h          \

@@ -40,9 +40,12 @@ public:
                                const FermionField &)>         SolverFn;
     typedef std::function<void(FermionField &, 
                                const FermionField &, const FermionField&)>         SolverGuessFn;
+    typedef std::function<void(std::vector<FermionField> &, 
+                               const std::vector<FermionField> &)> SolverVFn;
 public:
     Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn) {}
-    Solver(SolverFn fn, SolverGuessFn gfn, FMat &mat): mat_(mat), fn_(fn), gfn_(gfn) {}
+    Solver(SolverFn fn, SolverGuessFn gfn, FMat &mat): mat_(mat), fn_(fn), gfn_(gfn), vfn_(nullptr) {}
+    Solver(SolverFn fn, SolverVFn vfn, FMat &mat): mat_(mat), fn_(fn), vfn_(vfn), gfn_(nullptr) {}
 
     void operator()(FermionField &sol, const FermionField &src)
     {
@@ -54,6 +57,25 @@ public:
         gfn_(sol, src, guess);
     }
 
+    void operator()(std::vector<FermionField> &sol, const std::vector<FermionField> &src)
+    {
+        if (sol.size() != src.size())
+        {
+            HADRONS_ERROR(Size, "source and solution vectors size mismatch");
+        }
+        if (vfn_ == nullptr)
+        {
+            for (unsigned int i = 0; i < sol.size(); ++i)
+            {
+                fn_(sol[i], src[i]);
+            }
+        }
+        else
+        {
+            vfn_(sol, src);
+        }
+    }
+
     FMat & getFMat(void)
     {
         return mat_;
@@ -62,6 +84,7 @@ private:
     FMat     &mat_;
     SolverFn fn_;
     SolverGuessFn gfn_;
+    SolverVFn vfn_;
 };
 
 END_HADRONS_NAMESPACE

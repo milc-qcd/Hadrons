@@ -95,6 +95,9 @@ env().template getRbGrid<typename latticeType::vector_type>()
 #define envGetRbGrid(...)\
 HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetRbGrid5, envGetRbGrid4)(__VA_ARGS__)
 
+#define envGetSliceGrid(latticeType, orthDim)\
+env().template getSliceGrid<typename latticeType::vector_type>(orthDim)
+
 #define envGet(type, name)\
 *env().template getObject<type>(name)
 
@@ -106,6 +109,9 @@ type &var = *env().template getObject<type>(getName() + "_tmp_" + #var)
 
 #define envHasType(type, name)\
 env().template isObjectOfType<type>(name)
+
+#define envHasDerivedType(base, type, name)\
+env().template isObjectOfDerivedType<base, type>(name)
 
 #define envCreate(type, name, Ls, ...)\
 env().template createObject<type>(name, Environment::Storage::standard, Ls, __VA_ARGS__)
@@ -150,6 +156,8 @@ HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envTmpLat5, envTmpLat4)(__VA_ARGS__)
 /******************************************************************************
  *                            Module class                                    *
  ******************************************************************************/
+typedef std::multimap<std::string, std::string> DependencyMap;
+
 // base class
 class ModuleBase: public TimerArray
 {
@@ -170,14 +178,14 @@ public:
     virtual std::string getRegisteredName(void);
     // dependencies/products
     virtual std::vector<std::string> getInput(void) = 0;
-    virtual std::vector<std::string> getReference(void)
-    {
-        return std::vector<std::string>(0);
-    };
     virtual std::vector<std::string> getOutput(void) = 0;
     virtual std::vector<std::string> getOutputFiles(void)
     {
         return std::vector<std::string>(0);
+    };
+    virtual DependencyMap getObjectDependencies(void)
+    {
+        return DependencyMap();
     };
     // parse parameters
     virtual void parseParameters(XmlReader &reader, const std::string name) = 0;
