@@ -1,5 +1,5 @@
 /*
- * RandomWall.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * MixedPrecisionRBPrecCGMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MSource/RandomWall.hpp>
+#include <Hadrons/Modules/MSolver/MixedPrecisionRBPrecCGMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MSource;
+using namespace MSolver;
 
-template class Grid::Hadrons::MSource::TRandomWall<STAGIMPL>;
+template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCGMILC<STAGIMPLF,STAGIMPL>;
 

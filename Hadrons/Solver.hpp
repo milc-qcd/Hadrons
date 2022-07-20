@@ -43,9 +43,10 @@ public:
     typedef std::function<void(std::vector<FermionField> &, 
                                const std::vector<FermionField> &)> SolverVFn;
 public:
-    Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn) {}
+    Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn), gfn_(nullptr), vfn_(nullptr) {}
     Solver(SolverFn fn, SolverGuessFn gfn, FMat &mat): mat_(mat), fn_(fn), gfn_(gfn), vfn_(nullptr) {}
     Solver(SolverFn fn, SolverVFn vfn, FMat &mat): mat_(mat), fn_(fn), vfn_(vfn), gfn_(nullptr) {}
+    Solver(SolverFn fn, SolverVFn vfn, SolverGuessFn gfn, FMat &mat): mat_(mat), fn_(fn), gfn_(gfn), vfn_(vfn) {}
 
     void operator()(FermionField &sol, const FermionField &src)
     {

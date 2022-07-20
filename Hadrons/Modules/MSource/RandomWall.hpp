@@ -34,7 +34,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/DilutedNoise.hpp>
+#include <Hadrons/DilutedNoiseMILC.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -59,6 +59,7 @@ class RandomWallPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallPar,
                                     unsigned int, tStep,
+                                    unsigned int, t0,
                                     unsigned int, nSrc,
                                     std::string, reuset0,
                                     bool,        colorDiag);
@@ -120,7 +121,7 @@ std::vector<std::string> TRandomWall<FImpl>::getOutput(void)
 template <typename FImpl>
 void TRandomWall<FImpl>::setup(void)
 {
-    envTmp(TimeDilutedNoise<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
+    envTmp(TimeDilutedNoiseMILC<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
     envTmpLat(PropagatorField, "shiftedField");
     envTmpLat(FermionField,"ferm");
 
@@ -143,22 +144,28 @@ void TRandomWall<FImpl>::setup(void)
 template <typename FImpl>
 void TRandomWall<FImpl>::execute(void)
 {    
-    envGetTmp(TimeDilutedNoise<FImpl>, noise);
+    envGetTmp(TimeDilutedNoiseMILC<FImpl>, noise);
     envGetTmp(PropagatorField,shiftedField);
     envGetTmp(FermionField,ferm);
 
     LOG(Message) << "Generating " << par().nSrc << " time-diluted, spin-color diagonal noise sources at every " << par().tStep << " time step(s)" << std::endl;
     noise.generateNoise(rng4d());
 
+    bool colorDiag = par().colorDiag;
+
     auto &time_shift = envGet(std::vector<Integer>,getName()+"_shift");
 
-    int nt    = envGetGrid(PropagatorField)->GlobalDimensions()[Tp];
-
-    int tStep = par().tStep;
+    int nt       = envGetGrid(PropagatorField)->GlobalDimensions()[Tp];
+    int tStep    = par().tStep;
     int nSources = par().nSrc;
+    int t0       = par().t0;
+
+    if (t0 >= tStep) {
+        HADRONS_ERROR(Logic,"Parameter t0 >= tStep");
+    }
 
     int nSlices = nt/tStep;
-    int nVecs = nSources*nSlices;
+    int nVecs   = nSources*nSlices;
 
     time_shift.resize(nVecs,0);
 
@@ -167,18 +174,18 @@ void TRandomWall<FImpl>::execute(void)
     }
 
 
-    if (par().colorDiag) {
+    if (colorDiag) {
         auto &noisevec = envGet(std::vector<PropagatorField>,getName());
         noisevec.resize(nVecs,envGetGrid(PropagatorField));
 
         for (int i=0;i<nSources;i++) {
             if (reuset0_) {
-                shiftedField = noise.getProp(i*nt);
+                shiftedField = noise.getProp(i*nt + t0);
                 noisevec[i*nSlices] = shiftedField;
             }
             for (int j=0;j<nSlices;j++) {
                 int idx = i*nSlices+j;
-                int offset = i*nt+j*tStep;
+                int offset = i*nt+j*tStep+t0;
                 if (!reuset0_) {
                     noisevec[idx] = noise.getProp(offset);                
                 } else {
@@ -186,7 +193,7 @@ void TRandomWall<FImpl>::execute(void)
                         noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
                     }
                 }
-                time_shift[idx] = j*tStep;
+                time_shift[idx] = j*tStep+t0;
             }
         }
     } else {
@@ -195,7 +202,7 @@ void TRandomWall<FImpl>::execute(void)
 
         for (int i=0;i<nSources;i++) {
             if (reuset0_) {
-                shiftedField = noise.getProp(i*nt);
+                shiftedField = noise.getProp(i*nt+t0);
                 noisevec[i*nSlices] = Zero();
                 for (int j=0;j<FImpl::Dimension;j++) {
                     setFerm(ferm,shiftedField,j);
@@ -204,7 +211,7 @@ void TRandomWall<FImpl>::execute(void)
             }
             for (int j=0;j<nSlices;j++) {
                 int idx = i*nSlices+j;
-                int offset = i*nt+j*tStep;
+                int offset = i*nt+j*tStep+t0;
                 noisevec[idx] = Zero();
                 if (!reuset0_) {
                     for (int k=0;k<FImpl::Dimension;k++) {
@@ -216,7 +223,7 @@ void TRandomWall<FImpl>::execute(void)
                         noisevec[idx] = Cshift(noisevec[idx-1],Tp,tStep);
                     }
                 }
-                time_shift[idx] = j*tStep;
+                time_shift[idx] = j*tStep+t0;
             }
         }
     }
