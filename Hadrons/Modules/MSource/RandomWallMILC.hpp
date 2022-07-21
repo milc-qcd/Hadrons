@@ -1,5 +1,5 @@
 /*
- * RandomWall.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * RandomWallMILC.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -28,8 +28,8 @@
 
 /*  END LEGAL */
 
-#ifndef Hadrons_MSource_RandomWall_hpp_
-#define Hadrons_MSource_RandomWall_hpp_
+#ifndef Hadrons_MSource_RandomWallMILC_hpp_
+#define Hadrons_MSource_RandomWallMILC_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -54,10 +54,10 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MSource)
 
-class RandomWallPar: Serializable
+class RandomWallMILCPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallPar,
+    GRID_SERIALIZABLE_CLASS_MEMBERS(RandomWallMILCPar,
                                     unsigned int, tStep,
                                     unsigned int, t0,
                                     unsigned int, nSrc,
@@ -66,16 +66,16 @@ public:
 };
 
 template <typename FImpl>
-class TRandomWall: public Module<RandomWallPar>
+class TRandomWallMILC: public Module<RandomWallMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
     HADRONS_DEFINE_setProp_setFerm(FImpl);
 public:
     // constructor
-    TRandomWall(const std::string name);
+    TRandomWallMILC(const std::string name);
     // destructor
-    virtual ~TRandomWall(void) {};
+    virtual ~TRandomWallMILC(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
@@ -88,21 +88,20 @@ private:
     bool reuset0_ = false;
 };
 
-// MODULE_REGISTER_TMP(RandomWall, TRandomWall<FIMPL>, MSource);
-MODULE_REGISTER_TMP(StagRandomWall, TRandomWall<STAGIMPL>, MSource);
+MODULE_REGISTER_TMP(StagRandomWall, TRandomWallMILC<STAGIMPL>, MSource);
 
 /******************************************************************************
- *                 TRandomWall implementation                                       *
+ *                 TRandomWallMILC implementation                                       *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TRandomWall<FImpl>::TRandomWall(const std::string name)
-: Module<RandomWallPar>(name)
+TRandomWallMILC<FImpl>::TRandomWallMILC(const std::string name)
+: Module<RandomWallMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TRandomWall<FImpl>::getInput(void)
+std::vector<std::string> TRandomWallMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {};
     
@@ -110,7 +109,7 @@ std::vector<std::string> TRandomWall<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TRandomWall<FImpl>::getOutput(void)
+std::vector<std::string> TRandomWallMILC<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName(), getName()+"_shift"};
     
@@ -119,7 +118,7 @@ std::vector<std::string> TRandomWall<FImpl>::getOutput(void)
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TRandomWall<FImpl>::setup(void)
+void TRandomWallMILC<FImpl>::setup(void)
 {
     envTmp(TimeDilutedNoiseMILC<FImpl>, "noise", 1, envGetGrid(FermionField), par().nSrc);
     envTmpLat(PropagatorField, "shiftedField");
@@ -142,7 +141,7 @@ void TRandomWall<FImpl>::setup(void)
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TRandomWall<FImpl>::execute(void)
+void TRandomWallMILC<FImpl>::execute(void)
 {    
     envGetTmp(TimeDilutedNoiseMILC<FImpl>, noise);
     envGetTmp(PropagatorField,shiftedField);
@@ -233,4 +232,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MSource_RandomWall_hpp_
+#endif // Hadrons_MSource_RandomWallMILC_hpp_

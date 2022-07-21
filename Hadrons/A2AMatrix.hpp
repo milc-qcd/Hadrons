@@ -79,7 +79,7 @@ public:
     A2AKernel(void) = default;
     virtual ~A2AKernel(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const Field *left, const Field *right,
-                          const unsigned int orthogDim, double *time = nullptr, double *tg = nullptr) = 0;
+                          const unsigned int orthogDim, double &time) = 0;
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
     virtual double bytes(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
 };
@@ -144,7 +144,6 @@ private:
     };
     typedef std::function<std::string(const unsigned int, const unsigned int)>  FilenameFn;
     typedef std::function<MetadataType(const unsigned int, const unsigned int)> MetadataFn;
-    typedef std::function<void(int)> SwapFn;
 public:
     // constructor
     A2AMatrixBlockComputation(GridBase *grid,
@@ -160,10 +159,7 @@ public:
                  A2AKernel<T, Field> &kernel,
                  const FilenameFn &ionameFn,
                  const FilenameFn &filenameFn,
-                 const MetadataFn &metadataFn,
-                 std::vector<Field> *evecs = nullptr,
-                 const std::vector<ComplexD> &evals = {},
-                 const SwapFn *swapEvecCheckerFn = nullptr);
+                 const MetadataFn &metadataFn);
 private:
     // I/O handler
     void saveBlock(const A2AMatrixSet<TIo> &m, IoHelper &h);
@@ -172,7 +168,6 @@ private:
     GridBase              *grid_;
     unsigned int          orthogDim_, nt_, next_, nstr_, blockSize_, cacheBlockSize_;
     Vector<T>             mCache_;
-    Vector<Field>         lowBufi_, lowBufj_;
     Vector<TIo>           mBuf_;
     std::vector<IoHelper> nodeIo_;
 };
@@ -617,41 +612,45 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid, std::stri
     H5NS::DataSpace      dataspace;
     H5NS::CompType       datatype;
 
-    unsigned int myRank = 0, nRank = 1;
-    if (grid) {
-        myRank = grid->ThisRank(), nRank  = grid->RankCount();
-        if(datasetName.empty()){
-            datasetName = HADRONS_A2AM_NAME;
-        }
+    if(datasetName.empty()){
+        datasetName = HADRONS_A2AM_NAME;
     }
 
-    Hdf5Reader reader(filename_);
-    push(reader, dataname_);
-    auto &group = reader.getGroup();
-    dataset = group.openDataSet(datasetName);
-    datatype = dataset.getCompType();
-    dataspace = dataset.getSpace();
-    hdim.resize(dataspace.getSimpleExtentNdims());
-    dataspace.getSimpleExtentDims(hdim.data());
-    if ((nt_ * ni_ * nj_ != 0) and
-        ((hdim[0] != nt_) or (hdim[1] != ni_) or (hdim[2] != nj_)))
+    if (!(grid) || grid->IsBoss())
     {
-        HADRONS_ERROR(Size, "all-to-all matrix size mismatch (got "
-            + std::to_string(hdim[0]) + "x" + std::to_string(hdim[1]) + "x"
-            + std::to_string(hdim[2]) + ", expected "
-            + std::to_string(nt_) + "x" + std::to_string(ni_) + "x"
-            + std::to_string(nj_));
-    }
-    else if (ni_*nj_ == 0)
-    {
-        if (hdim[0] != nt_)
+        Hdf5Reader reader(filename_);
+        push(reader, dataname_);
+        auto &group = reader.getGroup();
+        dataset = group.openDataSet(datasetName);
+        datatype = dataset.getCompType();
+        dataspace = dataset.getSpace();
+        hdim.resize(dataspace.getSimpleExtentNdims());
+        dataspace.getSimpleExtentDims(hdim.data());
+        if ((nt_ * ni_ * nj_ != 0) and
+            ((hdim[0] != nt_) or (hdim[1] != ni_) or (hdim[2] != nj_)))
         {
-            HADRONS_ERROR(Size, "all-to-all time size mismatch (got "
-                + std::to_string(hdim[0]) + ", expected "
-                + std::to_string(nt_) + ")");
+            HADRONS_ERROR(Size, "all-to-all matrix size mismatch (got "
+                + std::to_string(hdim[0]) + "x" + std::to_string(hdim[1]) + "x"
+                + std::to_string(hdim[2]) + ", expected "
+                + std::to_string(nt_) + "x" + std::to_string(ni_) + "x"
+                + std::to_string(nj_));
         }
-        ni_ = hdim[1];
-        nj_ = hdim[2];
+        else if (ni_*nj_ == 0)
+        {
+            if (hdim[0] != nt_)
+            {
+                HADRONS_ERROR(Size, "all-to-all time size mismatch (got "
+                    + std::to_string(hdim[0]) + ", expected "
+                    + std::to_string(nt_) + ")");
+            }
+            ni_ = hdim[1];
+            nj_ = hdim[2];
+        }
+    }
+    if (grid)
+    {
+        grid->Broadcast(grid->BossRank(), &ni_, sizeof(unsigned int));
+        grid->Broadcast(grid->BossRank(), &nj_, sizeof(unsigned int));
     }
 
     A2AMatrix<T>         buf(ni_, nj_);
@@ -667,57 +666,33 @@ void A2AMatrixIo<T>::load(Vec<VecT> &v, double *tRead, GridBase *grid, std::stri
     std::cout << "Loading timeslice";
     std::cout.flush();
     *tRead = 0.;
-    if (grid) {
-        Vector<A2AMatrix<T>> buf(nt_, A2AMatrix<T>(ni_, nj_));
-
-        int broadcastSize =  sizeof(T) * buf[0].size();
-        for (int t = myRank; t < nt_; t+=nRank) {
-
-            std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
-
+    for (unsigned int tp1 = nt_; tp1 > 0; --tp1)
+    {
+        unsigned int         t      = tp1 - 1;
+        std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
+        
+        if (t % 10 == 0)
+        {
             std::cout << " " << t;
             std::cout.flush();
-
-            dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
-                                      stride.data(), block.data());
-
-            if (tRead) *tRead -= usecond();
-            dataset.read(buf[t].data(), datatype, memspace, dataspace);
-            if (tRead) *tRead += usecond();
         }
-        grid->Barrier();                                                                                                                                                                                           
-        for (int t=0;t<nt_;t++) {                                                                                                                                                                                  
-          int rank = t%nRank;                                                                                                                                                                                      
-          grid->Broadcast(rank, buf[t].data(), broadcastSize);                                                                                                                                                   
-          //grid->SendToRecvFrom(buf[idx].data(),grid->BossRank(),buf[idx].data(),rank,broadcastSize);                                                                                                             
-        }                                                                                                                                                                                                          
-        grid->Barrier();                                                                                                                                                                                           
-        for (int t=0;t<nt_;t++) {                                                                                                                                                                                  
-          v[t] = buf[t].template cast<VecT>();                                                                                                                                                                     
-        }
-    } else {
-
-        A2AMatrix<T>         buf(ni_, nj_);
-        int broadcastSize =  sizeof(T) * buf.size();
-        for (unsigned int tp1 = nt_; tp1 > 0; --tp1)
+        if (!(grid) || grid->IsBoss())
         {
-            unsigned int         t      = tp1 - 1;
-            std::vector<hsize_t> offset = {static_cast<hsize_t>(t), 0, 0};
-            
-            if (t % 10 == 0)
-            {
-                std::cout << " " << t;
-                std::cout.flush();
-            }
             dataspace.selectHyperslab(H5S_SELECT_SET, count.data(), offset.data(),
                                       stride.data(), block.data());
-            if (tRead) *tRead -= usecond();
-            dataset.read(buf.data(), datatype, memspace, dataspace);
-            if (tRead) *tRead += usecond();
-            v[t] = buf.template cast<VecT>();
         }
+        if (tRead) *tRead -= usecond();
+        if (!(grid) || grid->IsBoss())
+        {
+            dataset.read(buf.data(), datatype, memspace, dataspace);
+        }
+        if (grid)
+        {
+            grid->Broadcast(grid->BossRank(), buf.data(), broadcastSize);
+        }
+        if (tRead) *tRead += usecond();
+        v[t] = buf.template cast<VecT>();
     }
-
     std::cout << std::endl;
 #else
     HADRONS_ERROR(Implementation, "all-to-all matrix I/O needs HDF5 library");
@@ -754,8 +729,7 @@ template <typename T, typename Field, typename MetadataType, typename TIo>
 void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
 ::execute(const std::vector<Field> &left, const std::vector<Field> &right,
           A2AKernel<T, Field> &kernel, const FilenameFn &ionameFn,
-          const FilenameFn &filenameFn, const MetadataFn &metadataFn,
-          std::vector<Field> *evecs,const std::vector<ComplexD> &evals, const SwapFn *swapEvecCheckerFn)
+          const FilenameFn &filenameFn, const MetadataFn &metadataFn)
 {
     //////////////////////////////////////////////////////////////////////////
     // i,j   is first  loop over blockSize_ factors
@@ -763,282 +737,121 @@ void A2AMatrixBlockComputation<T, Field, MetadataType, TIo>
     // iii,jjj are loops within cacheBlock
     // Total index is sum of these  i+ii+iii etc...
     //////////////////////////////////////////////////////////////////////////
-
-    bool checkerboarded_low = (swapEvecCheckerFn != nullptr);
-    int Ncb = checkerboarded_low?2:1; // Ncb == 2 if the low modes are checkerboarded
-
-    RealD norm = 1.0;
-
-    int N_low = 0;
-    if (evecs != nullptr) {
-        norm = 1.0/::sqrt(norm2(evecs->at(0))); //Calculate norm of eigenvectors
-        N_low = Ncb*evecs->size(); // N_low is the number of evecs for M + evecs for Mdag
-    }
-
-    int    N_i = left.size()+N_low; // Total number of bra vectors to contract
-    int    N_j = right.size()+N_low; // Total number of ket vectors to contract
-
-    double flops, bytes, t_kernel, t_gsum;
+    int    N_i = left.size();
+    int    N_j = right.size();
+    double flops, bytes, t_kernel;
     double nodes = grid_->NodeCount();
     
-    if (checkerboarded_low) {
-        norm = norm/::sqrt(2); // Reduce checkerboarded norm to 1/sqrt(2)
-
-        if (blockSize_%2 != 0 || cacheBlockSize_%2 != 0) {
-            HADRONS_ERROR(Implementation, "Blocksize must be divisible by 2 for checkerboarded low modes");
-        }
-
-        lowBufi_.resize(blockSize_/2,evecs->at(0).Grid()); // storage for caching checkerboards
-        lowBufj_.resize(blockSize_/2,evecs->at(0).Grid());
-    }
-
-    int NBlock_i = N_i/blockSize_ + (((N_i % blockSize_) != 0) ? 1 : 0); // Round up on the number of blocks to compute
+    int NBlock_i = N_i/blockSize_ + (((N_i % blockSize_) != 0) ? 1 : 0);
     int NBlock_j = N_j/blockSize_ + (((N_j % blockSize_) != 0) ? 1 : 0);
 
-    bool low_i, low_ii, low_j, low_jj;
-    int i, j, evec_i, evec_j, N_ii, N_jj;
+    for(int i=0;i<N_i;i+=blockSize_)
+    for(int j=0;j<N_j;j+=blockSize_)
+    {
+        // Get the W and V vectors for this block^2 set of terms
+        int N_ii = MIN(N_i-i,blockSize_);
+        int N_jj = MIN(N_j-j,blockSize_);
+        A2AMatrixSet<TIo> mBlock(mBuf_.data(), next_, nstr_, nt_, N_ii, N_jj);
 
-    i = 0, evec_i = 0;
-    while (i < N_i) { // While we still have bra vectors to contract
-
-        low_i = i < N_low;
-
-        if (low_i) {
-            N_ii = MIN(N_low-i,blockSize_);
-
-            if (checkerboarded_low) {
-                for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++) {
-                    lowBufi_[idxi-evec_i] = evecs->at(idxi); // Cache original evecs to avoid excessive Meooe ops.
-                    (*swapEvecCheckerFn)(idxi); // Swap original evec checkerboard to complementary checkerboard.
-                }
-            }
-        } else {
-            N_ii = MIN(N_i-i,blockSize_);
-        }
-
-        j = 0, evec_j = 0;
-        while (j < N_j) {
-
-            low_j = j < N_low;
-
-            if (low_j) {
-                N_jj = MIN(N_low-j,blockSize_);
-
-                if (checkerboarded_low && i != j) { // Only cache and swap kets if it hasn't already been done for bras
-                    for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++) {
-                        lowBufj_[idxj-evec_j] = evecs->at(idxj);
-                        (*swapEvecCheckerFn)(idxj);
-                    }
-                }
-            } else {
-                N_jj = MIN(N_j-j,blockSize_);
-            }
-
-            // Get the W and V vectors for this block^2 set of terms
-            A2AMatrixSet<TIo> mBlock(mBuf_.data(), next_, nstr_, nt_, N_ii, N_jj);
-
-            LOG(Message) << "All-to-all matrix block " 
-                         << j/blockSize_ + NBlock_j*i/blockSize_ + 1 
-                         << "/" << NBlock_i*NBlock_j << " [" << i <<" .. " 
-                         << i+N_ii-1 << ", " << j <<" .. " << j+N_jj-1 << "]" 
-                         << std::endl;
-            // Series of cache blocked chunks of the contractions within this block
-            flops    = 0.0;
-            bytes    = 0.0;
-            t_kernel = 0.0;
-
+        LOG(Message) << "All-to-all matrix block " 
+                     << j/blockSize_ + NBlock_j*i/blockSize_ + 1 
+                     << "/" << NBlock_i*NBlock_j << " [" << i <<" .. " 
+                     << i+N_ii-1 << ", " << j <<" .. " << j+N_jj-1 << "]" 
+                     << std::endl;
+        // Series of cache blocked chunks of the contractions within this block
+        flops    = 0.0;
+        bytes    = 0.0;
+        t_kernel = 0.0;
+        for(int ii=0;ii<N_ii;ii+=cacheBlockSize_)
+        for(int jj=0;jj<N_jj;jj+=cacheBlockSize_)
+        {
             double t;
-            int ii, jj, evec_ii, evec_jj, N_iii, N_jjj;
+            int N_iii = MIN(N_ii-ii,cacheBlockSize_);
+            int N_jjj = MIN(N_jj-jj,cacheBlockSize_);
+            A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
 
-            for (int cbi=0;cbi<Ncb;cbi++) { // For checkered low modes, loop through cacheBlock twice.
-                
-                // If we are only left with high modes (no checkerboard), continue.
-                if (cbi && !low_i && !low_j)
-                    continue;
+            START_TIMER("kernel");
+            kernel(mCacheBlock, &left[i+ii], &right[j+jj], orthogDim_, t);
+            STOP_TIMER("kernel");
+            t_kernel += t;
+            flops    += kernel.flops(N_iii, N_jjj);
+            bytes    += kernel.bytes(N_iii, N_jjj);
 
-                ii = 0, evec_ii = 0;
-                while (ii < N_ii) {
-
-                    low_ii = (i+ii) < N_low;
-
-                    const Field *l_temp;
-                    // If there are still low modes to process
-                    if (low_ii) {
-                        // Pick the min of how many low modes are left vs. cacheBlockSize_
-                        N_iii = MIN(N_low-(i+ii),cacheBlockSize_);
-                        if (cbi)
-                            l_temp = &lowBufi_[0];
-                        else
-                            l_temp = &evecs->at(evec_i+evec_ii);
-                    } else {
-                        // Pick the min of how many high modes are left vs. cacheBlockSize_
-                        N_iii = MIN(N_ii-ii,cacheBlockSize_);
-                        l_temp = &left[i+ii-N_low];
-                    }
-
-                    jj = 0, evec_jj = 0;
-                    while (jj < N_jj) {
-
-                        low_jj = (j+jj) < N_low;
-
-                        const Field *r_temp;
-                        // If there are still low modes to process
-                        if (low_jj) {
-                            // Pick the min of how many low modes are left vs. cacheBlockSize_
-                            N_jjj = MIN(N_low-(j+jj),cacheBlockSize_);
-                            if (cbi) {
-                                if (i == j)
-                                    r_temp = &lowBufi_[0];
-                                else
-                                    r_temp = &lowBufj_[0];
-                            } else {
-                                r_temp = &evecs->at(evec_j+evec_jj);
-                            }
-                        } else {
-                            // Pick the min of how many high modes are left vs. cacheBlockSize_
-                            N_jjj = MIN(N_jj-jj,cacheBlockSize_);
-                            r_temp = &right[j+jj-N_low];
-                        }
-
-                        A2AMatrixSet<T> mCacheBlock(mCache_.data(), next_, nstr_, nt_, N_iii, N_jjj);
-
-                        START_TIMER("kernel");
-                        kernel(mCacheBlock, l_temp, r_temp, orthogDim_, &t);
-                        STOP_TIMER("kernel");
-                        t_kernel += t;
-                        flops    += kernel.flops(N_iii, N_jjj);
-                        bytes    += kernel.bytes(N_iii, N_jjj);
-
-                        START_TIMER("cache copy");
-                        ComplexD coeff;
-                        int evec_jjj=evec_j+evec_jj;
-                        for(int jjj=0;jjj< N_jjj;jjj++) {
-
-                            // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
-                            if (low_ii || low_jj) {
-                                coeff = ComplexD(norm); // Normalize low modes appropriately
-                                if (low_ii && low_jj) {
-                                    coeff *= coeff;
-                                }
-                            } else {
-                                coeff = ComplexD(1.0);
-                            }
-
-                            if (low_jj) {
-                                if (jjj & 0x1) {
-                                    coeff = coeff/conjugate(evals[evec_jjj]); // Mdaginv evals
-                                    evec_jjj+=1;
-                                } else {
-                                    coeff = coeff/evals[evec_jjj]; // Minv evals
-                                }
-                            }
-
-                            thread_for_collapse(4,e,next_,{
-                              for(int iii = 0;iii < N_iii;iii++)
-                              for(int s = 0;s < nstr_;s++)
-                              for(int t = 0;t < nt_  ;t++) {
-                                if (cbi)
-                                    mBlock(e,s,t,ii+iii,jj+jjj) += coeff*mCacheBlock(e,s,t,iii,jjj);
-                                else
-                                    mBlock(e,s,t,ii+iii,jj+jjj)  = coeff*mCacheBlock(e,s,t,iii,jjj);
-                            }});
-                        }
-                        STOP_TIMER("cache copy");
-
-                        jj += N_jjj;
-                        if (low_jj)
-                            evec_jj += N_jjj/Ncb;
-                    }
-
-                    ii += N_iii;
-                    if (low_ii)
-                        evec_ii += N_iii/Ncb;
-                }
-            } // End for(cbi) loop
-
-            if (checkerboarded_low) {
-                t_gsum = -usecond();
-                grid_->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
-                t_gsum += usecond();
-            }
-            // perf
-            LOG(Message) << "Kernel perf " << flops/t_kernel/1.0e3/nodes 
-                         << " Gflop/s/node " << std::endl;
-            LOG(Message) << "Kernel Time: " << t_kernel << " us." << std::endl;
-            LOG(Message) << "Global Sum Time: " << t_gsum << " us." << std::endl;
-
-            // IO
-            double       blockSize, ioTime;
-            unsigned int myRank = grid_->ThisRank(), nRank  = grid_->RankCount();
-        
-            LOG(Message) << "Writing block to disk" << std::endl;
-            ioTime = -GET_TIMER("IO: write block");
-            START_TIMER("IO: total");
-            makeFileDir(filenameFn(0, 0), grid_);
-
-#ifdef HADRONS_A2AM_PARALLEL_IO
-            grid_->Barrier();
-            // make task list for current node
-            nodeIo_.clear();
-            for(int f = myRank; f < next_*nstr_; f += nRank)
-            {
-                IoHelper h;
-
-                h.i  = i;
-                h.j  = j;
-                h.e  = f/nstr_;
-                h.s  = f % nstr_;
-                h.io = A2AMatrixIo<TIo>(filenameFn(h.e, h.s), 
-                                        ionameFn(h.e, h.s), nt_, N_i, N_j);
-                h.md = metadataFn(h.e, h.s);
-                nodeIo_.push_back(h);
-            }
-            // parallel IO
-            for (auto &h: nodeIo_)
-            {
-                saveBlock(mBlock, h);
-            }
-            grid_->Barrier();
-#else
-            // serial IO, for testing purposes only
-            for(int e = 0; e < next_; e++)
-            for(int s = 0; s < nstr_; s++)
-            {
-                IoHelper h;
-
-                h.i  = i;
-                h.j  = j;
-                h.e  = e;
-                h.s  = s;
-                h.io = A2AMatrixIo<TIo>(filenameFn(h.e, h.s), 
-                                        ionameFn(h.e, h.s), nt_, N_i, N_j);
-                h.md = metadataFn(h.e, h.s);
-                saveBlock(mfBlock, h);
-            }
-#endif
-            STOP_TIMER("IO: total");
-            blockSize  = static_cast<double>(next_*nstr_*nt_*N_ii*N_jj*sizeof(TIo));
-            ioTime    += GET_TIMER("IO: write block");
-            LOG(Message) << "HDF5 IO done " << sizeString(blockSize) << " in "
-                         << ioTime  << " us (" 
-                         << blockSize/ioTime*1.0e6/1024/1024
-                         << " MB/s)" << std::endl;
-
-            if (checkerboarded_low && low_j && i != j) {
-                for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++)
-                    evecs->at(idxj) = lowBufj_[idxj-evec_j];
-            }
-            j+=N_jj;
-            evec_j+=(N_jj/Ncb);
-        } // End while (j < N_j) Loop
-
-        if (checkerboarded_low && low_i) {
-            for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++)
-                evecs->at(idxi) = lowBufi_[idxi-evec_i];
+            START_TIMER("cache copy");
+            thread_for_collapse( 5,e,next_,{
+              for(int s =0;s< nstr_;s++)
+              for(int t =0;t< nt_;t++)
+              for(int iii=0;iii< N_iii;iii++)
+              for(int jjj=0;jjj< N_jjj;jjj++)
+              {
+                mBlock(e,s,t,ii+iii,jj+jjj) = mCacheBlock(e,s,t,iii,jjj);
+              }
+            });
+            STOP_TIMER("cache copy");
         }
-        i+=N_ii;
-        evec_i+=(N_ii/Ncb);
-    } // End while (i < N_i) Loop
+
+        // perf
+        LOG(Message) << "Kernel perf " << flops/t_kernel/1.0e3/nodes 
+                     << " Gflop/s/node " << std::endl;
+        LOG(Message) << "Kernel perf " << bytes/t_kernel*1.0e6/1024/1024/1024/nodes 
+                     << " GB/s/node "  << std::endl;
+
+        // IO
+        double       blockSize, ioTime;
+        unsigned int myRank = grid_->ThisRank(), nRank  = grid_->RankCount();
+    
+        LOG(Message) << "Writing block to disk" << std::endl;
+        ioTime = -GET_TIMER("IO: write block");
+        START_TIMER("IO: total");
+        makeFileDir(filenameFn(0, 0), grid_);
+#ifdef HADRONS_A2AM_PARALLEL_IO
+        grid_->Barrier();
+        // make task list for current node
+        nodeIo_.clear();
+        for(int f = myRank; f < next_*nstr_; f += nRank)
+        {
+            IoHelper h;
+
+            h.i  = i;
+            h.j  = j;
+            h.e  = f/nstr_;
+            h.s  = f % nstr_;
+            h.io = A2AMatrixIo<TIo>(filenameFn(h.e, h.s), 
+                                    ionameFn(h.e, h.s), nt_, N_i, N_j);
+            h.md = metadataFn(h.e, h.s);
+            nodeIo_.push_back(h);
+        }
+        // parallel IO
+        for (auto &h: nodeIo_)
+        {
+            saveBlock(mBlock, h);
+        }
+        grid_->Barrier();
+#else
+        // serial IO, for testing purposes only
+        for(int e = 0; e < next_; e++)
+        for(int s = 0; s < nstr_; s++)
+        {
+            IoHelper h;
+
+            h.i  = i;
+            h.j  = j;
+            h.e  = e;
+            h.s  = s;
+            h.io = A2AMatrixIo<TIo>(filenameFn(h.e, h.s), 
+                                    ionameFn(h.e, h.s), nt_, N_i, N_j);
+            h.md = metadataFn(h.e, h.s);
+            saveBlock(mfBlock, h);
+        }
+#endif
+        STOP_TIMER("IO: total");
+        blockSize  = static_cast<double>(next_*nstr_*nt_*N_ii*N_jj*sizeof(TIo));
+        ioTime    += GET_TIMER("IO: write block");
+        LOG(Message) << "HDF5 IO done " << sizeString(blockSize) << " in "
+                     << ioTime  << " us (" 
+                     << blockSize/ioTime*1.0e6/1024/1024
+                     << " MB/s)" << std::endl;
+    }
 }
 
 // I/O handler /////////////////////////////////////////////////////////////////

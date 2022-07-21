@@ -81,9 +81,9 @@ public:
     virtual ~SmearedMesonFieldKernel(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left,
                             const FermionField *right,
-                            const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
+                            const unsigned int orthogDim, double &t)
     {
-        A2Autils<FImpl>::MesonField(m, left, right, gamma_, mom_, orthogDim, t, tg);
+        A2Autils<FImpl>::MesonField(m, left, right, gamma_, mom_, orthogDim, &t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)

@@ -81,6 +81,7 @@ private:
     public:
       GuessWrapper(const FermionFieldOuter& guess)
       :guess_(guess){}
+      using LinearFunction<FermionFieldOuter>::operator();
       virtual void operator()(const FermionFieldOuter &src, FermionFieldOuter &guess) { guess = guess_; };
     private:
         const FermionFieldOuter& guess_;
@@ -167,7 +168,6 @@ DependencyMap TMixedPrecisionRBPrecCGMILC<FImplInner, FImplOuter>::getObjectDepe
 // to make a macro with the solver body
 #define SOLVER_BODY                                                                                   \
 int cb    = this->isEven_?Even:Odd;                                                                   \
-int cbNeg = this->isEven_?Odd:Even;                                                                   \
 ZeroGuesser<FermionFieldInner> iguesserDefault;                                                       \
 ZeroGuesser<FermionFieldOuter> oguesserDefault;                                                       \
 LinearFunction<FermionFieldInner> &iguesser = (iguesserPt == nullptr) ? iguesserDefault : *iguesserPt;\
@@ -186,6 +186,7 @@ schurSolver.subtractGuess(subGuess);                                            
 schurSolver(omat, source, sol, oguesser);
 
 #define SOLVER_IMPROVE_BODY                                                                           \
+int cbNeg = this->isEven_?Odd:Even;                                                                   \
 FermionFieldOuter test(envGetGrid(FermionFieldOuter));                                                \
 FermionFieldOuter solRb(envGetRbGrid(FermionFieldOuter)), solRbNeg(envGetRbGrid(FermionFieldOuter));  \
 LOG(Message) << "Improving residual of complementary checkerboard." << std::endl;                     \

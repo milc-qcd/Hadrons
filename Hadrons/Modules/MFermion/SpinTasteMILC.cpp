@@ -1,5 +1,5 @@
 /*
- * TimeDilutedSpinColorDiagonal.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SpinTasteMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MNoise/TimeDilutedSpinColorDiagonal.hpp>
+#include <Hadrons/Modules/MFermion/SpinTasteMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MNoise;
+using namespace MFermion;
 
-template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<FIMPL>;
-template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<ZFIMPL>;
+template class Grid::Hadrons::MFermion::TSpinTasteMILC<STAGIMPL>;
+

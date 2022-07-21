@@ -64,6 +64,7 @@ private:
     public:
       GuessWrapper(const FermionField& guess)
       :guess_(guess){}
+      using LinearFunction<FermionField>::operator();
       virtual void operator()(const FermionField &src, FermionField &guess) { guess = guess_; };
     private:
         const FermionField& guess_;
@@ -139,8 +140,7 @@ DependencyMap TRBPrecCGMILC<FImpl>::getObjectDependencies(void)
 // C++11 does not support template lambdas so it is easier
 // to make a macro with the solver body
 #define SOLVER_BODY                                                                          \
-int cb    = this->isEven_?Even:Odd;                                                          \
-int cbNeg = this->isEven_?Odd:Even;                                                          \
+int cb = this->isEven_?Even:Odd;                                                             \
 ZeroGuesser<FermionField>    defaultGuesser;                                                 \
 LinearFunction<FermionField> &guesser = (guesserPt == nullptr) ? defaultGuesser : *guesserPt;\
 ConjugateGradient<FermionField> cg(par().residual,                                           \
@@ -150,6 +150,7 @@ schurSolver.subtractGuess(subGuess);                                            
 schurSolver(mat, source, sol, guesser);
 
 #define SOLVER_IMPROVE_BODY                                                                  \
+int cbNeg = this->isEven_?Odd:Even;                                                          \
 FermionField test(envGetGrid(FermionField));                                                 \
 FermionField solRb(envGetRbGrid(FermionField)), solRbNeg(envGetRbGrid(FermionField));        \
 LOG(Message) << "Improving residual of complementary checkerboard." << std::endl;            \

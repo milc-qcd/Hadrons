@@ -33,8 +33,8 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/A2AVectors.hpp>
-#include <Hadrons/A2AMatrix.hpp>
+#include <Hadrons/A2AVectorsMILC.hpp>
+#include <Hadrons/A2AMatrixMILC.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -67,12 +67,12 @@ public:
 };
 
 template <typename T, typename FImpl>
-class MesonFieldMILCKernel: public A2AKernel<T, typename FImpl::FermionField>
+class MesonFieldKernelMILC: public A2AKernelMILC<T, typename FImpl::FermionField>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
 public:
-    MesonFieldMILCKernel(const std::vector<Gamma::Algebra> &gamma,
+    MesonFieldKernelMILC(const std::vector<Gamma::Algebra> &gamma,
                      const std::vector<LatticeComplex> &mom,
                      GridBase *grid)
     : gamma_(gamma), mom_(mom), grid_(grid)
@@ -84,7 +84,7 @@ public:
         }
     }
 
-    virtual ~MesonFieldMILCKernel(void) = default;
+    virtual ~MesonFieldKernelMILC(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left, 
                             const FermionField *right,
                             const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
@@ -125,11 +125,11 @@ class TA2AMesonFieldMILC : public Module<A2AMesonFieldMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
-    typedef A2AMatrixBlockComputation<Complex, 
+    typedef A2AMatrixBlockComputationMILC<Complex, 
                                       FermionField, 
                                       A2AMesonFieldMILCMetadata, 
                                       HADRONS_A2AM_IO_TYPE> Computation;
-    typedef MesonFieldMILCKernel<Complex, FImpl> Kernel;
+    typedef MesonFieldKernelMILC<Complex, FImpl> Kernel;
 public:
     // constructor
     TA2AMesonFieldMILC(const std::string name);
@@ -150,7 +150,7 @@ private:
     std::vector<std::vector<Real>>     mom_;
 };
 
-MODULE_REGISTER(A2AMesonFieldMILC, ARG(TA2AMesonFieldMILC<STAGIMPL>), MContraction);
+MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL>), MContraction);
 
 /******************************************************************************
 *                  TA2AMesonFieldMILC implementation                             *

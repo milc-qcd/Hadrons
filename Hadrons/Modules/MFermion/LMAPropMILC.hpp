@@ -1,5 +1,5 @@
 /*
- * LMAProp.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LMAPropMILC.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -27,8 +27,8 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MFermion_LMAProp_hpp_
-#define Hadrons_MFermion_LMAProp_hpp_
+#ifndef Hadrons_MFermion_LMAPropMILC_hpp_
+#define Hadrons_MFermion_LMAPropMILC_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -41,10 +41,10 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MFermion)
 
-class LMAPropPar: Serializable
+class LMAPropMILCPar: Serializable
 {
 public:
-  GRID_SERIALIZABLE_CLASS_MEMBERS(LMAPropPar,
+  GRID_SERIALIZABLE_CLASS_MEMBERS(LMAPropMILCPar,
                                   std::string, source,
                                   std::string, action,
                                   std::string, gammas,
@@ -53,7 +53,7 @@ public:
 };
 
 template <typename FImpl>
-class TLMAProp : public Module<LMAPropPar>
+class TLMAPropMILC : public Module<LMAPropMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
@@ -62,9 +62,9 @@ private:
     HADRONS_DEFINE_setProp_setFerm(FImpl);
 public:
     // constructor
-    TLMAProp(const std::string name);
+    TLMAPropMILC(const std::string name);
     // destructor
-    virtual ~TLMAProp(void) {};
+    virtual ~TLMAPropMILC(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
@@ -78,20 +78,20 @@ public:
     inline void projectHelper(FermionField& sol, const FermionField& src);
 };
 
-MODULE_REGISTER_TMP(StagLMAProp, TLMAProp<STAGIMPL>, MFermion);
+MODULE_REGISTER_TMP(StagLMAProp, TLMAPropMILC<STAGIMPL>, MFermion);
 
 /******************************************************************************
- *                       TLMAProp implementation                           *
+ *                       TLMAPropMILC implementation                           *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TLMAProp<FImpl>::TLMAProp(const std::string name)
-: Module<LMAPropPar>(name)
+TLMAPropMILC<FImpl>::TLMAPropMILC(const std::string name)
+: Module<LMAPropMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TLMAProp<FImpl>::getInput(void)
+std::vector<std::string> TLMAPropMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in {par().action, par().source};
 
@@ -107,7 +107,7 @@ std::vector<std::string> TLMAProp<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TLMAProp<FImpl>::getOutput(void)
+std::vector<std::string> TLMAPropMILC<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
 
@@ -115,10 +115,10 @@ std::vector<std::string> TLMAProp<FImpl>::getOutput(void)
 }
 
 /******************************************************************************
- *              TLMAProp setup                                         *
+ *              TLMAPropMILC setup                                         *
  ******************************************************************************/
 template <typename FImpl>
-void TLMAProp<FImpl>::setup(void)
+void TLMAPropMILC<FImpl>::setup(void)
 {
     auto        &action     = envGet(FMat, par().action);
     int         Ls          = env().getObjectLs(par().action);
@@ -191,7 +191,7 @@ void TLMAProp<FImpl>::setup(void)
 }
 
 template <typename FImpl>
-inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField& src) {
+inline void TLMAPropMILC<FImpl>::projectHelper(FermionField& sol, const FermionField& src) {
 
     envGetTmp(FermionField,rbTemp);
     envGetTmp(FermionField,rbTempNeg);
@@ -250,10 +250,10 @@ inline void TLMAProp<FImpl>::projectHelper(FermionField& sol, const FermionField
 }
 
 /******************************************************************************
- *              TLMAProp execution                                     *
+ *              TLMAPropMILC execution                                     *
  ******************************************************************************/
 template <typename FImpl>
-void TLMAProp<FImpl>::execute(void)
+void TLMAPropMILC<FImpl>::execute(void)
 {
     envGetTmp(FermionField,fermSrc);
     envGetTmp(FermionField,fermSol);
@@ -304,4 +304,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MFermion_LMAProp_hpp_
+#endif // Hadrons_MFermion_LMAPropMILC_hpp_

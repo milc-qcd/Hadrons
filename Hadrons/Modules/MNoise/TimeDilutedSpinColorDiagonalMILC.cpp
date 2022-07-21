@@ -1,5 +1,5 @@
 /*
- * StagGaugeProp.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * TimeDilutedSpinColorDiagonalMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -23,10 +23,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MFermion/StagGaugeProp.hpp>
+#include <Hadrons/Modules/MNoise/TimeDilutedSpinColorDiagonalMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MFermion;
+using namespace MNoise;
 
-template class Grid::Hadrons::MFermion::TStagGaugeProp<STAGIMPL>;
+template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonalMILC<STAGIMPL>;

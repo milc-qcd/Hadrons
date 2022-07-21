@@ -83,9 +83,9 @@ public:
     virtual ~MesonFieldKernel(void) = default;
     virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left, 
                             const FermionField *right,
-                            const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
+                            const unsigned int orthogDim, double &t)
     {
-        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, t, tg);
+        A2Autils<FImpl>::MesonField(m, left, right, gamma_, mom_, orthogDim, &t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
@@ -98,17 +98,6 @@ public:
         return vol_*(12.0*sizeof(T))*blockSizei*blockSizej
                +  vol_*(2.0*sizeof(T)*mom_.size())*blockSizei*blockSizej*gamma_.size();
     }
-private:
- template<typename TFImpl, typename ... Args>
- IfNotStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::MesonField(args...);
- }
-
- template<typename TFImpl, typename ... Args>
- IfStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::StagMesonField(args...);
- }
-
 private:
     const std::vector<Gamma::Algebra> &gamma_;
     const std::vector<LatticeComplex> &mom_;
@@ -146,7 +135,6 @@ private:
 };
 
 MODULE_REGISTER(A2AMesonField, ARG(TA2AMesonField<FIMPL>), MContraction);
-MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonField<STAGIMPL>), MContraction);
 
 /******************************************************************************
 *                  TA2AMesonField implementation                             *

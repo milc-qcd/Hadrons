@@ -35,7 +35,8 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Solver.hpp>
 #include <Hadrons/A2AVectors.hpp>
-#include <Hadrons/DilutedNoise.hpp>
+#include <Hadrons/A2AVectorsMILC.hpp>
+#include <Hadrons/DilutedNoiseMILC.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -62,7 +63,7 @@ class TA2AVectorsMILC : public Module<A2AVectorsMILCPar>
 public:
     FERM_TYPE_ALIASES(FImpl,);
     SOLVER_TYPE_ALIASES(FImpl,);
-    typedef A2AVectorsSchur<FImpl> A2A;
+    typedef A2AVectorsMILC<FImpl> A2A;
 
 public:
     // constructor
@@ -182,8 +183,6 @@ void TA2AVectorsMILC<FImpl>::execute(void)
                     << " using noise '" << par().noise << "' (" << Nh_ 
                     << " noise vectors)" << std::endl;
     }
-
-    typename std::vector<Real>::iterator it_eval;
 
     auto &v     = envGet(std::vector<FermionField>, getName() + "_v");
     auto &w     = envGet(std::vector<FermionField>, getName() + "_w");

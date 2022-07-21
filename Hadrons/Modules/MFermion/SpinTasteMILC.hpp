@@ -1,12 +1,12 @@
 /*
- * SpinTaste.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SpinTasteMILC.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2021
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Lanny91 <andrew.lawson@gmail.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
- * Author: Michael Lynch <ml11@illinois.edu>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  * Author: Carleton DeTar <detar@physics.utah.edu>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -28,8 +28,8 @@
 
 /*  END LEGAL */
 
-#ifndef Hadrons_MFermion_SpinTaste_hpp_
-#define Hadrons_MFermion_SpinTaste_hpp_
+#ifndef Hadrons_MFermion_SpinTasteMILC_hpp_
+#define Hadrons_MFermion_SpinTasteMILC_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -38,12 +38,12 @@
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                                 SpinTaste                                      *
+ *                                 SpinTasteMILC                                      *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MFermion)
 
 template <typename FImpl>
-class TSpinTaste: public Module<NoPar>
+class TSpinTasteMILC: public Module<NoPar>
 {
 public:
   FERM_TYPE_ALIASES(FImpl,);
@@ -51,9 +51,9 @@ public:
   typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
 public:
   // constructor
-  TSpinTaste(const std::string name);
+  TSpinTasteMILC(const std::string name);
   // destructor
-  virtual ~TSpinTaste(void) {};
+  virtual ~TSpinTasteMILC(void) {};
   // dependency relation
   virtual std::vector<std::string> getInput(void);
   virtual std::vector<std::string> getOutput(void);
@@ -67,21 +67,21 @@ private:
   std::string phName_;
 };
 
-MODULE_REGISTER_TMP(SpinTaste, TSpinTaste<STAGIMPL>, MFermion);
+MODULE_REGISTER_TMP(SpinTaste, TSpinTasteMILC<STAGIMPL>, MFermion);
 
 /******************************************************************************
- *                          TSpinTaste implementation                             *
+ *                          TSpinTasteMILC implementation                             *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TSpinTaste<FImpl>::TSpinTaste(const std::string name)
+TSpinTasteMILC<FImpl>::TSpinTasteMILC(const std::string name)
   : Module<NoPar>(name)
 , phName_ (name + "_sph")
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TSpinTaste<FImpl>::getInput(void)
+std::vector<std::string> TSpinTasteMILC<FImpl>::getInput(void)
 {
   std::vector<std::string> in;
 
@@ -89,7 +89,7 @@ std::vector<std::string> TSpinTaste<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TSpinTaste<FImpl>::getOutput(void)
+std::vector<std::string> TSpinTasteMILC<FImpl>::getOutput(void)
 {
   std::vector<std::string> out = {getName()};
 
@@ -98,7 +98,7 @@ std::vector<std::string> TSpinTaste<FImpl>::getOutput(void)
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TSpinTaste<FImpl>::setup(void)
+void TSpinTasteMILC<FImpl>::setup(void)
 {
     envCreate(GammaFn, getName(), 1, nullptr);
     PhaseMap dummy;
@@ -107,7 +107,7 @@ void TSpinTaste<FImpl>::setup(void)
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TSpinTaste<FImpl>::execute(void)
+void TSpinTasteMILC<FImpl>::execute(void)
 {
 
   std::vector<Gamma::Algebra> keys = {
@@ -156,4 +156,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MFermion_SpinTaste_hpp_
+#endif // Hadrons_MFermion_SpinTasteMILC_hpp_

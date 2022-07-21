@@ -1,10 +1,10 @@
 /*
- * SpinTaste.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LMAPropMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +24,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MFermion/SpinTaste.hpp>
+#include <Hadrons/Modules/MFermion/LMAPropMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MFermion;
 
-template class Grid::Hadrons::MFermion::TSpinTaste<STAGIMPL>;
-
+template class Grid::Hadrons::MFermion::TLMAPropMILC<STAGIMPL>;

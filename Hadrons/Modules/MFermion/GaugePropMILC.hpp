@@ -1,5 +1,5 @@
 /*
- * StagGaugeProp.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * GaugePropMILC.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -30,8 +30,8 @@
 
 /*  END LEGAL */
 
-#ifndef Hadrons_MFermion_StagGaugeProp_hpp_
-#define Hadrons_MFermion_StagGaugeProp_hpp_
+#ifndef Hadrons_MFermion_GaugePropMILC_hpp_
+#define Hadrons_MFermion_GaugePropMILC_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -41,14 +41,14 @@
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                                StagGaugeProp                                   *
+ *                                GaugePropMILC                                   *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MFermion)
 
-class StagGaugePropPar: Serializable
+class GaugePropMILCPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(StagGaugePropPar,
+    GRID_SERIALIZABLE_CLASS_MEMBERS(GaugePropMILCPar,
                                     std::string, source,
                                     std::string, gammas,
                                     std::string, gammaFunc,
@@ -57,7 +57,7 @@ public:
 };
 
 template <typename FImpl>
-class TStagGaugeProp: public Module<StagGaugePropPar>
+class TGaugePropMILC: public Module<GaugePropMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
@@ -66,9 +66,9 @@ public:
     typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
 public:
     // constructor
-    TStagGaugeProp(const std::string name);
+    TGaugePropMILC(const std::string name);
     // destructor
-    virtual ~TStagGaugeProp(void) {};
+    virtual ~TGaugePropMILC(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
@@ -93,20 +93,20 @@ private:
     bool hasGammas_;
 };
 
-MODULE_REGISTER_TMP(StagGaugeProp, TStagGaugeProp<STAGIMPL>, MFermion);
+MODULE_REGISTER_TMP(StagGaugeProp, TGaugePropMILC<STAGIMPL>, MFermion);
 
 /******************************************************************************
- *                      TStagGaugeProp implementation                             *
+ *                      TGaugePropMILC implementation                             *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
-TStagGaugeProp<FImpl>::TStagGaugeProp(const std::string name)
-: Module<StagGaugePropPar>(name)
+TGaugePropMILC<FImpl>::TGaugePropMILC(const std::string name)
+: Module<GaugePropMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
-std::vector<std::string> TStagGaugeProp<FImpl>::getInput(void)
+std::vector<std::string> TGaugePropMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().source, par().solver};
     hasGammas_ = !par().gammas.empty();
@@ -123,7 +123,7 @@ std::vector<std::string> TStagGaugeProp<FImpl>::getInput(void)
 }
 
 template <typename FImpl>
-std::vector<std::string> TStagGaugeProp<FImpl>::getOutput(void)
+std::vector<std::string> TGaugePropMILC<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     
@@ -133,7 +133,7 @@ std::vector<std::string> TStagGaugeProp<FImpl>::getOutput(void)
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
 template <typename TField>
-void TStagGaugeProp<FImpl>::setupHelper() {
+void TGaugePropMILC<FImpl>::setupHelper() {
     envTmpLat(TField, "field");
     envTmpLat(FermionField, "fermIn");
     envTmpLat(FermionField, "fermOut");
@@ -190,7 +190,7 @@ void TStagGaugeProp<FImpl>::setupHelper() {
 }
 
 template <typename FImpl>
-void TStagGaugeProp<FImpl>::setup(void)
+void TGaugePropMILC<FImpl>::setup(void)
 {
     envTmp(std::vector<Gamma::Algebra>,"gammaList",1,0);
 
@@ -213,7 +213,7 @@ void TStagGaugeProp<FImpl>::setup(void)
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
-void TStagGaugeProp<FImpl>::solvePropagator(FermionField &sol, const FermionField &src, const FermionField *guess)
+void TGaugePropMILC<FImpl>::solvePropagator(FermionField &sol, const FermionField &src, const FermionField *guess)
 {
     auto &solver  = envGet(Solver, par().solver);
     
@@ -225,7 +225,7 @@ void TStagGaugeProp<FImpl>::solvePropagator(FermionField &sol, const FermionFiel
 }
 
 template <typename FImpl>
-void TStagGaugeProp<FImpl>::solvePropagator(PropagatorField &sol, 
+void TGaugePropMILC<FImpl>::solvePropagator(PropagatorField &sol, 
                                             const PropagatorField &src, const PropagatorField *guess)
 {
     auto &solver  = envGet(Solver, par().solver);
@@ -249,7 +249,7 @@ void TStagGaugeProp<FImpl>::solvePropagator(PropagatorField &sol,
 
 template <typename FImpl>
 template<typename TField>
-void TStagGaugeProp<FImpl>::solvePropagator(std::vector<TField> &sol, const std::vector<TField> &src)
+void TGaugePropMILC<FImpl>::solvePropagator(std::vector<TField> &sol, const std::vector<TField> &src)
 {
     for (int i = 0;i<src.size();i++) {
         LOG(Message) << "Solving element " << i << " of '" << par().source << "'" << std::endl;
@@ -259,7 +259,7 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::vector<TField> &sol, const std:
 
 template <typename FImpl>
 template<typename TField>
-void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol, const TField &src)
+void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol, const TField &src)
 {
     envGetTmp(std::vector<Gamma::Algebra>,gammaList);
     envGetTmp(TField,field);
@@ -293,7 +293,7 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol
 
 template <typename FImpl>
 template<typename TField>
-void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<TField>> &sol, const std::vector<TField> &src)
+void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<TField>> &sol, const std::vector<TField> &src)
 {
     envGetTmp(std::vector<Gamma::Algebra>,gammaList);
     envGetTmp(TField,field);
@@ -330,7 +330,7 @@ void TStagGaugeProp<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<
 }
 
 template <typename FImpl>
-void TStagGaugeProp<FImpl>::execute(void)
+void TGaugePropMILC<FImpl>::execute(void)
 {
     LOG(Message) << "Computing quark propagator '" << getName() << "'"
                  << std::endl;
@@ -392,4 +392,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MFermion_StagGaugeProp_hpp_
+#endif // Hadrons_MFermion_GaugePropMILC_hpp_
