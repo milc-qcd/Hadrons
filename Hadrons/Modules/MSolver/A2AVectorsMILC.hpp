@@ -83,7 +83,7 @@ private:
     unsigned int Nh_{0};
 };
 
-MODULE_REGISTER_TMP(A2AVectorsMILC, 
+MODULE_REGISTER_TMP(StagA2AVectors, 
     ARG(TA2AVectorsMILC<STAGIMPL>), MSolver);
 
 /******************************************************************************
@@ -101,6 +101,9 @@ std::vector<std::string> TA2AVectorsMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in {par().action,par().solver, par().noise};
 
+    if (!par().noise.empty()) {
+        in.push_back(par().noise);
+    }
     if (!par().lowModes.empty()) {
         in.push_back(par().lowModes);
         in.push_back(par().lowModes+"_evalM");
@@ -140,7 +143,7 @@ void TA2AVectorsMILC<FImpl>::setup(void)
     }
 
 
-    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+    auto &noise = envGet(SpinColorDiagonalNoiseMILC<FImpl>, par().noise);
 
     Nh_ = noise.fermSize();
 
@@ -186,7 +189,7 @@ void TA2AVectorsMILC<FImpl>::execute(void)
 
     auto &v     = envGet(std::vector<FermionField>, getName() + "_v");
     auto &w     = envGet(std::vector<FermionField>, getName() + "_w");
-    auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, par().noise);
+    auto &noise = envGet(SpinColorDiagonalNoiseMILC<FImpl>, par().noise);
 
     int nsrc = noise.size();
 
