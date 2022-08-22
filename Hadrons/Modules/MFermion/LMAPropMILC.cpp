@@ -30,4 +30,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MFermion;
 
-template class Grid::Hadrons::MFermion::TLMAPropMILC<STAGIMPL>;
+template class Grid::Hadrons::MFermion::TLMAPropMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >;

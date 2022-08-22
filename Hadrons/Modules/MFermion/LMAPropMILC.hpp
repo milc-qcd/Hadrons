@@ -33,6 +33,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/EigenPack.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -52,7 +53,7 @@ public:
                                   std::string, lowModes);
 };
 
-template <typename FImpl>
+template <typename FImpl, typename Pack>
 class TLMAPropMILC : public Module<LMAPropMILCPar>
 {
 public:
@@ -78,25 +79,24 @@ public:
     inline void projectHelper(FermionField& sol, const FermionField& src);
 };
 
-MODULE_REGISTER_TMP(StagLMAProp, TLMAPropMILC<STAGIMPL>, MFermion);
+MODULE_REGISTER_TMP(StagLMAProp, ARG(TLMAPropMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >), MFermion);
 
 /******************************************************************************
  *                       TLMAPropMILC implementation                           *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl>
-TLMAPropMILC<FImpl>::TLMAPropMILC(const std::string name)
+template <typename FImpl, typename Pack>
+TLMAPropMILC<FImpl,Pack>::TLMAPropMILC(const std::string name)
 : Module<LMAPropMILCPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl>
-std::vector<std::string> TLMAPropMILC<FImpl>::getInput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TLMAPropMILC<FImpl,Pack>::getInput(void)
 {
     std::vector<std::string> in {par().action, par().source};
 
     in.push_back(par().lowModes);
-    in.push_back(par().lowModes+"_evalM");
     in.push_back(par().gammaFunc);
     if (par().gammas.empty()) {
         HADRONS_ERROR(Logic,"Must provide a list of gammas to " + getName());
@@ -106,8 +106,8 @@ std::vector<std::string> TLMAPropMILC<FImpl>::getInput(void)
     return in;
 }
 
-template <typename FImpl>
-std::vector<std::string> TLMAPropMILC<FImpl>::getOutput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TLMAPropMILC<FImpl,Pack>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
 
@@ -117,8 +117,8 @@ std::vector<std::string> TLMAPropMILC<FImpl>::getOutput(void)
 /******************************************************************************
  *              TLMAPropMILC setup                                         *
  ******************************************************************************/
-template <typename FImpl>
-void TLMAPropMILC<FImpl>::setup(void)
+template <typename FImpl, typename Pack>
+void TLMAPropMILC<FImpl,Pack>::setup(void)
 {
     auto        &action     = envGet(FMat, par().action);
     int         Ls          = env().getObjectLs(par().action);
@@ -190,8 +190,8 @@ void TLMAPropMILC<FImpl>::setup(void)
     }
 }
 
-template <typename FImpl>
-inline void TLMAPropMILC<FImpl>::projectHelper(FermionField& sol, const FermionField& src) {
+template <typename FImpl, typename Pack>
+inline void TLMAPropMILC<FImpl,Pack>::projectHelper(FermionField& sol, const FermionField& src) {
 
     envGetTmp(FermionField,rbTemp);
     envGetTmp(FermionField,rbTempNeg);
@@ -201,15 +201,14 @@ inline void TLMAPropMILC<FImpl>::projectHelper(FermionField& sol, const FermionF
 
     auto &action = envGet(FMat, par().action);
 
-    auto &evals   = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
-    auto &evecs   = envGet(std::vector<FermionField>, par().lowModes);
+    auto &epack   = envGet(Pack, par().lowModes);
 
-    int cb = evecs[0].Checkerboard();
+    int cb = epack.evec[0].Checkerboard();
     int cbNeg = (cb==Even) ? Odd : Even;
 
     // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)
     // Extra factor of 2 accounts for contributions from M and Mdag evecs
-    RealD norm = 1./::sqrt(norm2(evecs[0]));
+    RealD norm = 1./::sqrt(norm2(epack.evec[0]));
 
     rbTemp = Zero();
     rbTemp.Checkerboard() = cb;
@@ -227,11 +226,11 @@ inline void TLMAPropMILC<FImpl>::projectHelper(FermionField& sol, const FermionF
 
     // Add up source vector projection onto provided evec checkerboard
     // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>
-    for (int k=evecs.size()-1;k >= 0;k--) {
-        const FermionField& e = evecs[k];
+    for (int k=epack.evec.size()-1;k >= 0;k--) {
+        const FermionField& e = epack.evec[k];
 
-        const RealD mass     = evals[k].real();
-        const RealD lam_D    = evals[k].imag();
+        const RealD mass     = epack.eval[k].real();
+        const RealD lam_D    = epack.eval[k].imag();
         const RealD invlam_D = 1./lam_D; 
         const RealD invmag   = 1./(pow(mass,2)+pow(lam_D,2));
         const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;
@@ -252,8 +251,8 @@ inline void TLMAPropMILC<FImpl>::projectHelper(FermionField& sol, const FermionF
 /******************************************************************************
  *              TLMAPropMILC execution                                     *
  ******************************************************************************/
-template <typename FImpl>
-void TLMAPropMILC<FImpl>::execute(void)
+template <typename FImpl, typename Pack>
+void TLMAPropMILC<FImpl,Pack>::execute(void)
 {
     envGetTmp(FermionField,fermSrc);
     envGetTmp(FermionField,fermSol);

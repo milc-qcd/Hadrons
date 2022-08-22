@@ -35,6 +35,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/A2AVectorsMILC.hpp>
 #include <Hadrons/A2AMatrixMILC.hpp>
+#include <Hadrons/EigenPack.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -120,7 +121,7 @@ private:
     double                            vol_;
 };
 
-template <typename FImpl>
+template <typename FImpl, typename Pack>
 class TA2AMesonFieldMILC : public Module<A2AMesonFieldMILCPar>
 {
 public:
@@ -150,22 +151,22 @@ private:
     std::vector<std::vector<Real>>     mom_;
 };
 
-MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL>), MContraction);
+MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >), MContraction);
 
 /******************************************************************************
 *                  TA2AMesonFieldMILC implementation                             *
 ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl>
-TA2AMesonFieldMILC<FImpl>::TA2AMesonFieldMILC(const std::string name)
+template <typename FImpl, typename Pack>
+TA2AMesonFieldMILC<FImpl,Pack>::TA2AMesonFieldMILC(const std::string name)
 : Module<A2AMesonFieldMILCPar>(name)
 , momphName_(name + "_momph")
 {
 }
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl>
-std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getInput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TA2AMesonFieldMILC<FImpl,Pack>::getInput(void)
 {
     std::vector<std::string> in = {};
     if (!par().left.empty()) 
@@ -177,14 +178,13 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getInput(void)
         if (!par().action.empty())
            in.push_back(par().action);
        in.push_back(par().lowModes);
-       in.push_back(par().lowModes+"_evalM");
     }
 
     return in;
 }
 
-template <typename FImpl>
-std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getOutput(void)
+template <typename FImpl, typename Pack>
+std::vector<std::string> TA2AMesonFieldMILC<FImpl,Pack>::getOutput(void)
 {
     std::vector<std::string> out = {};
 
@@ -192,8 +192,8 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TA2AMesonFieldMILC<FImpl>::setup(void)
+template <typename FImpl, typename Pack>
+void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
 {
     if (!par().action.empty()) {
     }
@@ -247,8 +247,8 @@ void TA2AMesonFieldMILC<FImpl>::setup(void)
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TA2AMesonFieldMILC<FImpl>::execute(void)
+template <typename FImpl, typename Pack>
+void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
 {
     bool hasHighModes = (!par().left.empty() && !par().right.empty());
     bool hasLowModes = (!par().lowModes.empty());
@@ -270,9 +270,9 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
 
     if (hasLowModes)
     {
-        auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
-        N_i += (isCheckerBoarded?2:1)*lowModeVec.size();
-        N_j += (isCheckerBoarded?2:1)*lowModeVec.size();
+        auto &lowModes = envGet(Pack, par().lowModes);
+        N_i += (isCheckerBoarded?2:1)*lowModes.evec.size();
+        N_j += (isCheckerBoarded?2:1)*lowModes.evec.size();
     }
     int ngamma     = gamma_.size();
     int nmom       = mom_.size();
@@ -366,31 +366,27 @@ void TA2AMesonFieldMILC<FImpl>::execute(void)
     Kernel      kernel(gamma_, ph, envGetGrid(FermionField));
 
     if(hasLowModes) {
+        auto &lowModes = envGet(Pack, par().lowModes);
+
         if (isCheckerBoarded) {
             auto &action      = envGet(FMat, par().action);
-            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
-            auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
 
-            std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModeVec, &lowModeVal](int index)
+            std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModes](int index)
             {
-                ComplexD eval_D = ComplexD(0.0,lowModeVal[index].imag());
-                int cb = lowModeVec[index].Checkerboard();
+                ComplexD eval_D = ComplexD(0.0,lowModes.eval[index].imag());
+                int cb = lowModes.evec[index].Checkerboard();
                 int cbNeg = (cb==Even) ? Odd : Even;
 
-                FermionField temp(lowModeVec[index].Grid());
+                FermionField temp(lowModes.evec[index].Grid());
                 temp.Checkerboard() = cbNeg;
-                action.Meooe(lowModeVec[index], temp);
-                lowModeVec[index].Checkerboard() = cbNeg;
-                lowModeVec[index] = (1.0/eval_D) * temp;
+                action.Meooe(lowModes.evec[index], temp);
+                lowModes.evec[index].Checkerboard() = cbNeg;
+                lowModes.evec[index] = (1.0/eval_D) * temp;
             };
 
-            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal, &swapEvecCheckerFn);
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModes.evec, lowModes.eval, &swapEvecCheckerFn);
         } else{
-            auto &lowModeVec = envGet(std::vector<FermionField>, par().lowModes);
-            auto &lowModeVal = envGet(std::vector<ComplexD>, par().lowModes+"_evalM");
-
-            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModeVec, lowModeVal);
-
+            computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModes.evec, lowModes.eval);
         }
     } else {
         computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn);

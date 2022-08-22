@@ -451,6 +451,28 @@ private:
     GridBase *gridCoarseIo_;
 };
 
+template <typename Field>
+class AdaptorEigenPackMILC {
+public:
+    AdaptorEigenPackMILC(std::vector<Field> & _evec,const std::vector<RealD> & _eval, RealD _mass=0.0)
+    : evec(_evec)
+    , mass(_mass)
+    {
+        // Store shifted M eigenvalues instead of massless M^dagM eigenvalues
+        eval.resize(_eval.size(),0.0);
+
+        Real m = 2*_mass;
+
+        for (int i=0;i<eval.size();i++) {
+            eval[i] = ComplexD(m,sqrt(_eval[i]));
+        }
+    }    
+public:
+    std::vector<Field> &evec;
+    std::vector<ComplexD> eval;
+    RealD mass;
+};
+
 template <typename FImpl>
 using BaseFermionEigenPack = BaseEigenPack<typename FImpl::FermionField>;
 
@@ -467,6 +489,9 @@ using CoarseFermionEigenPack = CoarseEigenPack<
     typename LocalCoherenceLanczos<typename FImplIo::SiteSpinor, 
                                    typename FImplIo::SiteComplex, 
                                    nBasis>::CoarseField>;
+
+template <typename FImpl>
+using MassShiftEigenPack = AdaptorEigenPackMILC<typename FImpl::FermionField>;
 
 #undef HADRONS_DUMP_EP_METADATA
 

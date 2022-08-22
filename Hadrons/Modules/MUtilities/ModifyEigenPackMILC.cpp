@@ -29,4 +29,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MUtilities;
 
-template class Grid::Hadrons::MUtilities::TModifyEigenPackMILC<STAGIMPL,BaseFermionEigenPack<STAGIMPL>>;
+template class Grid::Hadrons::MUtilities::TModifyEigenPackMILC<STAGIMPL,BaseFermionEigenPack<STAGIMPL> >;

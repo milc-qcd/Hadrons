@@ -44,15 +44,8 @@ class ModifyEigenPackMILCPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(ModifyEigenPackMILCPar,
                                     std::string,  eigenPack,
-                                    std::string,  checkerSwapAction,
                                     bool,         evenEigen,
-                                    bool,         normalizeCheckerboard,
                                     double,       mass);
-    ModifyEigenPackMILCPar() {
-        mass = 0.0;
-        normalizeCheckerboard = true;
-        evenEigen = false;
-    };
 };
 
 template <typename FImpl, typename Pack>
@@ -71,6 +64,7 @@ public:
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+    virtual DependencyMap getObjectDependencies(void);
     // setup
     virtual void setup(void);
     // execution
@@ -100,9 +94,19 @@ std::vector<std::string> TModifyEigenPackMILC<FImpl,Pack>::getInput(void)
 template <typename FImpl, typename Pack>
 std::vector<std::string> TModifyEigenPackMILC<FImpl,Pack>::getOutput(void)
 {
-    std::vector<std::string> out = {getName(), getName() + "_eval", getName() + "_evalM"};
+    std::vector<std::string> out = {getName()};
     
     return out;
+}
+
+template <typename FImpl, typename Pack>
+DependencyMap TModifyEigenPackMILC<FImpl, Pack>::getObjectDependencies(void)
+{
+    DependencyMap dep;
+    
+    dep.insert({par().eigenPack, getName()});
+
+    return dep;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
@@ -113,10 +117,8 @@ void TModifyEigenPackMILC<FImpl,Pack>::setup(void)
 
     auto &epack = envGet(BasePack, par().eigenPack);
 
-    envCreate(std::vector<Field>,getName(), Ls, 0, envGetRbGrid(Field, Ls));
-    envCreate(std::vector<RealD>,getName() + "_eval", Ls, 0);
-    envCreate(std::vector<ComplexD>,getName() + "_evalM", Ls, 0);
-    envTmp(FermionField, "tempRb", 1, envGetRbGrid(FermionField));
+    envCreate(MassShiftEigenPack<FImpl>,getName(), Ls, epack.evec, epack.eval, par().mass);
+    // envTmp(FermionField, "tempRb", 1, envGetRbGrid(FermionField));
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -126,35 +128,13 @@ void TModifyEigenPackMILC<FImpl,Pack>::execute(void)
     int  Ls = env().getObjectLs(par().eigenPack);
     auto &epack = envGet(BasePack, par().eigenPack);
 
-    auto &evec = envGet(std::vector<Field>,getName());
-    auto &eval = envGet(std::vector<RealD>,getName() + "_eval");
-    auto &evalM = envGet(std::vector<ComplexD>,getName() + "_evalM");
-
-    bool normalizeCheckerboard = par().normalizeCheckerboard;
     bool evenEigen             = par().evenEigen;
     double mass                = par().mass;
 
-    eval.insert(eval.end(),epack.eval.begin(),epack.eval.end());
-    evalM.resize(eval.size(),0.0);
-
-    LOG(Message) << "Eigenvalues of the Dirac operator, i.e. mass + i*lambda_D. are stored in '" << getName()+"_evalM" << std::endl;
-
-    Real m = 2*mass;
-
-    for (int i=0;i<eval.size();i++) {
-        evalM[i] = ComplexD(m,sqrt(eval[i]));
-    }
-
-    if (mass > 0.0) {
-        m = ::pow(m,2);
-        for (auto &lam:eval) {
-            lam += m;
-        }        
-        LOG(Message) << "Shifted eigenvalues by mass (including MILC factor of 2) = " << m << std::endl;
-    }
+    LOG(Message) << "Creating modified eigenpack with eigenvectors from " << par().eigenPack << " and Dirac matrix eigenvalues mass + i*lambda_D" << std::endl;
 
     int cb = (evenEigen ? Even : Odd);
-    if (!par().checkerSwapAction.empty()) {
+/*    if (!par().checkerSwapAction.empty()) {
         LOG(Message) << "Swapping checkerboard from " << (evenEigen?"Odd to ":"Even to ") << (evenEigen?"Even":"Odd")<< std::endl;
 
         evec.resize(epack.evec.size(),envGetRbGrid(Field, Ls));
@@ -177,18 +157,11 @@ void TModifyEigenPackMILC<FImpl,Pack>::execute(void)
                 evec[i] = (1.0/(evalM[i]-evalM[i].real()))*tempRb;
             }
         }
-    } else {
-        evec.insert(evec.end(),epack.evec.begin(),epack.evec.end());
-    }
+  */
 
-    ComplexD norm(1.0,0.0);
-    if (normalizeCheckerboard) {
-        norm *= 1.0/sqrt(2.0);
-        LOG(Message) << "Normalizing eigenvectors by 1/sqrt(2)" << std::endl;
-    }
-    LOG(Message) << "Setting eigenvector checkerboard to " << (evenEigen ? "'Even'" : "'Odd'" ) << std::endl;
-    for (auto &e:evec) {
-        e *= norm;
+    // Bad design. Possibly changing checkerboard of another module's data.
+    // Should probably add this functionality to LoadEigenPack module.
+    for (auto &e:epack.evec) {
         e.Checkerboard() = cb;
     }
 }
