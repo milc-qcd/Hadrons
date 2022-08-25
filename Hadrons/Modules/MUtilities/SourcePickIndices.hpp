@@ -63,12 +63,14 @@ public:
     // execution
     virtual void execute(void);
 private:
+    DEFINE_ENV_ALIAS;
     std::vector<Integer> indices_;
+    bool includeShifts_{false};
 };
 
-MODULE_REGISTER_TMP(ComplexSourcePickIndices, TSourcePickIndices<STAGIMPL::ComplexField>, MUtilities);
-MODULE_REGISTER_TMP(FermionSourcePickIndices, TSourcePickIndices<STAGIMPL::FermionField>, MUtilities);
-MODULE_REGISTER_TMP(PropagatorSourcePickIndices, TSourcePickIndices<STAGIMPL::PropagatorField>, MUtilities);
+MODULE_REGISTER_TMP(StagComplexSourcePickIndices, TSourcePickIndices<STAGIMPL::ComplexField>, MUtilities);
+MODULE_REGISTER_TMP(StagFermionSourcePickIndices, TSourcePickIndices<STAGIMPL::FermionField>, MUtilities);
+MODULE_REGISTER_TMP(StagSourcePickIndices, TSourcePickIndices<STAGIMPL::PropagatorField>, MUtilities);
 
 /******************************************************************************
  *                       TSourcePickIndices implementation                         *
@@ -84,6 +86,11 @@ template <typename Field>
 std::vector<std::string> TSourcePickIndices<Field>::getInput(void)
 {
     std::vector<std::string> in = {par().source};
+
+    if (env().hasObject(par().source+"_shift")) {
+        in.push_back(par().source+"_shift");
+        includeShifts_ = true;
+    }
     
     return in;
 }
@@ -92,6 +99,9 @@ template <typename Field>
 std::vector<std::string> TSourcePickIndices<Field>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
+    if (env().hasObject(par().source+"_shift")) {
+        out.push_back(getName()+"_shift");
+    }
 
     return out;
 }
@@ -103,6 +113,9 @@ void TSourcePickIndices<Field>::setup(void)
     indices_ = strToVec<Integer>(par().indices);
 
     envCreate(std::vector<Field>, getName(), 1, indices_.size(), envGetGrid(Field));
+    if (includeShifts_) {
+        envCreate(std::vector<Integer>, getName()+"_shift", 1, indices_.size(),0);
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -121,9 +134,20 @@ void TSourcePickIndices<Field>::execute(void)
 
     auto &out = envGet(std::vector<Field>,getName());
 
+    std::vector<Integer> *shift_in, *shift_out;
+    if (includeShifts_) {
+        auto &vec1 = envGet(std::vector<Integer>,par().source+"_shift");
+        shift_in = &vec1;
+        auto &vec2 = envGet(std::vector<Integer>,getName()+"_shift");
+        shift_out = &vec2;
+    }
+
     for (int i=0;i<indices_.size();i++) {
         LOG(Message) << "Adding source '" << indices_[i] << " of " << par().source << " to " << getName() << std::endl;
         out[i] = src->at(indices_[i]);
+        if (includeShifts_) {
+            shift_out->at(i) = shift_in->at(indices_[i]);
+        }
     }
 }
 
