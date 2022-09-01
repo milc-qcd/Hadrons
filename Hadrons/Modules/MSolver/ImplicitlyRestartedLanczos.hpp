@@ -146,7 +146,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
         envGetTmp(FunctionHermOp<Field>, chebyOp);
         auto &epackIn = envGetDerived(BasePack, Pack, par().epackIn);
 
-        offset = epackIn.size();
+        offset = epackIn.evec.size();
         for (int i=0;i<offset;i++) {
             epackIn.evec[i].Checkerboard() = (par().evenEigen?Even:Odd);
             chebyOp(epackIn.evec[i],polyVec);
