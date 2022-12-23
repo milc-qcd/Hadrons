@@ -45,13 +45,14 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MFermion)
 
+typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
+
 class GaugePropMILCPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(GaugePropMILCPar,
                                     std::string, source,
                                     std::string, gammas,
-                                    std::string, gammaFunc,
                                     std::string, solver,
                                     std::string, guess);
 };
@@ -63,7 +64,6 @@ public:
     FERM_TYPE_ALIASES(FImpl,);
     SOLVER_TYPE_ALIASES(FImpl,);
 
-    typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
 public:
     // constructor
     TGaugePropMILC(const std::string name);
@@ -84,11 +84,11 @@ private:
     void solvePropagator(PropagatorField &prop, const PropagatorField &src, const PropagatorField* guess = nullptr);
 
     template <typename TField>
-    void solvePropagator(std::map<Gamma::Algebra,TField> &prop, const TField &src);
+    void solvePropagator(std::map<StagGamma,TField> &prop, const TField &src);
     template <typename TField>
     void solvePropagator(std::vector<TField> &prop, const std::vector<TField> &src);
     template <typename TField>
-    void solvePropagator(std::map<Gamma::Algebra,std::vector<TField>> &prop, const std::vector<TField> &src);
+    void solvePropagator(std::map<StagGamma,std::vector<TField>> &prop, const std::vector<TField> &src);
 private:
     bool hasGammas_;
 };
@@ -110,10 +110,6 @@ std::vector<std::string> TGaugePropMILC<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().source, par().solver};
     hasGammas_ = !par().gammas.empty();
-
-    if (hasGammas_) {
-        in.push_back(par().gammaFunc);
-    }
 
     if (!par().guess.empty()) {
         in.push_back(par().guess);
@@ -138,7 +134,6 @@ void TGaugePropMILC<FImpl>::setupHelper() {
     envTmpLat(FermionField, "fermIn");
     envTmpLat(FermionField, "fermOut");
     envTmpLat(FermionField, "fermGuess");
-    envTmpLat(LatticeComplex,"stagPhase");
 
     envGetTmp(FermionField, fermIn);
     envGetTmp(FermionField, fermOut);
@@ -149,7 +144,7 @@ void TGaugePropMILC<FImpl>::setupHelper() {
 
     if (envHasType(TField,par().source)) {
         if (hasGammas_) {
-            envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+            envGetTmp(std::vector<GammaPair>,gammaList);
 
             std::map<Gamma::Algebra,TField> dummy;
             envCreate(ARG(std::map<Gamma::Algebra,TField>), getName(), 1, dummy);
@@ -192,18 +187,19 @@ void TGaugePropMILC<FImpl>::setupHelper() {
 template <typename FImpl>
 void TGaugePropMILC<FImpl>::setup(void)
 {
-    envTmp(std::vector<Gamma::Algebra>,"gammaList",1,0);
+    envTmp(StagGamma,"spinTaste",1,0,0);
+   envTmp(std::vector<GammaPair>,"gammaList",1,0);
 
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+    envGetTmp(std::vector<GammaPair>,gammaList);
     gammaList.clear();
 
     if (hasGammas_)  {
-        gammaList = strToVec<Gamma::Algebra>(par().gammas);
+        gammaList = strToVec<GammaPair>(par().gammas);
     }
     
-    if (envHasType(PropagatorField,par().source) || envHasType(std::vector<PropagatorField>,par().source) || envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >),par().source)) {
+    if (envHasType(PropagatorField,par().source) || envHasType(std::vector<PropagatorField>,par().source) || envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField> >),par().source)) {
         setupHelper<PropagatorField>();
-    } else if (envHasType(FermionField,par().source) || envHasType(std::vector<FermionField>,par().source)|| envHasType(ARG(std::map<Gamma::Algebra,std::vector<FermionField> >),par().source)) {
+    } else if (envHasType(FermionField,par().source) || envHasType(std::vector<FermionField>,par().source)|| envHasType(ARG(std::map<StagGamma,std::vector<FermionField> >),par().source)) {
         setupHelper<FermionField>();
     } else {
         HADRONS_ERROR(Logic,"Type of source '" + par().source + "' not recognized.");
@@ -259,33 +255,36 @@ void TGaugePropMILC<FImpl>::solvePropagator(std::vector<TField> &sol, const std:
 
 template <typename FImpl>
 template<typename TField>
-void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol, const TField &src)
+void TGaugePropMILC<FImpl>::solvePropagator(std::map<StagGamma,TField> &sol, const TField &src)
 {
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+    envGetTmp(std::vector<GammaPair>,gammaList);
     envGetTmp(TField,field);
-    envGetTmp(LatticeComplex,stagPhase);
-    auto &func = envGet(GammaFn, par().gammaFunc);
 
-    std::map<Gamma::Algebra,TField> *guess;
+    std::map<StagGamma,TField> *guess;
     if (!par().guess.empty()) {
-        if (!envHasType(ARG(std::map<Gamma::Algebra,TField>),par().guess)) {
+        if (!envHasType(ARG(std::map<StagGamma,TField>),par().guess)) {
             HADRONS_ERROR(Argument, "guess parameter '" + par().guess + "' must have same data structure as source, '"+par().source+"'");
         }
-        guess = env().getObject<std::map<Gamma::Algebra,TField>>(par().guess);
+        guess = env().getObject<std::map<StagGamma,TField>>(par().guess);
     }
 
-    for (auto &gamma:gammaList) {
 
-        std::string gammaStr = Gamma::name[gamma];
-        LOG(Message) << "Solve for '" << par().source << "' with '" << gammaStr << "'" << std::endl;
-        stagPhase = func(gamma);
-        field = stagPhase*src;
+    envGetTmp(StagGamma,spinTaste);
+
+    for (auto &gamma:gammaList) {
+        spinTaste.g_spin = gamma.first;
+        spinTaste.g_taste = gamma.second;
+        LOG(Message) << "Solve for '" << par().source << "' with '(" <<
+            Gamma::name[gamma.first] << ", " << Gamma::name[gamma.second] << ")'" << std::endl;
+
+
+        field = spinTaste*src;
 
         if (!par().guess.empty()) {
-            const TField& guessField = guess->at(gamma);
-            solvePropagator(sol.at(gamma),field,&guessField);
+            const TField& guessField = guess->at(spinTaste);
+            solvePropagator(sol.at(spinTaste),field,&guessField);
         } else {
-            solvePropagator(sol.at(gamma),field);
+            solvePropagator(sol.at(spinTaste),field);
         }
 
     }
@@ -293,12 +292,10 @@ void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,TField> &sol
 
 template <typename FImpl>
 template<typename TField>
-void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<TField>> &sol, const std::vector<TField> &src)
+void TGaugePropMILC<FImpl>::solvePropagator(std::map<StagGamma,std::vector<TField>> &sol, const std::vector<TField> &src)
 {
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+    envGetTmp(std::vector<GammaPair>,gammaList);
     envGetTmp(TField,field);
-    envGetTmp(LatticeComplex,stagPhase);
-    auto &func = envGet(GammaFn, par().gammaFunc);
 
     std::map<Gamma::Algebra,std::vector<TField> > *guess;
     if (!par().guess.empty()) {
@@ -308,22 +305,25 @@ void TGaugePropMILC<FImpl>::solvePropagator(std::map<Gamma::Algebra,std::vector<
         guess = env().getObject<std::map<Gamma::Algebra,std::vector<TField> >>(par().guess);
     }
 
+    envGetTmp(StagGamma,spinTaste);
+
     for (auto &gamma:gammaList) {
-        std::string gammaStr = Gamma::name[gamma];
-        LOG(Message) << "Solve for '" << gammaStr << "'" << std::endl;
-    
-        stagPhase = func(gamma);
+        spinTaste.g_spin = gamma.first;
+        spinTaste.g_taste = gamma.second;
+        LOG(Message) << "Solve for '" << par().source << "' with '(" << 
+        Gamma::name[gamma.first] << ", " << Gamma::name[gamma.second] << ")'" << std::endl;
+
         for (int i = 0;i<src.size();i++) {
             LOG(Message) << "Solving element " << i << " of '" << par().source << "'" << std::endl;
             const TField& srctmp = src[i];
 
-            field = stagPhase*srctmp;
+            field = spinTaste*srctmp;
 
             if (!par().guess.empty()) {
-                const TField& guessField = guess->at(gamma)[i];
-                solvePropagator(sol.at(gamma)[i],field,&guessField);
+                const TField& guessField = guess->at(spinTaste)[i];
+                solvePropagator(sol.at(spinTaste)[i],field,&guessField);
             } else {
-                solvePropagator(sol.at(gamma)[i],field);
+                solvePropagator(sol.at(spinTaste)[i],field);
             }
         }
     }
@@ -338,23 +338,23 @@ void TGaugePropMILC<FImpl>::execute(void)
     if (envHasType(PropagatorField,par().source)) {
         auto &src = envGet(PropagatorField,par().source);
         if (hasGammas_) {
-            auto &sol = envGet(ARG(std::map<Gamma::Algebra,PropagatorField>),getName());
+            auto &sol = envGet(ARG(std::map<StagGamma,PropagatorField>),getName());
             solvePropagator(sol,src);
         } else {
             auto &sol = envGet(PropagatorField,getName());
             solvePropagator(sol,src);
         }
-    } else if (envHasType(std::vector<PropagatorField>, par().source) || envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >), par().source)) {
+    } else if (envHasType(std::vector<PropagatorField>, par().source) || envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField> >), par().source)) {
         std::vector<PropagatorField> *src;
         if (envHasType(std::vector<PropagatorField>, par().source)) {
             auto &srctmp = envGet(std::vector<PropagatorField>, par().source);
             src = &srctmp;
         } else {
-            auto &srctmp = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >), par().source);
-            src = &(srctmp.at(Gamma::Algebra::Gamma5));
+            auto &srctmp = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField> >), par().source);
+            src = &(srctmp.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)));
         }
         if (hasGammas_) {
-            auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField> >),getName());
+            auto &sol = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField> >),getName());
             solvePropagator(sol,*src);
         } else {
             auto &sol = envGet(std::vector<PropagatorField>,getName());
@@ -363,7 +363,7 @@ void TGaugePropMILC<FImpl>::execute(void)
     } else if (envHasType(FermionField,par().source)) {
         auto &src = envGet(FermionField,par().source);
         if (hasGammas_) {
-            auto &sol = envGet(ARG(std::map<Gamma::Algebra,FermionField>),getName());
+            auto &sol = envGet(ARG(std::map<StagGamma,FermionField>),getName());
             solvePropagator(sol,src);
         } else {
             auto &sol = envGet(FermionField,getName());
@@ -375,11 +375,11 @@ void TGaugePropMILC<FImpl>::execute(void)
             auto &srctmp = envGet(std::vector<FermionField>, par().source);
             src = &srctmp;
         } else {
-            auto &srctmp = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField> >), par().source);
-            src = &(srctmp.at(Gamma::Algebra::Gamma5));
+            auto &srctmp = envGet(ARG(std::map<StagGamma,std::vector<FermionField> >), par().source);
+            src = &(srctmp.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)));
         }
         if (hasGammas_) {
-            auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>),getName());
+            auto &sol = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>),getName());
             solvePropagator(sol,*src);
         } else {
             auto &sol = envGet(std::vector<FermionField>,getName());

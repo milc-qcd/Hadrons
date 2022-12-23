@@ -55,6 +55,7 @@ BEGIN_HADRONS_NAMESPACE
 BEGIN_MODULE_NAMESPACE(MContraction)
 
 typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
+typedef std::pair<GammaPair, GammaPair> SpinTastePair;
 class StagMesonPar: Serializable
 {
 public:
@@ -62,7 +63,6 @@ public:
                                     std::string, q1,
                                     std::string, q2,
                                     std::string, gammas,
-                                    std::string, gammaFunc,
                                     std::string, sink,
                                     std::string, sourceShift,
                                     std::string, output);
@@ -76,14 +76,14 @@ public:
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
 
-    typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
-
     class Result: Serializable
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        Gamma::Algebra, gamma_snk,
-                                        Gamma::Algebra, gamma_src,
+                                        Gamma::Algebra, gamma_snk_spin,
+                                        Gamma::Algebra, gamma_snk_taste,
+                                        Gamma::Algebra, gamma_src_spin,
+                                        Gamma::Algebra, gamma_src_taste,
                                         std::vector<Complex>, corr,
                                         std::vector<std::vector<Complex> >, srcCorrs,
                                         std::vector<Integer>, timeShifts,
@@ -108,29 +108,21 @@ protected:
     template<typename TField>
     EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc);
     template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const std::map<Gamma::Algebra,std::vector<TField>> &fSink, const std::map<Gamma::Algebra,std::vector<TField>> &fSrc);
+    EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const std::map<StagGamma,std::vector<TField>> &fSink, const std::map<StagGamma,std::vector<TField>> &fSrc);
 
-    inline void buildProp(PropagatorField &ret, const FermionField &fSink, const FermionField &fSrc, Gamma::Algebra gamma) {
+    inline void buildProp(PropagatorField &ret, const FermionField &fSink, const FermionField &fSrc, StagGamma gamma) {
 
         envGetTmp(FermionField,left);
-        envGetTmp(LatticeComplex,stagPhase);
 
-        auto &func = envGet(GammaFn, par().gammaFunc);
-
-        stagPhase = func(gamma);
-        left = fSink*stagPhase;
+        left = gamma*fSink;
 
         ret = outerProduct(left,fSrc);
     }
-    inline void buildProp(PropagatorField &ret, const PropagatorField &fSink, const PropagatorField &fSrc, Gamma::Algebra gamma) {
+    inline void buildProp(PropagatorField &ret, const PropagatorField &fSink, const PropagatorField &fSrc, StagGamma gamma) {
 
         envGetTmp(PropagatorField,left);
-        envGetTmp(LatticeComplex,stagPhase);
 
-        auto &func = envGet(GammaFn, par().gammaFunc);
-
-        stagPhase = func(gamma);
-        left = fSink*stagPhase;
+        left = gamma*fSink;
 
         ret = left*adj(fSrc);
     }
@@ -156,7 +148,7 @@ TStagMeson<FImpl>::TStagMeson(const std::string name)
 template <typename FImpl>
 std::vector<std::string> TStagMeson<FImpl>::getInput(void)
 {
-    std::vector<std::string> in = {par().q1, par().q2, par().sink, par().gammaFunc};
+    std::vector<std::string> in = {par().q1, par().q2, par().sink};
     if(!par().sourceShift.empty())
         in.push_back(par().sourceShift);
     
@@ -175,20 +167,18 @@ std::vector<std::string> TStagMeson<FImpl>::getOutput(void)
 template <typename FImpl>
 void TStagMeson<FImpl>::setup(void)
 {
-    envTmp(std::vector<GammaPair>,"gammaList",1,0);
-
-    envTmpLat(LatticeComplex,"stagPhase");
+    envTmp(std::vector<SpinTastePair>,"gammaList",1,0);
 
     envTmpLat(PropagatorField, "op");
     if ((envHasType(PropagatorField, par().q1) && envHasType(PropagatorField, par().q2))
         || (envHasType(std::vector<PropagatorField>, par().q1) && envHasType(std::vector<PropagatorField>, par().q2))
-        || (envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q1) && envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q2))) {
+        || (envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1) && envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q2))) {
 
         envTmpLat(PropagatorField, "left");
 
     } else if ((envHasType(FermionField, par().q1) && envHasType(FermionField, par().q2))
         || (envHasType(std::vector<FermionField>, par().q1) && envHasType(std::vector<FermionField>, par().q2))
-        || (envHasType(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q1) && envHasType(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q2))) {
+        || (envHasType(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q1) && envHasType(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q2))) {
 
         envTmpLat(FermionField, "left");
 
@@ -201,10 +191,10 @@ void TStagMeson<FImpl>::setup(void)
 template <typename FImpl>
 void TStagMeson<FImpl>::parseGammaString()
 {
-    envGetTmp(std::vector<GammaPair>,gammaList);
+    envGetTmp(std::vector<SpinTastePair>,gammaList);
     gammaList.clear();
     // Parse individual contractions from input string.
-    gammaList = strToVec<GammaPair>(par().gammas);
+    gammaList = strToVec<SpinTastePair>(par().gammas);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -219,7 +209,7 @@ EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const
 
     envGetTmp(PropagatorField, op);
 
-    buildProp(op, fSink,fSrc,ret.gamma_snk);
+    buildProp(op, fSink,fSrc,StagGamma(ret.gamma_snk_spin,ret.gamma_snk_taste));
 
     Integer shift;
     shift = (index < ret.timeShifts.size()) ? ret.timeShifts[index] : 0;
@@ -253,7 +243,7 @@ template<typename TField>
 EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc) {
 
     for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: " << ret[i].gamma_snk << " (sink), " << ret[i].gamma_src << " (source) " << std::endl;
+        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
         contract(ret[i],fSink,fSrc);
     }
 }
@@ -263,20 +253,20 @@ template<typename TField>
 EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc) {
 
     for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: " << ret[i].gamma_snk << " (sink), " << ret[i].gamma_src << " (source) " << std::endl;
+        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
         contract(ret[i],fSink,fSrc);
     }
 }
 
 template<typename FImpl>
 template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::map<Gamma::Algebra,std::vector<TField>> &fSink, 
-                                                                const std::map<Gamma::Algebra,std::vector<TField>> &fSrc) {
+EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::map<StagGamma,std::vector<TField>> &fSink, 
+                                                                const std::map<StagGamma,std::vector<TField>> &fSrc) {
 
     for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: " << ret[i].gamma_snk << " (sink), " << ret[i].gamma_src << " (source) " << std::endl;
+        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
         // Always use Gamma5 solve for the sink quark
-        contract(ret[i],fSink.at(Gamma::Algebra::Gamma5),fSrc.at(ret[i].gamma_src));
+        contract(ret[i],fSink.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5),fSrc.at(StagGamma(ret[i].gamma_src_spin,ret[i].gamma_src_taste))));
     }
 }
 
@@ -293,14 +283,16 @@ void TStagMeson<FImpl>::execute(void)
 
     parseGammaString();
 
-    envGetTmp(std::vector<GammaPair>,gammaList);
+    envGetTmp(std::vector<SpinTastePair>,gammaList);
 
     res.resize(gammaList.size());
 
     for (unsigned int i = 0; i < res.size(); ++i)
     {
-        res[i].gamma_snk = gammaList[i].first;
-        res[i].gamma_src = gammaList[i].second;
+        res[i].gamma_snk_spin = gammaList[i].first.first;
+        res[i].gamma_snk_taste = gammaList[i].first.second;
+        res[i].gamma_src_spin = gammaList[i].second.first;
+        res[i].gamma_src_taste = gammaList[i].second.second;
         res[i].srcCorrs.resize(1, std::vector<Complex>(nt,0.0));
         res[i].corr.resize(nt, 0.0);
         res[i].scaling = 1.0;
@@ -325,13 +317,13 @@ void TStagMeson<FImpl>::execute(void)
         }
         contract(res,q1,q2);
 
-    } else if (envHasType(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q1)) {
-        auto &q1  = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q1);
-        auto &q2  = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), par().q2);
+    } else if (envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1)) {
+        auto &q1  = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1);
+        auto &q2  = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q2);
 
         for (unsigned int i = 0; i < res.size(); ++i)
         {
-            res[i].srcCorrs.resize(q1.at(Gamma::Algebra::Gamma5).size(), std::vector<Complex>(nt,0.0));
+            res[i].srcCorrs.resize(q1.at(SpinTaste(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)).size(), std::vector<Complex>(nt,0.0));
         }
         contract(res,q1,q2);
 
@@ -351,12 +343,12 @@ void TStagMeson<FImpl>::execute(void)
         }
         contract(res,q1,q2);
     } else {
-        auto &q1  = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q1);
-        auto &q2  = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), par().q2);
+        auto &q1  = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q1);
+        auto &q2  = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q2);
 
         for (unsigned int i = 0; i < res.size(); ++i)
         {
-            res[i].srcCorrs.resize(q1.at(Gamma::Algebra::Gamma5).size(), std::vector<Complex>(nt,0.0));
+            res[i].srcCorrs.resize(q1.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)).size(), std::vector<Complex>(nt,0.0));
         }
         contract(res,q1,q2);
     }

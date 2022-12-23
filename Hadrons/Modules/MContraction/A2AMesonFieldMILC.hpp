@@ -44,6 +44,8 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
+typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
+
 class A2AMesonFieldMILCPar: Serializable
 {
 public:
@@ -64,7 +66,7 @@ class A2AMesonFieldMILCMetadata: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(A2AMesonFieldMILCMetadata,
                                     std::vector<RealF>, momentum,
-                                    Gamma::Algebra, gamma);
+                                    GammaPair, gamma);
 };
 
 template <typename T, typename FImpl>
@@ -73,7 +75,7 @@ class MesonFieldKernelMILC: public A2AKernelMILC<T, typename FImpl::FermionField
 public:
     FERM_TYPE_ALIASES(FImpl,);
 public:
-    MesonFieldKernelMILC(const std::vector<Gamma::Algebra> &gamma,
+    MesonFieldKernelMILC(const std::vector<StagGamma> &gamma,
                      const std::vector<LatticeComplex> &mom,
                      GridBase *grid)
     : gamma_(gamma), mom_(mom), grid_(grid)
@@ -115,7 +117,7 @@ private:
  }
 
 private:
-    const std::vector<Gamma::Algebra> &gamma_;
+    const std::vector<GammaPair> &gamma_;
     const std::vector<LatticeComplex> &mom_;
     GridBase                          *grid_;
     double                            vol_;
@@ -147,7 +149,7 @@ public:
 private:
     bool                               hasPhase_{false};
     std::string                        momphName_;
-    std::vector<Gamma::Algebra>        gamma_;
+    std::vector<GammaPair>        gamma_;
     std::vector<std::vector<Real>>     mom_;
 };
 
@@ -200,31 +202,8 @@ void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
 
     gamma_.clear();
     mom_.clear();
-    if (par().gammas == "all")
-    {
-        gamma_ = {
-            Gamma::Algebra::Gamma5,
-            Gamma::Algebra::Identity,    
-            Gamma::Algebra::GammaX,
-            Gamma::Algebra::GammaY,
-            Gamma::Algebra::GammaZ,
-            Gamma::Algebra::GammaT,
-            Gamma::Algebra::GammaXGamma5,
-            Gamma::Algebra::GammaYGamma5,
-            Gamma::Algebra::GammaZGamma5,
-            Gamma::Algebra::GammaTGamma5,
-            Gamma::Algebra::SigmaXY,
-            Gamma::Algebra::SigmaXZ,
-            Gamma::Algebra::SigmaXT,
-            Gamma::Algebra::SigmaYZ,
-            Gamma::Algebra::SigmaYT,
-            Gamma::Algebra::SigmaZT
-        };
-    }
-    else
-    {
-        gamma_ = strToVec<Gamma::Algebra>(par().gammas);
-    }
+    gamma_ = strToVec<GammaPair>(par().gammas);
+
     for (auto &pstr: par().mom)
     {
         auto p = strToVec<Real>(pstr);

@@ -130,7 +130,7 @@ void TSpinTasteMILC<FImpl>::execute(void)
   Lattice<iScalar<vInteger> > y(env().getGrid()); LatticeCoordinate(y,1);
   Lattice<iScalar<vInteger> > z(env().getGrid()); LatticeCoordinate(z,2);
   Lattice<iScalar<vInteger> > t(env().getGrid()); LatticeCoordinate(t,3);
-  Lattice<iScalar<vInteger> > lin_5(grid); lin_5=x+y+z+t;
+  Lattice<iScalar<vInteger> > lin_5(env().getGrid()); lin_5=x+y+z+t;
   
   stag_phase.at(Gamma::Algebra::Identity) = where( mod(lin_5,2)==(Integer)0, stag_phase.at(Gamma::Algebra::Identity), -stag_phase.at(Gamma::Algebra::Identity));
   stag_phase.at(Gamma::Algebra::GammaX)   = where( mod(x,2)==(Integer)0, stag_phase.at(Gamma::Algebra::GammaX), -stag_phase.at(Gamma::Algebra::GammaX));

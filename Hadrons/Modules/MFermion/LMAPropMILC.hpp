@@ -42,6 +42,8 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MFermion)
 
+typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
+
 class LMAPropMILCPar: Serializable
 {
 public:
@@ -49,7 +51,6 @@ public:
                                   std::string, source,
                                   std::string, action,
                                   std::string, gammas,
-                                  std::string, gammaFunc,
                                   std::string, lowModes);
 };
 
@@ -58,7 +59,6 @@ class TLMAPropMILC : public Module<LMAPropMILCPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
-    typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
 private:
     HADRONS_DEFINE_setProp_setFerm(FImpl);
 public:
@@ -97,7 +97,6 @@ std::vector<std::string> TLMAPropMILC<FImpl,Pack>::getInput(void)
     std::vector<std::string> in {par().action, par().source};
 
     in.push_back(par().lowModes);
-    in.push_back(par().gammaFunc);
     if (par().gammas.empty()) {
         HADRONS_ERROR(Logic,"Must provide a list of gammas to " + getName());
     }
@@ -130,13 +129,13 @@ void TLMAPropMILC<FImpl,Pack>::setup(void)
     envTmpLat(FermionField, "fermSrc");
     envTmpLat(FermionField, "fermSol");
     envTmpLat(PropagatorField, "prop");
-    envTmpLat(LatticeComplex,"stagPhase");
     envTmp(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
     envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
-
+    envTmp(StagGamma,"spinTaste",1,0,0);
+    envGetTmp(StagGamma,spinTaste);
     envGetTmp(FermionField, fermSrc);
     envGetTmp(FermionField, fermSol);
     envGetTmp(PropagatorField, prop);
@@ -153,35 +152,39 @@ void TLMAPropMILC<FImpl,Pack>::setup(void)
     rbFermNeg  = Zero();
     MrbFermNeg = Zero();
 
-    envTmp(std::vector<Gamma::Algebra>,"gammaList",1,0);
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+    envTmp(std::vector<GammaPair>,"gammaList",1,0);
+    envGetTmp(std::vector<GammaPair>,gammaList);
     gammaList.clear();
 
-    gammaList = strToVec<Gamma::Algebra>(par().gammas);
+    gammaList = strToVec<GammaPair>(par().gammas);
 
     if ( envHasType(std::vector<PropagatorField>,par().source)) {
         auto &source = envGet(std::vector<PropagatorField>, par().source);
 
-        std::map<Gamma::Algebra,std::vector<PropagatorField>> dummy;
-        envCreate(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName(), 1, dummy);
+        std::map<StagGamma,std::vector<PropagatorField>> dummy;
+        envCreate(ARG(std::map<StagGamma,std::vector<PropagatorField>>), getName(), 1, dummy);
 
-        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
+        auto &sol = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), getName());
         for (auto & gamma:gammaList) {
-            sol.insert({gamma,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
-            for (auto & s:sol.at(gamma)) {
+            spinTaste.g_spin = gamma.first;
+            spinTaste.g_taste = gamma.second;
+            sol.insert({spinTaste,std::vector<PropagatorField>(source.size(),envGetGrid(PropagatorField))});
+            for (auto & s:sol.at(spinTaste)) {
                 s = Zero();
             }
         }
     } else if ( envHasType(std::vector<FermionField>,par().source)) {
         auto &source = envGet(std::vector<FermionField>, par().source);
 
-        std::map<Gamma::Algebra,std::vector<FermionField>> dummy;
-        envCreate(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName(), 1, dummy);
+        std::map<StagGamma,std::vector<FermionField>> dummy;
+        envCreate(ARG(std::map<StagGamma,std::vector<FermionField>>), getName(), 1, dummy);
 
-        auto &sol = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
+        auto &sol = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), getName());
         for (auto & gamma:gammaList) {
-            sol.insert({gamma,std::vector<FermionField>(source.size(),envGetGrid(FermionField))});
-            for (auto & s:sol.at(gamma)) {
+            spinTaste.g_spin = gamma.first;
+            spinTaste.g_taste = gamma.second;
+            sol.insert({spinTaste,std::vector<FermionField>(source.size(),envGetGrid(FermionField))});
+            for (auto & s:sol.at(spinTaste)) {
                 s = Zero();
             }
         }
@@ -257,43 +260,44 @@ void TLMAPropMILC<FImpl,Pack>::execute(void)
     envGetTmp(FermionField,fermSrc);
     envGetTmp(FermionField,fermSol);
     envGetTmp(PropagatorField,prop);
-    envGetTmp(LatticeComplex,stagPhase);
-    envGetTmp(std::vector<Gamma::Algebra>,gammaList);
+    envGetTmp(std::vector<GammaPair>,gammaList);
 
-    auto &func  = envGet(GammaFn, par().gammaFunc);
+    envGetTmp(StagGamma,spinTaste);
 
     if ( envHasType(std::vector<PropagatorField>,par().source)) {
-        auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<PropagatorField>>), getName());
+        auto &sol   = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), getName());
         auto &source  = envGet(std::vector<PropagatorField>, par().source);
 
         for (auto &gamma:gammaList) {
-            stagPhase = func(gamma);
+            spinTaste.g_spin = gamma.first;
+            spinTaste.g_taste = gamma.second;
 
             for (int i=0;i<source.size();i++) {
                 const PropagatorField& src = source[i];
 
-                prop = stagPhase*src;
+                prop = src*spinTaste;
 
                 for (int j=0;j<FImpl::Dimension;j++) {
 
                     setFerm(fermSrc,prop,j);
                     projectHelper(fermSol,fermSrc);
-                    setProp(sol.at(gamma)[i],fermSol,j);
+                    setProp(sol.at(spinTaste)[i],fermSol,j);
                 }
             }
         }
     } else {
-        auto &sol   = envGet(ARG(std::map<Gamma::Algebra,std::vector<FermionField>>), getName());
+        auto &sol   = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), getName());
         auto &source  = envGet(std::vector<FermionField>, par().source);
 
         for (auto &gamma:gammaList) {
-            stagPhase = func(gamma);
+            spinTaste.g_spin = gamma.first;
+            spinTaste.g_taste = gamma.second;
 
             for (int i=0;i<source.size();i++) {
                 const FermionField& src = source[i];
 
-                fermSrc = stagPhase*src;
-                projectHelper(sol.at(gamma)[i],fermSrc);
+                fermSrc = src*spinTaste;
+                projectHelper(sol.at(spinTaste)[i],fermSrc);
             }
         }
     }
