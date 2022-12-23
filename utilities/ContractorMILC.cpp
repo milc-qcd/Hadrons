@@ -28,6 +28,7 @@
 #include <Hadrons/DiskVector.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/TimerArray.hpp>
+#include <Hadrons/EigenPack.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
@@ -66,9 +67,20 @@ namespace ContractorMILC
                                         unsigned int, nj,
                                         unsigned int, niOffset,
                                         unsigned int, njOffset,
-                                        std::string, name);
+                                        std::string, name,
+                                        EpackPar, epack);
     };
 
+    class EpackPar: Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(EpackPar,
+                                        std::string, fileStem,
+                                        bool, multiFile,
+                                        int, nEigs,
+                                        RealD, massOld,
+                                        RealD, massNew);
+    };
     class ProductPar: Serializable
     {
     public:
@@ -273,6 +285,7 @@ int main(int argc, char* argv[])
     //    nCont = par.product.size();
 
     // create diskvectors
+    std::map<std::string, std::vector<ComplexD> > evalMap;
     std::map<std::string, EigenDiskVector<ComplexD>> a2aMat;
     //    unsigned int                                     cacheSize;
 
@@ -323,6 +336,22 @@ int main(int argc, char* argv[])
             LOG(Message) << "Freeing memory for " << p.name << " on processor ranks != " << grid->BossRank() << std::endl;
             if (!grid->IsBoss()) {
                 a2aMat.erase(p.name);
+            } else {
+                if (par.epack) {
+                    PackRecord record;
+                    std::vector<RealD> evals(p.epack.nEigs);
+
+                    std::string filename = p.epack.fileStem + "." + itoa(traj) + (p.epack.multiFile ? "" : ".bin");
+                    evalMap.emplace(p.name,std::vector<ComplexD>(2 * p.epack.nEigs));
+
+                    EigenPackIO::readEvals(evals,record,0,p.epack.nEigs,filename,p.epack.multiFile);
+
+                    for (int i = p.epack.nEigs-1; i >= 0; i--)
+                        int newIndex = 2*i;
+                        ComplexD newVal = ComplexD(p.epack.massOld,-evals[i])/ComplexD(p.epack.massNew,-evals[i]);
+                        evalMap.at(p.name)[newIndex] = newVal;
+                        evalMap.at(p.name)[newIndex-1] = conjugate(newVal);
+                }
             }
         }
 
@@ -386,7 +415,12 @@ int main(int argc, char* argv[])
                     thread_for( j,ref.cols(),{
                       for (unsigned int i = 0; i < ref.rows(); ++i)
                       {
-                          lastTerm[t](i, j) = ref(i, j);
+                        if (evalMap.count(term.back()) > 0 && j < evalMap.at(term.back()).size() ) {
+                            lastTerm[t](i, j) = ref(i, j)*evalMap.at(term.back())[j];
+
+                        } else {
+                            lastTerm[t](i, j) = ref(i, j);
+                        }
                       }
             		});
                     tAr.stopTimer("Transpose caching");
@@ -421,12 +455,29 @@ int main(int argc, char* argv[])
                         tAr.startTimer("Disk vector overhead");
                         prod = a2aMat.at(term[0])[TIME_MOD(t[0] + dt)];
                         tAr.stopTimer("Disk vector overhead");
+
+                        if (evalMap.count(term[0]) > 0) {
+                            thread_for( j,prod.cols(),{
+                                for(int k = 0; k < prod.rows(); k++) {
+                                    prod(j, k) = prod(j, k)*evalMap.at(term[0])[k];
+                                }
+                            });
+                        }
+
                         for (unsigned int j = 1; j < term.size() - 1; ++j)
                         {
                             tAr.startTimer("Disk vector overhead");
                             const A2AMatrix<ComplexD> &ref = a2aMat.at(term[j])[TIME_MOD(t[j] + dt)];
                             tAr.stopTimer("Disk vector overhead");
                             
+                            if (evalMap.count(term[j]) > 0) {
+                                thread_for(k,prod.cols(),{
+                                    for(int l = 0; l < prod.rows(); l++){
+                                        ref(k, l) = ref(k, l)*evalMap.at(term[j])[l];
+                                    }
+                                });
+                            }
+
                             tAr.startTimer("A*B total");
                             tAr.startTimer("A*B algebra");
                             A2AContractionMILC::mul(tmp, prod, ref);

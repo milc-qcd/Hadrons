@@ -108,6 +108,27 @@ namespace EigenPackIo
         eval = vecRecord.eval;
     }
 
+    void readEval(RealD &eval, const unsigned int index,
+                     ScidacReader &binReader)
+    {
+        VecRecord vecRecord;
+        bool      cb = false;
+
+        LOG(Message) << "Reading eigenvalue " << index << std::endl;
+        binReader.skipPastObjectRecord(std::string(GRID_FORMAT));
+        binReader.readLimeObject(vecRecord,vecRecord.SerialisableClassName(),std::string(SCIDAC_RECORD_XML));
+        binReader.skipPastObjectRecord(std::string(SCIDAC_PRIVATE_RECORD_XML));
+        binReader.skipPastBinaryRecord();
+
+        if (vecRecord.index != index)
+        {
+            HADRONS_ERROR(Io, "Eigenvector " + std::to_string(index) + " has a"
+                            + " wrong index (expected " + std::to_string(vecRecord.index) 
+                            + ")");
+        }
+        eval = vecRecord.eval;
+    }
+
     inline void skipElements(ScidacReader &binReader, const unsigned int n)
     {
         for (unsigned int i = 0; i < n; ++i)
@@ -155,6 +176,36 @@ namespace EigenPackIo
             for(int k = ki; k < kf; ++k) 
             {
                 readElement(evec[k - ki], eval[k - ki], k, binReader, ioBuf.get());
+            }
+            binReader.close();
+        }
+    }
+
+    static void readEvals(std::vector<RealD> &eval, PackRecord &record, 
+                         const unsigned int ki, const unsigned int kf,
+                         const std::string filename,  bool multiFile)
+    {
+        ScidacReader         binReader;
+
+        if (multiFile)
+        {
+            std::string fullFilename;
+
+            for(int k = ki; k < kf; ++k) 
+            {
+                fullFilename = filename + "/v" + std::to_string(k) + ".bin";
+                binReader.open(fullFilename);
+                readHeader(record, binReader);
+                readEval(eval[k - ki], k, binReader);
+                binReader.close();
+            }
+        } else {
+            binReader.open(filename);
+            readHeader(record, binReader);
+            skipElements(binReader, ki);
+            for(int k = ki; k < kf; ++k) 
+            {
+                readEval(eval[k - ki], k, binReader);
             }
             binReader.close();
         }
