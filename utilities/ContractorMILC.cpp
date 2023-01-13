@@ -65,6 +65,9 @@ namespace ContractorMILC
                                         int, nEigs,
                                         RealD, massOld,
                                         RealD, massNew);
+        EpackPar(void): 
+        fileStem{"N/A"}, multiFile{false},
+        nEigs{0}, massOld{0.0},massNew{0.0} {}
     };
 
     class A2AMatrixPar: Serializable
@@ -338,7 +341,7 @@ int main(int argc, char* argv[])
             if (!grid->IsBoss()) {
                 a2aMat.erase(p.name);
             } else {
-                if (!p.epack.fileStem.empty()) {
+                if (p.epack.nEigs > 0) {
                     PackRecord record;
                     std::vector<RealD> evals(p.epack.nEigs);
 
