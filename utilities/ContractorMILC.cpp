@@ -56,6 +56,20 @@ namespace ContractorMILC
                                         std::string, output);
     };
 
+    class EpackPar: Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(EpackPar,
+                                        std::string, fileStem,
+                                        bool, multiFile,
+                                        int, nEigs,
+                                        RealD, massOld,
+                                        RealD, massNew);
+        EpackPar(void): 
+        fileStem{"N/A"}, multiFile{false},
+        nEigs{0}, massOld{0.0},massNew{0.0} {}
+    };
+
     class A2AMatrixPar: Serializable
     {
     public:
@@ -71,16 +85,6 @@ namespace ContractorMILC
                                         EpackPar, epack);
     };
 
-    class EpackPar: Serializable
-    {
-    public:
-        GRID_SERIALIZABLE_CLASS_MEMBERS(EpackPar,
-                                        std::string, fileStem,
-                                        bool, multiFile,
-                                        int, nEigs,
-                                        RealD, massOld,
-                                        RealD, massNew);
-    };
     class ProductPar: Serializable
     {
     public:
@@ -337,20 +341,22 @@ int main(int argc, char* argv[])
             if (!grid->IsBoss()) {
                 a2aMat.erase(p.name);
             } else {
-                if (par.epack) {
+                if (p.epack.nEigs > 0) {
                     PackRecord record;
                     std::vector<RealD> evals(p.epack.nEigs);
 
-                    std::string filename = p.epack.fileStem + "." + itoa(traj) + (p.epack.multiFile ? "" : ".bin");
+                    std::string filename = p.epack.fileStem + "." + std::to_string(traj) + (p.epack.multiFile ? "" : ".bin");
                     evalMap.emplace(p.name,std::vector<ComplexD>(2 * p.epack.nEigs));
 
-                    EigenPackIO::readEvals(evals,record,0,p.epack.nEigs,filename,p.epack.multiFile);
+                    EigenPackIo::readEvals(evals,record,0,p.epack.nEigs,filename,p.epack.multiFile);
 
-                    for (int i = p.epack.nEigs-1; i >= 0; i--)
-                        int newIndex = 2*i;
-                        ComplexD newVal = ComplexD(p.epack.massOld,-evals[i])/ComplexD(p.epack.massNew,-evals[i]);
-                        evalMap.at(p.name)[newIndex] = newVal;
-                        evalMap.at(p.name)[newIndex-1] = conjugate(newVal);
+                    int newIndex = 2*p.epack.nEigs-p.njOffset-1;
+                    for (int i = p.epack.nEigs; i > p.njOffset/2; i--) {
+                        ComplexD newVal = ComplexD(2.0*p.epack.massOld,sqrt(evals[i-1]))/ComplexD(2.0*p.epack.massNew,sqrt(evals[i-1]));
+                        evalMap.at(p.name)[newIndex-1] = newVal;
+                        evalMap.at(p.name)[newIndex] = conjugate(newVal);
+                        newIndex -= 2;
+                    }
                 }
             }
         }
@@ -363,7 +369,7 @@ int main(int argc, char* argv[])
                 std::vector<std::vector<unsigned int>> timeSeq;
                 std::set<unsigned int>                 translations;
                 std::vector<A2AMatrixTr<ComplexD>>     lastTerm(par.global.nt);
-                A2AMatrix<ComplexD>                    prod, tmp;
+                A2AMatrix<ComplexD>                    prod, tmp, ref;
                 TimerArray                             tAr;
                 double                                 fusec, busec, flops, bytes;
     	    //	    double  tusec;
@@ -407,7 +413,7 @@ int main(int argc, char* argv[])
                 for (unsigned int t = 0; t < par.global.nt; ++t)
                 {
                     tAr.startTimer("Disk vector overhead");
-                    const A2AMatrix<ComplexD> &ref = a2aMat.at(term.back())[t];
+                    ref = a2aMat.at(term.back())[t];
                     tAr.stopTimer("Disk vector overhead");
 
                     tAr.startTimer("Transpose caching");
@@ -417,7 +423,6 @@ int main(int argc, char* argv[])
                       {
                         if (evalMap.count(term.back()) > 0 && j < evalMap.at(term.back()).size() ) {
                             lastTerm[t](i, j) = ref(i, j)*evalMap.at(term.back())[j];
-
                         } else {
                             lastTerm[t](i, j) = ref(i, j);
                         }
@@ -457,8 +462,8 @@ int main(int argc, char* argv[])
                         tAr.stopTimer("Disk vector overhead");
 
                         if (evalMap.count(term[0]) > 0) {
-                            thread_for( j,prod.cols(),{
-                                for(int k = 0; k < prod.rows(); k++) {
+                            thread_for_collapse2( j,prod.rows(),{
+                                for(uint64_t k = 0; k < evalMap.at(term[0]).size(); k++) {
                                     prod(j, k) = prod(j, k)*evalMap.at(term[0])[k];
                                 }
                             });
@@ -467,12 +472,12 @@ int main(int argc, char* argv[])
                         for (unsigned int j = 1; j < term.size() - 1; ++j)
                         {
                             tAr.startTimer("Disk vector overhead");
-                            const A2AMatrix<ComplexD> &ref = a2aMat.at(term[j])[TIME_MOD(t[j] + dt)];
+                            ref = a2aMat.at(term[j])[TIME_MOD(t[j] + dt)];
                             tAr.stopTimer("Disk vector overhead");
                             
                             if (evalMap.count(term[j]) > 0) {
-                                thread_for(k,prod.cols(),{
-                                    for(int l = 0; l < prod.rows(); l++){
+                                thread_for(k,ref.rows(),{
+                                    for(int l = 0; l < evalMap.at(term[j]).size(); l++){
                                         ref(k, l) = ref(k, l)*evalMap.at(term[j])[l];
                                     }
                                 });

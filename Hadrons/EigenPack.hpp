@@ -108,7 +108,7 @@ namespace EigenPackIo
         eval = vecRecord.eval;
     }
 
-    void readEval(RealD &eval, const unsigned int index,
+    inline void readEval(RealD &eval, const unsigned int index,
                      ScidacReader &binReader)
     {
         VecRecord vecRecord;

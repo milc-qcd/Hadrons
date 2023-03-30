@@ -36,34 +36,20 @@
 
 BEGIN_HADRONS_NAMESPACE
 
-/*
- 
- Disconnected loop contractions
- ------------------------------
- 
- * options:
- - q_loop: input propagator (string)
- - gammas: gammas: gamma matrices to insert
-           (space-separated strings e.g. "GammaT GammaX GammaY") 
-
-           Special values: "all" - perform all possible contractions.
-*/
-
 /******************************************************************************
  *                                StagMeson                                    *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
-typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
-typedef std::pair<GammaPair, GammaPair> SpinTastePair;
 class StagMesonPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(StagMesonPar,
-                                    std::string, q1,
-                                    std::string, q2,
-                                    std::string, gammas,
+                                    std::string, source,
                                     std::string, sink,
+                                    std::string, sourceGammas,
+                                    SpinTasteParams, sinkSpinTaste,
+                                    std::string, sinkFunc,
                                     std::string, sourceShift,
                                     std::string, output);
 };
@@ -80,10 +66,9 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        Gamma::Algebra, gamma_snk_spin,
-                                        Gamma::Algebra, gamma_snk_taste,
-                                        Gamma::Algebra, gamma_src_spin,
-                                        Gamma::Algebra, gamma_src_taste,
+                                        StagGamma::StagAlgebra, gamma_sink_spin,
+                                        StagGamma::StagAlgebra, gamma_sink_taste,
+                                        std::string, src_gamma,
                                         std::vector<Complex>, corr,
                                         std::vector<std::vector<Complex> >, srcCorrs,
                                         std::vector<Integer>, timeShifts,
@@ -97,40 +82,30 @@ public:
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
-    void parseGammaString();
 protected:
     template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(Result &ret, const TField &fSink, const TField &fSrc, Integer index = 0);
+    EnableIf<is_lattice<TField>,void> contract(Result &result, const TField &source, const TField &sink, StagGamma& gamma);
     template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(Result &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc);
+    EnableIf<is_lattice<TField>,void> contract(Result &result, const std::vector<TField> &source, const std::vector<TField> &sink, StagGamma& gamma);
     template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc);
-    template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc);
-    template<typename TField>
-    EnableIf<is_lattice<TField>,void> contract(std::vector<Result> &ret, const std::map<StagGamma,std::vector<TField>> &fSink, const std::map<StagGamma,std::vector<TField>> &fSrc);
+    void executeHelper(std::vector<Result> &results, const TField &sink);
 
-    inline void buildProp(PropagatorField &ret, const FermionField &fSink, const FermionField &fSrc, StagGamma gamma) {
-
-        envGetTmp(FermionField,left);
-
-        left = gamma*fSink;
-
-        ret = outerProduct(left,fSrc);
+    inline void buildProp(PropagatorField &result, const FermionField &source, const FermionField &sink) {
+        result = outerProduct(sink,source);
     }
-    inline void buildProp(PropagatorField &ret, const PropagatorField &fSink, const PropagatorField &fSrc, StagGamma gamma) {
-
-        envGetTmp(PropagatorField,left);
-
-        left = gamma*fSink;
-
-        ret = left*adj(fSrc);
+    inline void buildProp(PropagatorField &result, const PropagatorField &source, const PropagatorField &sink) {
+        result = sink*adj(source);
     }
 
     // setup
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    std::string sinkSuffix_ = "";
+    std::vector<std::string> sourceGammas_;
+    std::vector<StagGamma::SpinTastePair> sinkGammas_;
+    Integer Nt_;
 };
 
 MODULE_REGISTER_TMP(StagMeson, TStagMeson<STAGIMPL>, MContraction);
@@ -148,10 +123,33 @@ TStagMeson<FImpl>::TStagMeson(const std::string name)
 template <typename FImpl>
 std::vector<std::string> TStagMeson<FImpl>::getInput(void)
 {
-    std::vector<std::string> in = {par().q1, par().q2, par().sink};
-    if(!par().sourceShift.empty())
+    std::vector<std::string> in = {par().sinkFunc};
+
+    if(!par().sourceShift.empty()) {
         in.push_back(par().sourceShift);
+    }
     
+    if (!par().sinkSpinTaste.gauge.empty()) {
+        in.push_back(par().sinkSpinTaste.gauge);
+    }
+
+    if (!par().sourceGammas.empty()) {
+        for (auto gamma : strToVec<StagGamma::SpinTastePair>(par().sourceGammas)) {
+            in.push_back(par().source+StagGamma::GetName(gamma));
+        }
+    } else {
+        in.push_back(par().source);
+    }
+
+    std::string identityName = StagGamma::GetName(StagGamma::StagAlgebra::G1,StagGamma::StagAlgebra::G1);
+
+    if (env().hasObject(par().sink + identityName)) {
+        sinkSuffix_ = identityName;
+        in.push_back(par().sink+identityName);
+    } else {
+        in.push_back(par().sink);
+    }
+
     return in;
 }
 
@@ -167,106 +165,134 @@ std::vector<std::string> TStagMeson<FImpl>::getOutput(void)
 template <typename FImpl>
 void TStagMeson<FImpl>::setup(void)
 {
-    envTmp(std::vector<SpinTastePair>,"gammaList",1,0);
 
-    envTmpLat(PropagatorField, "op");
-    if ((envHasType(PropagatorField, par().q1) && envHasType(PropagatorField, par().q2))
-        || (envHasType(std::vector<PropagatorField>, par().q1) && envHasType(std::vector<PropagatorField>, par().q2))
-        || (envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1) && envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q2))) {
+    envTmpLat(PropagatorField, "prop");
 
-        envTmpLat(PropagatorField, "left");
+    Nt_ = env().getDim(Tp);
 
-    } else if ((envHasType(FermionField, par().q1) && envHasType(FermionField, par().q2))
-        || (envHasType(std::vector<FermionField>, par().q1) && envHasType(std::vector<FermionField>, par().q2))
-        || (envHasType(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q1) && envHasType(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q2))) {
-
-        envTmpLat(FermionField, "left");
-
-    } else {
-        HADRONS_ERROR(Logic,"q1 and q2 must have the same type.");
+    sourceGammas_.clear();
+    for (auto gamma : strToVec<StagGamma::SpinTastePair>(par().sourceGammas)) {
+        sourceGammas_.push_back(StagGamma::GetName(gamma));
     }
 
-}
+    if (!par().sinkSpinTaste.gammas.empty()) {
+        sinkGammas_ = strToVec<StagGamma::SpinTastePair>(par().sinkSpinTaste.gammas);
+    } else {
+        sinkGammas_.push_back(StagGamma::SpinTastePair(StagGamma::StagAlgebra::G1,StagGamma::StagAlgebra::G1));
+    }
 
-template <typename FImpl>
-void TStagMeson<FImpl>::parseGammaString()
-{
-    envGetTmp(std::vector<SpinTastePair>,gammaList);
-    gammaList.clear();
-    // Parse individual contractions from input string.
-    gammaList = strToVec<SpinTastePair>(par().gammas);
+    if (sourceGammas_.size() > 0 && sourceGammas_.size() != sinkGammas_.size()) {
+        HADRONS_ERROR(Argument,"Parameter 'sourceGammas' must be empty or have the same number of operators as 'sinkSpinTaste.gammas'.");
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template<typename FImpl>
 template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const TField &fSink, const TField &fSrc, Integer index) {
+EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &result, const TField &source, const TField &sink, StagGamma& gamma) {
 
-    int offset, nt = env().getDim(Tp);
-    std::vector<TComplex>     buf;
+    int offset;
+    std::vector<TComplex> buf;
 
-    SinkFnScalar &sink = envGet(SinkFnScalar, par().sink);
+    SinkFnScalar &sinkFunc = envGet(SinkFnScalar, par().sinkFunc);
 
-    envGetTmp(PropagatorField, op);
+    envGetTmp(PropagatorField, prop);
 
-    buildProp(op, fSink,fSrc,StagGamma(ret.gamma_snk_spin,ret.gamma_snk_taste));
+    buildProp(prop, source, sink);
 
-    Integer shift;
-    shift = (index < ret.timeShifts.size()) ? ret.timeShifts[index] : 0;
-    if (shift != 0) {
-        LOG(Message) << "Shifting correlator to (t0 = " << ret.timeShifts[index] << ")" << std::endl;
+    gamma(prop,prop);
+
+    buf = sinkFunc(trace(prop));
+
+    offset = 0;
+    if (result.timeShifts.size() > 0) {
+        LOG(Message) << "Shifting correlator to (t0 = " << result.timeShifts[0] << ")" << std::endl;
+        offset = result.timeShifts[0];
     }
 
-    buf = sink(trace(op));
-    for (unsigned int t = 0; t < nt; ++t)
-    {
-        offset = mod(t+shift,nt);
+    for (unsigned int t = 0; t < Nt_; ++t) {
         auto ct = TensorRemove(buf[offset]);
-        ret.corr[t] += ct*ret.scaling; // Save correlator average
-        ret.srcCorrs[index][t] = ct; // Save corr for individual source
+        result.srcCorrs[0][t] = ct; // Save corr for individual source
+
+        offset = mod(offset + 1,Nt_);
     }
 }
 
 template<typename FImpl>
 template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc) {
+EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &result, const std::vector<TField> &source, const std::vector<TField> &sink, StagGamma& gamma) {
 
-    ret.scaling = 1.0/fSrc.size();
+    int offset;
+    std::vector<TComplex> buf;
 
-    for (int i = 0; i < fSink.size(); i++) {
-        LOG(Message) << "Contracting element i = " << i << std::endl;
-        contract(ret,fSink[i],fSrc[i],i);
+    SinkFnScalar &sinkFunc = envGet(SinkFnScalar, par().sinkFunc);
+
+    result.srcCorrs.resize(sink.size(), std::vector<Complex>(Nt_,0.0));
+    result.scaling = sink.size();
+ 
+    envGetTmp(PropagatorField, prop);
+
+
+    for (int i = 0; i < result.srcCorrs.size(); i++) {
+
+        LOG(Message) << "Contracting element i = " << i << "." << std::endl;
+
+        buildProp(prop, source[i], sink[i]);
+
+        gamma(prop,prop);
+
+        buf = sinkFunc(trace(prop));
+
+        offset = 0;
+        if (result.timeShifts.size() > 0) {
+            LOG(Message) << "Shifting correlator " << i << " to (t0 = " << result.timeShifts[i] << ")" << std::endl;
+            offset = result.timeShifts[i];
+        }
+
+        for (unsigned int t = 0; t < Nt_; ++t) {
+            auto ct = TensorRemove(buf[offset]);
+            result.srcCorrs[i][t] = ct; // Save corr for individual source
+
+            offset = mod(offset + 1,Nt_);
+        }
     }
 }
+
 template<typename FImpl>
 template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const TField &fSink, const TField &fSrc) {
+void TStagMeson<FImpl>::executeHelper(std::vector<Result> &results, const TField &sink) {
 
-    for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
-        contract(ret[i],fSink,fSrc);
+    std::string srcName;
+    StagGamma spinTaste;
+
+    if (!par().sinkSpinTaste.gauge.empty()) {
+        auto& U = envGet(GaugeField,par().sinkSpinTaste.gauge);
+        spinTaste.setGaugeField(U);
     }
-}
 
-template<typename FImpl>
-template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::vector<TField> &fSink, const std::vector<TField> &fSrc) {
+    for (int i = 0; i < results.size(); ++i)
+    {
+        spinTaste.setSpinTaste(results[i].gamma_sink_spin,results[i].gamma_sink_taste);
 
-    for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
-        contract(ret[i],fSink,fSrc);
-    }
-}
+        LOG(Message) << "Contracting with gamma: " << spinTaste.getName() << std::endl;
 
-template<typename FImpl>
-template<typename TField>
-EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(std::vector<Result> &ret, const std::map<StagGamma,std::vector<TField>> &fSink, 
-                                                                const std::map<StagGamma,std::vector<TField>> &fSrc) {
+        srcName = par().source;
 
-    for (unsigned int i = 0; i < ret.size(); i++) {
-        LOG(Message) << "Contracting gammas: (" << ret[i].gamma_snk_spin << ", " << ret[i].gamma_snk_taste << ") (sink), (" << ret[i].gamma_src_spin << ", " << ret[i].gamma_src_taste << ") (source) " << std::endl;
-        // Always use Gamma5 solve for the sink quark
-        contract(ret[i],fSink.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5),fSrc.at(StagGamma(ret[i].gamma_src_spin,ret[i].gamma_src_taste))));
+        if (!par().sourceGammas.empty()) {
+            srcName += sourceGammas_[i];
+            results[i].src_gamma = sourceGammas_[i];
+            LOG(Message) << "Using source gamma: '" << results[i].src_gamma << "'." << std::endl;
+        }
+
+        auto & source  = envGet(TField,srcName);
+
+        contract(results[i],source,sink,spinTaste);
+
+        for (int j = 0; j < results[i].srcCorrs.size(); j++) {
+            for (int t = 0; t < Nt_; t++) {
+                results[i].corr[t] += (results[i].srcCorrs[j])[t]/results[i].scaling;
+            }
+        }
     }
 }
 
@@ -275,85 +301,47 @@ void TStagMeson<FImpl>::execute(void)
 {
 
     LOG(Message) << "Computing meson contractions '" << getName() << "' using"
-                 << " quarks '" << par().q1 << "' and '" << par().q2 << "'"
+                 << " quarks '" << par().source << "' and '" << par().sink << "'"
                  << std::endl;
 
-    std::vector<Result> res;
-    unsigned int nt = env().getDim(Tp);
+    std::vector<Result> results;
 
-    parseGammaString();
+   results.resize(sinkGammas_.size());
 
-    envGetTmp(std::vector<SpinTastePair>,gammaList);
-
-    res.resize(gammaList.size());
-
-    for (unsigned int i = 0; i < res.size(); ++i)
+    for (unsigned int i = 0; i < results.size(); ++i)
     {
-        res[i].gamma_snk_spin = gammaList[i].first.first;
-        res[i].gamma_snk_taste = gammaList[i].first.second;
-        res[i].gamma_src_spin = gammaList[i].second.first;
-        res[i].gamma_src_taste = gammaList[i].second.second;
-        res[i].srcCorrs.resize(1, std::vector<Complex>(nt,0.0));
-        res[i].corr.resize(nt, 0.0);
-        res[i].scaling = 1.0;
+        results[i].gamma_sink_spin = sinkGammas_[i].first;
+        results[i].gamma_sink_taste = sinkGammas_[i].second;
+
+        results[i].srcCorrs.resize(1, std::vector<Complex>(Nt_,0.0));
+        results[i].corr.resize(Nt_, 0.0);
+        results[i].scaling = 1.0;
         if (!par().sourceShift.empty()) {
-            res[i].timeShifts = envGet(std::vector<Integer>, par().sourceShift);
+            results[i].timeShifts = envGet(std::vector<Integer>, par().sourceShift);
         }
     }
 
-    if (envHasType(PropagatorField, par().q1)) {
-        auto &q1  = envGet(PropagatorField, par().q1);
-        auto &q2  = envGet(PropagatorField, par().q2);
+    if (envHasType(PropagatorField, par().sink+sinkSuffix_)) {
+        auto &sink  = envGet(PropagatorField, par().sink+sinkSuffix_);
+        executeHelper(results,sink);
 
-        contract(res,q1,q2);
+    } else if (envHasType(std::vector<PropagatorField>, par().sink+sinkSuffix_)) {
+        auto &sink  = envGet(std::vector<PropagatorField>, par().sink+sinkSuffix_);
+        executeHelper(results,sink);
 
-    } else if (envHasType(std::vector<PropagatorField>, par().q1)) {
-        auto &q1  = envGet(std::vector<PropagatorField>, par().q1);
-        auto &q2  = envGet(std::vector<PropagatorField>, par().q2);
+    } else if (envHasType(FermionField, par().sink+sinkSuffix_)) {
+        auto &sink  = envGet(FermionField, par().sink+sinkSuffix_);
+        executeHelper(results,sink);
 
-        for (unsigned int i = 0; i < res.size(); ++i)
-        {
-            res[i].srcCorrs.resize(q1.size(), std::vector<Complex>(nt,0.0));
-        }
-        contract(res,q1,q2);
-
-    } else if (envHasType(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1)) {
-        auto &q1  = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q1);
-        auto &q2  = envGet(ARG(std::map<StagGamma,std::vector<PropagatorField>>), par().q2);
-
-        for (unsigned int i = 0; i < res.size(); ++i)
-        {
-            res[i].srcCorrs.resize(q1.at(SpinTaste(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)).size(), std::vector<Complex>(nt,0.0));
-        }
-        contract(res,q1,q2);
-
-    } else if (envHasType(FermionField, par().q1)) {
-        auto &q1  = envGet(FermionField, par().q1);
-        auto &q2  = envGet(FermionField, par().q2);
-
-        contract(res,q1,q2);
-
-    } else if (envHasType(std::vector<FermionField>, par().q1)) {
-        auto &q1  = envGet(std::vector<FermionField>, par().q1);
-        auto &q2  = envGet(std::vector<FermionField>, par().q2);
-
-        for (unsigned int i = 0; i < res.size(); ++i)
-        {
-            res[i].srcCorrs.resize(q1.size(), std::vector<Complex>(nt,0.0));
-        }
-        contract(res,q1,q2);
+    } else if (envHasType(std::vector<FermionField>, par().sink+sinkSuffix_)) {
+        auto &sink  = envGet(std::vector<FermionField>, par().sink+sinkSuffix_);
+        executeHelper(results,sink);
     } else {
-        auto &q1  = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q1);
-        auto &q2  = envGet(ARG(std::map<StagGamma,std::vector<FermionField>>), par().q2);
+        HADRONS_ERROR(Argument,"Sink parameter '" + par().sink+"' must be a PropagatorField, FermionField, or a std::vector of these fields.");
 
-        for (unsigned int i = 0; i < res.size(); ++i)
-        {
-            res[i].srcCorrs.resize(q1.at(StagGamma(Gamma::Algebra::Gamma5,Gamma::Algebra::Gamma5)).size(), std::vector<Complex>(nt,0.0));
-        }
-        contract(res,q1,q2);
     }
 
-    saveResult(par().output, "meson", res);
+    saveResult(par().output, "meson", results);
 }
 
 END_MODULE_NAMESPACE

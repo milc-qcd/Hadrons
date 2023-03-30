@@ -1,5 +1,5 @@
 /*
- * LMAPropMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LowModeProjMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
@@ -24,10 +24,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MFermion/LMAPropMILC.hpp>
+#include <Hadrons/Modules/MSolver/LowModeProjMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MFermion;
+using namespace MSolver;
 
-template class Grid::Hadrons::MFermion::TLMAPropMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >;
+template class Grid::Hadrons::MSolver::TLowModeProjMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >;

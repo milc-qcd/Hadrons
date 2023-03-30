@@ -383,6 +383,14 @@ struct Correlator: Serializable
                                     std::vector<Scalar>, corr);
 };
 
+// Spin taste parameters for modules that require StagGamma objects.
+struct SpinTasteParams : Serializable {
+  GRID_SERIALIZABLE_CLASS_MEMBERS(SpinTasteParams,
+          std::string, gammas,
+          std::string, gauge);
+  SpinTasteParams(void): gammas(""), gauge("") {}
+};
+
 // check if grid is initlialised
 bool isGridInit(void);
 

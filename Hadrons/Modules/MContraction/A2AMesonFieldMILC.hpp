@@ -44,8 +44,6 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MContraction)
 
-typedef std::pair<Gamma::Algebra, Gamma::Algebra> GammaPair;
-
 class A2AMesonFieldMILCPar: Serializable
 {
 public:
@@ -57,7 +55,7 @@ public:
                                     std::string, action,
                                     std::string, right,
                                     std::string, output,
-                                    std::string, gammas,
+                                    SpinTasteParams, spinTaste,
                                     std::vector<std::string>, mom);
 };
 
@@ -66,7 +64,8 @@ class A2AMesonFieldMILCMetadata: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(A2AMesonFieldMILCMetadata,
                                     std::vector<RealF>, momentum,
-                                    GammaPair, gamma);
+                                    StagGamma::StagAlgebra, gamma_spin,
+                                    StagGamma::StagAlgebra, gamma_taste);
 };
 
 template <typename T, typename FImpl>
@@ -75,10 +74,9 @@ class MesonFieldKernelMILC: public A2AKernelMILC<T, typename FImpl::FermionField
 public:
     FERM_TYPE_ALIASES(FImpl,);
 public:
-    MesonFieldKernelMILC(const std::vector<StagGamma> &gamma,
-                     const std::vector<LatticeComplex> &mom,
-                     GridBase *grid)
-    : gamma_(gamma), mom_(mom), grid_(grid)
+    MesonFieldKernelMILC(const std::vector<StagGamma::SpinTastePair> &gamma, const std::vector<LatticeComplex> &mom,
+                     GridBase *grid, GaugeField* U = nullptr)
+    : gamma_(gamma), mom_(mom), grid_(grid), U_(U)
     {
         vol_ = 1.;
         for (auto &d: grid_->GlobalDimensions())
@@ -92,7 +90,7 @@ public:
                             const FermionField *right,
                             const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
     {
-        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, t);
+        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, U_, t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
@@ -108,7 +106,7 @@ public:
 private:
  template<typename TFImpl, typename ... Args>
  IfNotStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::MesonField(args...);
+    assert(0);
  }
 
  template<typename TFImpl, typename ... Args>
@@ -117,10 +115,11 @@ private:
  }
 
 private:
-    const std::vector<GammaPair> &gamma_;
     const std::vector<LatticeComplex> &mom_;
     GridBase                          *grid_;
     double                            vol_;
+    const std::vector<StagGamma::SpinTastePair>& gamma_;
+    GaugeField *U_ = nullptr;
 };
 
 template <typename FImpl, typename Pack>
@@ -149,8 +148,8 @@ public:
 private:
     bool                               hasPhase_{false};
     std::string                        momphName_;
-    std::vector<GammaPair>        gamma_;
     std::vector<std::vector<Real>>     mom_;
+    std::vector<StagGamma::SpinTastePair> gammas_;
 };
 
 MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >), MContraction);
@@ -197,12 +196,9 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl,Pack>::getOutput(void)
 template <typename FImpl, typename Pack>
 void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
 {
-    if (!par().action.empty()) {
-    }
+    gammas_ = strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas);
 
-    gamma_.clear();
     mom_.clear();
-    gamma_ = strToVec<GammaPair>(par().gammas);
 
     for (auto &pstr: par().mom)
     {
@@ -220,7 +216,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
              par().mom.size(), envGetGrid(ComplexField));
     envTmpLat(ComplexField, "coor");
     envTmp(Computation, "computation", 1, envGetGrid(FermionField), 
-           env().getNd() - 1, mom_.size(), gamma_.size(), par().block, 
+           env().getNd() - 1, mom_.size(), gammas_.size(), par().block, 
            par().cacheBlock, this);
     envTmp(std::vector<FermionField>, "dummy", 1, 0, envGetGrid(FermionField));
 }
@@ -234,6 +230,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     bool isCheckerBoarded = (!par().action.empty());
 
     std::vector<FermionField> *left, *right;
+
     if (hasHighModes) {
         left  = &(envGet(std::vector<FermionField>, par().left));
         right = &(envGet(std::vector<FermionField>, par().right));
@@ -253,7 +250,6 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         N_i += (isCheckerBoarded?2:1)*lowModes.evec.size();
         N_j += (isCheckerBoarded?2:1)*lowModes.evec.size();
     }
-    int ngamma     = gamma_.size();
     int nmom       = mom_.size();
     int block      = par().block;
     int cacheBlock = par().cacheBlock;
@@ -276,9 +272,9 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     }
     LOG(Message) << "Spin bilinears:" << std::endl;
 
-    for (auto &g: gamma_)
+    for (auto &g: gammas_)
     {
-        LOG(Message) << "  " << g << std::endl;
+        LOG(Message) << "  " << StagGamma::GetName(g) << std::endl;
     }
 
     LOG(Message) << "Meson field size: " << nt << "*" << N_i << "*" << N_j 
@@ -312,7 +308,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     {
         std::stringstream ss;
 
-        ss << gamma_[g] << "_";
+        ss << StagGamma::GetName(gammas_[g]) << "_";
         for (unsigned int mu = 0; mu < mom_[m].size(); ++mu)
         {
             ss << mom_[m][mu] << ((mu == mom_[m].size() - 1) ? "" : "_");
@@ -335,14 +331,20 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         {
             md.momentum.push_back(pmu);
         }
-        md.gamma = gamma_[g];
+        md.gamma_spin = gammas_[g].first;
+        md.gamma_taste = gammas_[g].second;
         
         return md;
     };
 
     envGetTmp(Computation, computation);
 
-    Kernel      kernel(gamma_, ph, envGetGrid(FermionField));
+    GaugeField* U = nullptr;
+    if (!par().spinTaste.gauge.empty()) {
+        U = env().getObject<GaugeField>(par().spinTaste.gauge);
+    }
+    
+    Kernel      kernel(gammas_, ph, envGetGrid(FermionField),U);
 
     if(hasLowModes) {
         auto &lowModes = envGet(Pack, par().lowModes);

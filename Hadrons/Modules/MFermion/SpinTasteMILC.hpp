@@ -43,12 +43,10 @@ BEGIN_HADRONS_NAMESPACE
 BEGIN_MODULE_NAMESPACE(MFermion)
 
 template <typename FImpl>
-class TSpinTasteMILC: public Module<NoPar>
+class TSpinTasteMILC: public Module<SpinTasteParams>
 {
 public:
   FERM_TYPE_ALIASES(FImpl,);
-  typedef std::map<Gamma::Algebra, LatticeComplex> PhaseMap;
-  typedef std::function<LatticeComplex (Gamma::Algebra gamma)> GammaFn;
 public:
   // constructor
   TSpinTasteMILC(const std::string name);
@@ -57,6 +55,7 @@ public:
   // dependency relation
   virtual std::vector<std::string> getInput(void);
   virtual std::vector<std::string> getOutput(void);
+  virtual DependencyMap getObjectDependencies(void);
 protected:
   // setup
   virtual void setup(void);
@@ -75,8 +74,7 @@ MODULE_REGISTER_TMP(SpinTaste, TSpinTasteMILC<STAGIMPL>, MFermion);
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl>
 TSpinTasteMILC<FImpl>::TSpinTasteMILC(const std::string name)
-  : Module<NoPar>(name)
-, phName_ (name + "_sph")
+  : Module<SpinTasteParams>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
@@ -84,6 +82,10 @@ template <typename FImpl>
 std::vector<std::string> TSpinTasteMILC<FImpl>::getInput(void)
 {
   std::vector<std::string> in;
+
+  if (!par().gauge.empty()) {
+    in.push_back(par().gauge);
+  }
 
   return in;
 }
@@ -93,68 +95,44 @@ std::vector<std::string> TSpinTasteMILC<FImpl>::getOutput(void)
 {
   std::vector<std::string> out = {getName()};
 
+
   return out;
+}
+
+template <typename FImpl>
+DependencyMap TSpinTasteMILC<FImpl>::getObjectDependencies(void)
+{
+    DependencyMap dep;
+    
+    if (!par().gauge.empty()) {
+      dep.insert({par().gauge, getName()});
+    }
+
+    return dep;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
 void TSpinTasteMILC<FImpl>::setup(void)
 {
-    envCreate(GammaFn, getName(), 1, nullptr);
-    PhaseMap dummy;
-    envCache(PhaseMap, phName_, 1, dummy);
+  auto gammaList = strToVec<StagGamma::SpinTastePair>(par().gammas);
+  envCreate(Vector<StagGamma>, getName(), 1, gammaList.size(),StagGamma());
+
+  auto &spinTaste = envGet(Vector<StagGamma>,getName());
+
+  for (int i = 0; i < gammaList.size(); i++) {
+    spinTaste[i].setSpinTaste(gammaList[i]);
+    if (!par().gauge.empty()) {
+      auto& gauge = envGet(LatticeGaugeField, par().gauge);
+      spinTaste[i].setGaugeField(gauge);
+    }
+  }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl>
 void TSpinTasteMILC<FImpl>::execute(void)
-{
-
-  std::vector<Gamma::Algebra> keys = {
-      Gamma::Algebra::Identity,
-      Gamma::Algebra::GammaX,
-      Gamma::Algebra::GammaY,
-      Gamma::Algebra::GammaZ,
-      Gamma::Algebra::Gamma5
-  };
-
-
-  auto &stag_phase = envGet(PhaseMap,phName_);
-
-  for (const auto &key:keys) {
-      stag_phase.insert({key,envGetGrid(LatticeComplex)});
-      stag_phase.at(key) = 1.0;
-  }
-
-  Lattice<iScalar<vInteger> > x(env().getGrid()); LatticeCoordinate(x,0);
-  Lattice<iScalar<vInteger> > y(env().getGrid()); LatticeCoordinate(y,1);
-  Lattice<iScalar<vInteger> > z(env().getGrid()); LatticeCoordinate(z,2);
-  Lattice<iScalar<vInteger> > t(env().getGrid()); LatticeCoordinate(t,3);
-  Lattice<iScalar<vInteger> > lin_5(env().getGrid()); lin_5=x+y+z+t;
-  
-  stag_phase.at(Gamma::Algebra::Identity) = where( mod(lin_5,2)==(Integer)0, stag_phase.at(Gamma::Algebra::Identity), -stag_phase.at(Gamma::Algebra::Identity));
-  stag_phase.at(Gamma::Algebra::GammaX)   = where( mod(x,2)==(Integer)0, stag_phase.at(Gamma::Algebra::GammaX), -stag_phase.at(Gamma::Algebra::GammaX));
-  stag_phase.at(Gamma::Algebra::GammaY)   = where( mod(y,2)==(Integer)0, stag_phase.at(Gamma::Algebra::GammaY), -stag_phase.at(Gamma::Algebra::GammaY));
-  stag_phase.at(Gamma::Algebra::GammaZ)   = where( mod(z,2)==(Integer)0, stag_phase.at(Gamma::Algebra::GammaZ), -stag_phase.at(Gamma::Algebra::GammaZ));
-
-  auto spinOp = [this](Gamma::Algebra gamma) {
-
-    LatticeComplex result(envGetGrid(LatticeComplex));
-
-    auto &stagPh = envGet(PhaseMap, phName_);
-
-    if (stagPh.find(gamma) == stagPh.end()) {
-      std::string gammaStr = Gamma::name[gamma];
-      HADRONS_ERROR(Implementation,"The gamma operator '" + gammaStr + "' is not supported for stag fields");
-    }
-
-    result = stagPh.at(gamma);
-
-    return result;
-  };
-
-  envGet(GammaFn, getName()) = spinOp;
-}
+{}
 
 END_MODULE_NAMESPACE
 
