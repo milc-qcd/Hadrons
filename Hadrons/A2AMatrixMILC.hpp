@@ -890,8 +890,8 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             LOG(Message) << "Kernel Time: " << t_kernel << " us." << std::endl;
             LOG(Message) << "Global Sum Time: " << t_gsum << " us." << std::endl;
 
-            for (int i = 0; i < mCache_.size(); i++) {
-                mBuf_[i] = mCache_[i];
+            for (int ii = 0; ii < mCache_.size(); ii++) {
+                mBuf_[ii] = mCache_[ii];
             }
 
             A2AMatrixSet<TIo> mIOBlock(mBuf_.data(), next_, nstr_, nt_, N_ii, N_jj);
