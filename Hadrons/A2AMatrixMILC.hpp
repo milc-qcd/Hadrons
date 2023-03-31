@@ -147,7 +147,7 @@ public:
                  const FilenameFn &filenameFn,
                  const MetadataFn &metadataFn,
                  std::vector<Field> *evecs = nullptr,
-                 const std::vector<ComplexD> &evals = {},
+                 const Vector<ComplexD> &evals = {},
                  const SwapFn *swapEvecCheckerFn = nullptr);
 private:
     // I/O handler
@@ -207,67 +207,6 @@ public:
                 }
             });
         }
-//         const int RowMajor = Eigen::RowMajor;
-//         const int ColMajor = Eigen::ColMajor;
-// #ifdef USE_MKL
-//         if ((MatLeft::Options  == RowMajor) and
-//             (MatRight::Options == ColMajor)) {
-//       	  thread_for(r,a.rows(),
-//                 {
-//                     C tmp;
-//                     dotuRow(tmp, r, a, b);
-//                     thread_critical
-//                     {
-//                         acc += tmp;
-//                     }
-//                 });
-//         } else {
-//             thread_for(c,a.cols(),
-//                 {
-//                     C tmp;
-//                     dotuCol(tmp, c, a, b);
-//                     thread_critical
-//                     {
-//                         acc += tmp;
-//                     }
-//                 });
-//         }
-// #else
-//         int aRows = a.rows();
-//         int aCols = a.cols();
-//         int bRows = b.rows();
-//         int bCols = b.cols();
-//         const C *aPt = a.data();
-//         const C *bPt = b.data();
-
-//         Vector<C> res(aRows,0.0);
-//         C *resPt = &res[0];
-
-//         if ((MatLeft::Options  == RowMajor) and
-//             (MatRight::Options == ColMajor)) {
-//             accelerator_for(r,aRows, 1,{
-//                 C tmp = 0.0;
-//                 for (int c = 0;c < aCols;c++) {
-//                     tmp += innerProduct(*(aPt + r*aCols + c),*(bPt+r*bRows + c));
-//                 }
-//                 *(resPt+r) = tmp;
-//             });
-
-//         } else {
-//             accelerator_for(c,aCols, 1,{
-//                 C tmp = 0.0;
-//                 for (int r = 0;r < aRows;r++) {
-//                     tmp += innerProduct(*(aPt + c*aRows + r),*(bPt+c*bCols + r));
-//                 }
-//                 *(resPt+c) = tmp;
-//             });
-
-
-//         }
-//         for (int r=0;r<aRows;r++) {
-//             acc += res[r];
-//         }
-// #endif
     }
 
     template <typename MatLeft, typename MatRight>
@@ -699,7 +638,6 @@ A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 , next_(next), nstr_(nstr), blockSize_(blockSize)
 , tArray_(tArray)
 {
-    mBuf_.resize(nt_*next_*nstr_*blockSize_*blockSize_);
     mCache_.resize(nt_*next_*nstr_*blockSize_*blockSize_);
 }
 
@@ -713,7 +651,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 ::execute(const std::vector<Field> &left, const std::vector<Field> &right,
           A2AKernelMILC<T, Field> &kernel, const FilenameFn &ionameFn,
           const FilenameFn &filenameFn, const MetadataFn &metadataFn,
-          std::vector<Field> *evecs,const std::vector<ComplexD> &evals, const SwapFn *swapEvecCheckerFn)
+          std::vector<Field> *evecs,const Vector<ComplexD> &evals, const SwapFn *swapEvecCheckerFn)
 {
     //////////////////////////////////////////////////////////////////////////
     // i,j   is first  loop over blockSize_ factors
@@ -751,7 +689,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     int NBlock_i = N_i/blockSize_ + (((N_i % blockSize_) != 0) ? 1 : 0); // Round up on the number of blocks to compute
     int NBlock_j = N_j/blockSize_ + (((N_j % blockSize_) != 0) ? 1 : 0);
 
-    bool low_i, low_ii, low_j, low_jj;
+    bool low_i, low_j;
     int i, j, evec_i, evec_j, N_ii, N_jj;
 
     i = 0, evec_i = 0;
@@ -849,33 +787,33 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                 t_kernel += t;
                 flops    += kernel.flops(N_ii, N_jj);
                 bytes    += kernel.bytes(N_ii, N_jj);
+
             } // End for(cbi) loop
 
             ComplexD* evals_p = (ComplexD*)&evals[0];
-            accelerator_for(ii,N_ii,acceleratorThreads(),{
-                for(int e = 0; e < next_ ;e++) {
-                    for(int s = 0; s < nstr_ ;s++) {
-                        for(int t = 0; t < nt_ ;t++) {
-                            for(int jj = 0; jj < N_jj/2 ;jj++) {
-                                ComplexD coeff = 1.0;
-                                int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*nt_*(s + nstr_*e);
-                                // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
-                                if ( (i+ii) < N_low || (j+2*jj) < N_low) {
+            accelerator_for(ii,N_ii,1,{
+                for(int e = 0; e < next_ ;e++)
+                for(int s = 0; s < nstr_ ;s++)
+                for(int t = 0; t < nt_ ;t++)
+                for(int jj = 0; jj < N_jj/2 ;jj++) {
+                    ComplexD coeff = 1.0;
+                    int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*nt_*(s + nstr_*e);
+                    // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
+                    if ( (i+ii) < N_low || (j+2*jj) < N_low) {
 
-                                    coeff = norm; // Normalize low modes appropriately
-                                    if ((i+ii) < N_low && (j+2*jj) < N_low) {
-                                        coeff *= coeff;
-                                    }
+                        coeff = norm; // Normalize low modes appropriately
+                        if ((i+ii) < N_low && (j+2*jj) < N_low) {
+                            coeff *= coeff;
+                        }
 
-                                    if ((j+2*jj) < N_low) {
-                                        coeff = coeff/evals_p[evec_j+jj]; // Minv evals
-                                    }
-                                }
-                                mCache_p[idx+1] = conjugate(coeff)*mCache_p[idx+1];
-                                mCache_p[idx]   = coeff*mCache_p[idx];
-                            }
+                        if ((j+2*jj) < N_low) {
+                            coeff = coeff/evals_p[evec_j+jj]; // Minv evals
                         }
                     }
+                    // mBlock(e,s,t,ii,2*jj+1) = conjugate(coeff)*mBlock(e,s,t,ii,2*jj+1);
+                    // mBlock(e,s,t,ii,2*jj)   = coeff*mBlock(e,s,t,ii,2*jj);
+                    mCache_p[idx+1] = conjugate(coeff)*mCache_p[idx+1];
+                    mCache_p[idx]   = coeff*mCache_p[idx];
                 }
             });
 
@@ -890,11 +828,13 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             LOG(Message) << "Kernel Time: " << t_kernel << " us." << std::endl;
             LOG(Message) << "Global Sum Time: " << t_gsum << " us." << std::endl;
 
-            for (int ii = 0; ii < mCache_.size(); ii++) {
-                mBuf_[ii] = mCache_[ii];
-            }
-
+            mBuf_.resize(mCache_.size());
             A2AMatrixSet<TIo> mIOBlock(mBuf_.data(), next_, nstr_, nt_, N_ii, N_jj);
+
+            TIo *mBuf_p = (TIo*)&mBuf_[0];
+            accelerator_for(ii,mIOBlock.size(),1,{
+                mBuf_p[ii] = mCache_p[ii];
+            });
 
             // IO
             double       blockSize, ioTime;

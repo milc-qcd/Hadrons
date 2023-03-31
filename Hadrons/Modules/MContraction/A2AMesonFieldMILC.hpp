@@ -48,6 +48,7 @@ class A2AMesonFieldMILCPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(A2AMesonFieldMILCPar,
+                                    int, cacheBlock,
                                     int, block,
                                     std::string, lowModes,
                                     std::string, left,
@@ -275,6 +276,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     int ngamma     = gamma_.size();
     int nmom       = mom_.size();
     int block      = par().block;
+    int cacheBlock = par().cacheBlock;
 
     if (N_i < block || N_j < block)
     {

@@ -122,7 +122,6 @@ void TSourcePickIndices<Field>::setup(void)
 template <typename Field>
 void TSourcePickIndices<Field>::execute(void)
 {
-    int sourceSize = 0;
     std::vector<Field> *src;
     if (envHasType(std::vector<Field>,par().source)) {
         auto &vec = envGet(std::vector<Field>, par().source);
