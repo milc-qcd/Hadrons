@@ -156,9 +156,6 @@ private:
     TimerArray            *tArray_;
     GridBase              *grid_;
     unsigned int          orthogDim_, nt_, next_, nstr_, blockSize_;
-    std::vector<Field>    lowBufi_, lowBufj_;
-    commVector<T>           mCache_;
-    commVector<TIo>           mBuf_;
     std::vector<IoHelper> nodeIo_;
 };
 
@@ -635,11 +632,8 @@ A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                             const unsigned int blockSize, 
                             TimerArray *tArray)
 : grid_(grid), nt_(grid->GlobalDimensions()[orthogDim]), orthogDim_(orthogDim)
-, next_(next), nstr_(nstr), blockSize_(blockSize)
-, tArray_(tArray)
-{
-    mCache_.resize(nt_*next_*nstr_*blockSize_*blockSize_);
-}
+, next_(next), nstr_(nstr), blockSize_(blockSize), tArray_(tArray)
+{}
 
 #define START_TIMER(name) if (tArray_) tArray_->startTimer(name)
 #define STOP_TIMER(name)  if (tArray_) tArray_->stopTimer(name)
@@ -657,6 +651,13 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     // i,j   is first  loop over blockSize_ factors
     // Total index is sum of these  i+ii+iii etc...
     //////////////////////////////////////////////////////////////////////////
+
+    std::vector<Field>    lowBufi_, lowBufj_;
+    commVector<T>           mCache_;
+    Vector<TIo>           mBuf_;
+
+    mCache_.resize(nt_*next_*nstr_*blockSize_*blockSize_);
+    mBuf_.resize(nt_*next_*nstr_*blockSize_*blockSize_);
 
     bool checkerboarded_low = (swapEvecCheckerFn != nullptr);
     int Ncb = checkerboarded_low?2:1; // Ncb == 2 if the low modes are checkerboarded
@@ -732,7 +733,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             A2AMatrixSet<T> mBlock(mCache_.data(), next_, nstr_, nt_, N_ii, N_jj);
 
             T *mCache_p = mBlock.data();
-            accelerator_for(idx,mBlock.size(),acceleratorThreads(),{
+            accelerator_for(idx,mBlock.size(),1,{
                 mCache_p[idx] = 0.0;
             });
 
@@ -790,14 +791,16 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 
             } // End for(cbi) loop
 
+	    {
+	      int next = next_,nstr=nstr_,Lt=nt_;
             ComplexD* evals_p = (ComplexD*)&evals[0];
-            accelerator_for(ii,N_ii,1,{
-                for(int e = 0; e < next_ ;e++)
-                for(int s = 0; s < nstr_ ;s++)
-                for(int t = 0; t < nt_ ;t++)
+	    accelerator_for(ii,N_ii,1,{
+                for(int e = 0; e < next ;e++)
+                for(int s = 0; s < nstr ;s++)
+                for(int t = 0; t < Lt ;t++)
                 for(int jj = 0; jj < N_jj/2 ;jj++) {
                     ComplexD coeff = 1.0;
-                    int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*nt_*(s + nstr_*e);
+                    int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*Lt*(s + nstr*e);
                     // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
                     if ( (i+ii) < N_low || (j+2*jj) < N_low) {
 
@@ -807,16 +810,14 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                         }
 
                         if ((j+2*jj) < N_low) {
-                            coeff = coeff/evals_p[evec_j+jj]; // Minv evals
+			  coeff = coeff/evals_p[evec_j+jj]; // Minv evals
                         }
                     }
-                    // mBlock(e,s,t,ii,2*jj+1) = conjugate(coeff)*mBlock(e,s,t,ii,2*jj+1);
-                    // mBlock(e,s,t,ii,2*jj)   = coeff*mBlock(e,s,t,ii,2*jj);
                     mCache_p[idx+1] = conjugate(coeff)*mCache_p[idx+1];
                     mCache_p[idx]   = coeff*mCache_p[idx];
                 }
-            });
-
+	      });
+	    }
             if (checkerboarded_low) {
                 t_gsum = -usecond();
                 grid_->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
@@ -828,7 +829,6 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             LOG(Message) << "Kernel Time: " << t_kernel << " us." << std::endl;
             LOG(Message) << "Global Sum Time: " << t_gsum << " us." << std::endl;
 
-            mBuf_.resize(mCache_.size());
             A2AMatrixSet<TIo> mIOBlock(mBuf_.data(), next_, nstr_, nt_, N_ii, N_jj);
 
             TIo *mBuf_p = (TIo*)&mBuf_[0];
