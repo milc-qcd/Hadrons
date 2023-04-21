@@ -791,33 +791,34 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 
             } // End for(cbi) loop
 
-	    {
-	      int next = next_,nstr=nstr_,Lt=nt_;
-            ComplexD* evals_p = (ComplexD*)&evals[0];
-	    accelerator_for(ii,N_ii,1,{
-                for(int e = 0; e < next ;e++)
-                for(int s = 0; s < nstr ;s++)
-                for(int t = 0; t < Lt ;t++)
-                for(int jj = 0; jj < N_jj/2 ;jj++) {
-                    ComplexD coeff = 1.0;
-                    int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*Lt*(s + nstr*e);
-                    // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
-                    if ( (i+ii) < N_low || (j+2*jj) < N_low) {
+    	    {
+                int next = next_,nstr=nstr_,Lt=nt_;
+                ComplexD* evals_p = (ComplexD*)&evals[0];
+                accelerator_for(ii,N_ii,1,{
+                    for(int e = 0; e < next ;e++)
+                    for(int s = 0; s < nstr ;s++)
+                    for(int t = 0; t < Lt ;t++)
+                    for(int jj = 0; jj < N_jj/2 ;jj++) {
+                        ComplexD coeff = 1.0;
 
-                        coeff = norm; // Normalize low modes appropriately
-                        if ((i+ii) < N_low && (j+2*jj) < N_low) {
-                            coeff *= coeff;
-                        }
+                        int idx = 2*jj + N_jj*ii + N_jj*N_ii*t + N_jj*N_ii*Lt*(s + nstr*e);
+                        // If the ket vectors (corresponding to the solves) are low modes, multiply by the eigenvals
+                        if ( (i+ii) < N_low || (j+2*jj) < N_low) {
 
-                        if ((j+2*jj) < N_low) {
-			  coeff = coeff/evals_p[evec_j+jj]; // Minv evals
+                            coeff = norm; // Normalize low modes appropriately
+                            if ((i+ii) < N_low && (j+2*jj) < N_low) {
+                                coeff *= coeff;
+                            }
+
+                            if ((j+2*jj) < N_low) {
+                            	coeff = coeff/evals_p[evec_j+jj]; // Minv evals
+                            }
                         }
+                        mCache_p[idx+1] = conjugate(coeff)*mCache_p[idx+1];
+                        mCache_p[idx]   = coeff*mCache_p[idx];
                     }
-                    mCache_p[idx+1] = conjugate(coeff)*mCache_p[idx+1];
-                    mCache_p[idx]   = coeff*mCache_p[idx];
-                }
-	      });
-	    }
+                });
+    	    }
             if (checkerboarded_low) {
                 t_gsum = -usecond();
                 grid_->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
