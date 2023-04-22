@@ -304,7 +304,7 @@ void TGaugePropMILC<FImpl>::executeHelper(const TField &src)
 
     StagGamma gamma;
     if (hasGammas_ && !par().spinTaste.gauge.empty()) {
-        auto& Umu = envGet(GaugeField,par().spinTaste.gauge.empty());
+        auto& Umu = envGet(GaugeField,par().spinTaste.gauge);
         gamma.setGaugeField(Umu);
     }
 

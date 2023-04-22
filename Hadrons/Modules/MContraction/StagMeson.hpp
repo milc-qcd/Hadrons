@@ -184,6 +184,15 @@ void TStagMeson<FImpl>::setup(void)
     if (sourceGammas_.size() > 0 && sourceGammas_.size() != sinkGammas_.size()) {
         HADRONS_ERROR(Argument,"Parameter 'sourceGammas' must be empty or have the same number of operators as 'sinkSpinTaste.gammas'.");
     }
+    if (envHasType(PropagatorField, par().sink+sinkSuffix_) || envHasType(std::vector<PropagatorField>, par().sink+sinkSuffix_)) {
+        envTmpLat(PropagatorField, "field");
+    } else if (envHasType(FermionField, par().sink+sinkSuffix_) || envHasType(std::vector<FermionField>, par().sink+sinkSuffix_)) {
+        envTmpLat(FermionField, "field");
+    } else {
+        HADRONS_ERROR(Argument,"Sink parameter '" + par().sink+"' must be a PropagatorField, FermionField, or a std::vector of these fields.");
+
+    }
+
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -197,10 +206,12 @@ EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &result, co
     SinkFnScalar &sinkFunc = envGet(SinkFnScalar, par().sinkFunc);
 
     envGetTmp(PropagatorField, prop);
+    envGetTmp(TField, field);
 
-    buildProp(prop, source, sink);
+    gamma(field,sink);
 
-    gamma(prop,prop);
+    buildProp(prop, source, field);
+
 
     buf = sinkFunc(trace(prop));
 
@@ -231,15 +242,16 @@ EnableIf<is_lattice<TField>,void> TStagMeson<FImpl>::contract(Result &result, co
     result.scaling = sink.size();
  
     envGetTmp(PropagatorField, prop);
+    envGetTmp(TField, field);
 
 
     for (int i = 0; i < result.srcCorrs.size(); i++) {
 
         LOG(Message) << "Contracting element i = " << i << "." << std::endl;
 
-        buildProp(prop, source[i], sink[i]);
+        gamma(field,sink[i]);
+        buildProp(prop, source[i], field);
 
-        gamma(prop,prop);
 
         buf = sinkFunc(trace(prop));
 
@@ -336,9 +348,6 @@ void TStagMeson<FImpl>::execute(void)
     } else if (envHasType(std::vector<FermionField>, par().sink+sinkSuffix_)) {
         auto &sink  = envGet(std::vector<FermionField>, par().sink+sinkSuffix_);
         executeHelper(results,sink);
-    } else {
-        HADRONS_ERROR(Argument,"Sink parameter '" + par().sink+"' must be a PropagatorField, FermionField, or a std::vector of these fields.");
-
     }
 
     saveResult(par().output, "meson", results);
