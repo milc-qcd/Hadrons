@@ -127,7 +127,6 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
     int cb = epack.evec[0].Checkerboard();                                            \
     int cbNeg = (cb==Even) ? Odd : Even;                                              \
                                                 \
-    // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)                 \
     RealD norm = 1./::sqrt(norm2(epack.evec[0]));                                     \
                                                 \
     rbTemp = Zero();                                                                  \
@@ -142,10 +141,8 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
     pickCheckerboard(cb,rbFerm,source);                                                  \
     pickCheckerboard(cbNeg,rbFermNeg,source);                                            \
                                                 \
-    mat.MeooeDag(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb   \
+    mat.MeooeDag(rbFermNeg, MrbFermNeg); \
                                                 \
-    // Add up source vector projection onto provided evec checkerboard                \
-    // [ lam*(|e> + |o>)(<e| + <o|)  +  conj(lam)*(|e> - |o>)(<e| - <o|) ] |psi>      \
     for (int k=epack.evec.size()-1;k >= 0;k--) {                                      \
         const FermionField& e = epack.evec[k];                                        \
                                                 \
@@ -160,7 +157,7 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
         axpy(rbTempNeg, mass*ipNeg*invlam_D*invlam_D-ip, e,rbTempNeg);                \
     }                                                                                 \
                                                 \
-    mat.Meooe(rbTempNeg, rbFermNeg); // Move projection back to cbNeg checkerboard \
+    mat.Meooe(rbTempNeg, rbFermNeg); \
                                                 \
     setCheckerboard(sol,rbTemp);                                                      \
     setCheckerboard(sol,rbFermNeg);                                                   \
