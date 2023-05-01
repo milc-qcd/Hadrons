@@ -325,7 +325,7 @@ void TGaugePropMILC<FImpl>::executeHelper(const TField &src)
             if (!envHasType(TField,par().guess+ext)) {
                HADRONS_ERROR(Argument, "guess parameter '" + par().guess + ext + "' must have same data structure as source, '"+par().source+"'");
             }
-            auto & guess = envGet(TField,getName()+ext);
+            auto & guess = envGet(TField,par().guess+ext);
             executeHelper(sol,src,gamma,&guess);
         } else {
             executeHelper(sol,src,gamma);
