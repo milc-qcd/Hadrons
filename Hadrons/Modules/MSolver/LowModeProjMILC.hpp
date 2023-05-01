@@ -72,8 +72,6 @@ public:
 
     // execute
     virtual void execute(void);
-
-    inline void executeHelper(FermionField& sol, const FermionField& src);
 };
 
 MODULE_REGISTER_TMP(StagLMA, ARG(TLowModeProjMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >), MSolver);
@@ -119,18 +117,17 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
 
 // C++11 does not support template lambdas so it is easier
 // to make a macro with the solver body
-#define SOLVER_BODY                                                                   \
-    envGetTmp(FermionField,rbTemp);                                                   \
-    envGetTmp(FermionField,rbTempNeg);                                                \
-    envGetTmp(FermionField,rbFerm);                                                   \
-    envGetTmp(FermionField,rbFermNeg);                                                \
-    envGetTmp(FermionField,MrbFermNeg);                                               \
+#define SOLVER_BODY                                                                 \
+    auto &rbTemp = envGet(FermionField,"rbTemp");                                   \
+    auto &rbTempNeg = envGet(FermionField,"rbTempNeg");                             \
+    auto &rbFerm = envGet(FermionField,"rbFerm");                                   \
+    auto &rbFermNeg = envGet(FermionField,"rbFermNeg");                             \
+    auto &MrbFermNeg = envGet(FermionField,"MrbFermNeg");                           \
                                                 \
     int cb = epack.evec[0].Checkerboard();                                            \
     int cbNeg = (cb==Even) ? Odd : Even;                                              \
                                                 \
     // Normalize vectors so that checkerboard has magnitude 1/sqrt(2)                 \
-    // Extra factor of 2 accounts for contributions from M and Mdag evecs             \
     RealD norm = 1./::sqrt(norm2(epack.evec[0]));                                     \
                                                 \
     rbTemp = Zero();                                                                  \
@@ -142,8 +139,8 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
     rbFermNeg.Checkerboard() = cbNeg;                                                 \
     MrbFermNeg.Checkerboard() = cb;                                                   \
                                                 \
-    pickCheckerboard(cb,rbFerm,src);                                                  \
-    pickCheckerboard(cbNeg,rbFermNeg,src);                                            \
+    pickCheckerboard(cb,rbFerm,source);                                                  \
+    pickCheckerboard(cbNeg,rbFermNeg,source);                                            \
                                                 \
     mat.MeooeDag(rbFermNeg, MrbFermNeg); // Move cbNeg component of source to cb   \
                                                 \
@@ -180,21 +177,16 @@ void TLowModeProjMILC<FImpl,Pack>::setup(void)
        HADRONS_ERROR(Argument, "Ls > 1 not implemented");
     }
 
-    envTmpLat(FermionField, "fermSrc");
-    envTmp(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
-    envTmp(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
 
-    envGetTmp(FermionField, fermSrc);
-    envGetTmp(FermionField, rbTemp);
-    envGetTmp(FermionField, rbTempNeg);
-    envGetTmp(FermionField, rbFerm);
-    envGetTmp(FermionField, rbFermNeg);
-    envGetTmp(FermionField, MrbFermNeg);
+    auto &rbFerm     = envGet(FermionField, "rbFerm");
+    auto &rbFermNeg  = envGet(FermionField, "rbFermNeg");
+    auto &MrbFermNeg = envGet(FermionField, "MrbFermNeg");
 
-    fermSrc    = Zero();
     rbFerm     = Zero();
     rbFermNeg  = Zero();
     MrbFermNeg = Zero();
