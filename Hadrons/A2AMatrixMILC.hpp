@@ -787,8 +787,6 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             _grid->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
             t_gsum += usecond();
 
-            int cb_mult_i = (low_i?Ncb:1);
-            int cb_mult_j = (low_j?Ncb:1);
             mBuf.resize(mCache.size());
             A2AMatrixSet<TIo> mIOBlock(mBuf.data(), _next, _nstr, _nt, N_ii, N_jj);
 

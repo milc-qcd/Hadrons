@@ -112,7 +112,6 @@ namespace EigenPackIo
                      ScidacReader &binReader)
     {
         VecRecord vecRecord;
-        bool      cb = false;
 
         LOG(Message) << "Reading eigenvalue " << index << std::endl;
         binReader.skipPastObjectRecord(std::string(GRID_FORMAT));
