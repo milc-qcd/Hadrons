@@ -48,7 +48,6 @@ class A2AMesonFieldMILCPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(A2AMesonFieldMILCPar,
-                                    int, cacheBlock,
                                     int, block,
                                     std::string, lowModes,
                                     std::string, left,
@@ -76,32 +75,32 @@ public:
 public:
     MesonFieldKernelMILC(const std::vector<StagGamma::SpinTastePair> &gamma, const std::vector<LatticeComplex> &mom,
                      GridBase *grid, GaugeField* U = nullptr)
-    : gamma_(gamma), mom_(mom), grid_(grid), U_(U)
+    : _gamma(gamma), _mom(mom), _grid(grid), _U(U)
     {
-        vol_ = 1.;
-        for (auto &d: grid_->GlobalDimensions())
+        _vol = 1.;
+        for (auto &d: _grid->GlobalDimensions())
         {
-            vol_ *= d;
+            _vol *= d;
         }
     }
 
     virtual ~MesonFieldKernelMILC(void) = default;
-    virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left, 
-                            const FermionField *right,
+    virtual void operator()(A2AMatrixSet<T> &m, const FermionField *left_e, const FermionField *left_o, 
+                            const FermionField *right_e, const FermionField *right_o,
                             const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
     {
-        MesonFunction<FImpl>(m, left, right, gamma_, mom_, orthogDim, U_, t);
+        MesonFunction<FImpl>(m, left_e, left_o, right_e, right_o, _gamma, _mom, orthogDim, _U, t);
     }
 
     virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
     {
-        return vol_*(2*8.0+6.0+8.0*mom_.size())*blockSizei*blockSizej*gamma_.size();
+        return _vol*(2*8.0+6.0+8.0*_mom.size())*blockSizei*blockSizej*_gamma.size();
     }
 
     virtual double bytes(const unsigned int blockSizei, const unsigned int blockSizej)
     {
-        return vol_*(12.0*sizeof(T))*blockSizei*blockSizej
-               +  vol_*(2.0*sizeof(T)*mom_.size())*blockSizei*blockSizej*gamma_.size();
+        return _vol*(12.0*sizeof(T))*blockSizei*blockSizej
+               +  _vol*(2.0*sizeof(T)*_mom.size())*blockSizei*blockSizej*_gamma.size();
     }
 private:
  template<typename TFImpl, typename ... Args>
@@ -111,15 +110,15 @@ private:
 
  template<typename TFImpl, typename ... Args>
  IfStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::StagMesonFieldLocalMILC(args...);
+    A2AutilsMILC<TFImpl>::StagMesonFieldNoGlobalSum(args...);
  }
 
 private:
-    const std::vector<LatticeComplex> &mom_;
-    GridBase                          *grid_;
-    double                            vol_;
-    const std::vector<StagGamma::SpinTastePair>& gamma_;
-    GaugeField *U_ = nullptr;
+    const std::vector<LatticeComplex> &_mom;
+    GridBase                          *_grid;
+    double                            _vol;
+    const std::vector<StagGamma::SpinTastePair>& _gamma;
+    GaugeField *_U = nullptr;
 };
 
 template <typename FImpl, typename Pack>
@@ -146,10 +145,10 @@ public:
     // execution
     virtual void execute(void);
 private:
-    bool                               hasPhase_{false};
-    std::string                        momphName_;
-    std::vector<std::vector<Real>>     mom_;
-    std::vector<StagGamma::SpinTastePair> gammas_;
+    bool                               _hasPhase{false};
+    std::string                        _momphName;
+    std::vector<std::vector<Real>>     _mom;
+    std::vector<StagGamma::SpinTastePair> _gammas;
 };
 
 MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL,MassShiftEigenPack<STAGIMPL> >), MContraction);
@@ -161,7 +160,7 @@ MODULE_REGISTER(StagA2AMesonField, ARG(TA2AMesonFieldMILC<STAGIMPL,MassShiftEige
 template <typename FImpl, typename Pack>
 TA2AMesonFieldMILC<FImpl,Pack>::TA2AMesonFieldMILC(const std::string name)
 : Module<A2AMesonFieldMILCPar>(name)
-, momphName_(name + "_momph")
+, _momphName(name + "_momph")
 {
 }
 
@@ -181,7 +180,11 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl,Pack>::getInput(void)
        in.push_back(par().lowModes);
     }
 
-    return in;
+    if (!par().spinTaste.gauge.empty()) {
+        in.push_back(par().spinTaste.gauge);
+    }
+
+   return in;
 }
 
 template <typename FImpl, typename Pack>
@@ -196,9 +199,9 @@ std::vector<std::string> TA2AMesonFieldMILC<FImpl,Pack>::getOutput(void)
 template <typename FImpl, typename Pack>
 void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
 {
-    gammas_ = strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas);
+    _gammas = strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas);
 
-    mom_.clear();
+    _mom.clear();
 
     for (auto &pstr: par().mom)
     {
@@ -210,14 +213,13 @@ void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
                                 + " components instead of " 
                                 + std::to_string(env().getNd() - 1));
         }
-        mom_.push_back(p);
+        _mom.push_back(p);
     }
-    envCache(std::vector<ComplexField>, momphName_, 1, 
+    envCache(std::vector<ComplexField>, _momphName, 1, 
              par().mom.size(), envGetGrid(ComplexField));
     envTmpLat(ComplexField, "coor");
     envTmp(Computation, "computation", 1, envGetGrid(FermionField), 
-           env().getNd() - 1, mom_.size(), gammas_.size(), par().block, 
-           par().cacheBlock, this);
+           env().getNd() - 1, _mom.size(), _gammas.size(), par().block, this);
     envTmp(std::vector<FermionField>, "dummy", 1, 0, envGetGrid(FermionField));
 }
 
@@ -250,9 +252,8 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         N_i += (isCheckerBoarded?2:1)*lowModes.evec.size();
         N_j += (isCheckerBoarded?2:1)*lowModes.evec.size();
     }
-    int nmom       = mom_.size();
+    int nmom       = _mom.size();
     int block      = par().block;
-    int cacheBlock = par().cacheBlock;
 
     if (N_i < block || N_j < block)
     {
@@ -266,13 +267,13 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         LOG(Message) << "Left: '" << par().left << "' Right: '" << par().right << "'" << std::endl;
     LOG(Message) << "Momenta:" << std::endl;
 
-    for (auto &p: mom_)
+    for (auto &p: _mom)
     {
         LOG(Message) << "  " << p << std::endl;
     }
     LOG(Message) << "Spin bilinears:" << std::endl;
 
-    for (auto &g: gammas_)
+    for (auto &g: _gammas)
     {
         LOG(Message) << "  " << StagGamma::GetName(g) << std::endl;
     }
@@ -281,9 +282,9 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
                  << " (filesize " << sizeString(nt*N_i*N_j*sizeof(HADRONS_A2AM_IO_TYPE)) 
                  << "/momentum/bilinear)" << std::endl;
 
-    auto &ph = envGet(std::vector<ComplexField>, momphName_);
+    auto &ph = envGet(std::vector<ComplexField>, _momphName);
 
-    if (!hasPhase_)
+    if (!_hasPhase)
     {
         startTimer("Momentum phases");
         for (unsigned int j = 0; j < nmom; ++j)
@@ -293,14 +294,14 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
 
             envGetTmp(ComplexField, coor);
             ph[j] = Zero();
-            for(unsigned int mu = 0; mu < mom_[j].size(); mu++)
+            for(unsigned int mu = 0; mu < _mom[j].size(); mu++)
             {
                 LatticeCoordinate(coor, mu);
-                ph[j] = ph[j] + (mom_[j][mu]/env().getDim(mu))*coor;
+                ph[j] = ph[j] + (_mom[j][mu]/env().getDim(mu))*coor;
             }
             ph[j] = exp((Real)(2*M_PI)*i*ph[j]);
         }
-        hasPhase_ = true;
+        _hasPhase = true;
         stopTimer("Momentum phases");
     }
 
@@ -308,10 +309,10 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     {
         std::stringstream ss;
 
-        ss << StagGamma::GetName(gammas_[g]) << "_";
-        for (unsigned int mu = 0; mu < mom_[m].size(); ++mu)
+        ss << StagGamma::GetName(_gammas[g]) << "_";
+        for (unsigned int mu = 0; mu < _mom[m].size(); ++mu)
         {
-            ss << mom_[m][mu] << ((mu == mom_[m].size() - 1) ? "" : "_");
+            ss << _mom[m][mu] << ((mu == _mom[m].size() - 1) ? "" : "_");
         }
 
         return ss.str();
@@ -327,12 +328,12 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     {
         A2AMesonFieldMILCMetadata md;
 
-        for (auto pmu: mom_[m])
+        for (auto pmu: _mom[m])
         {
             md.momentum.push_back(pmu);
         }
-        md.gamma_spin = gammas_[g].first;
-        md.gamma_taste = gammas_[g].second;
+        md.gamma_spin = _gammas[g].first;
+        md.gamma_taste = _gammas[g].second;
         
         return md;
     };
@@ -344,7 +345,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         U = env().getObject<GaugeField>(par().spinTaste.gauge);
     }
     
-    Kernel      kernel(gammas_, ph, envGetGrid(FermionField),U);
+    Kernel      kernel(_gammas, ph, envGetGrid(FermionField),U);
 
     if(hasLowModes) {
         auto &lowModes = envGet(Pack, par().lowModes);
