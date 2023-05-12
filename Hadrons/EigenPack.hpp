@@ -519,7 +519,7 @@ public:
     }    
 public:
     std::vector<Field> &evec;
-    std::vector<ComplexD> eval;
+    Vector<ComplexD> eval;
     RealD mass;
 };
 

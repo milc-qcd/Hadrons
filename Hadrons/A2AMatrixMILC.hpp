@@ -148,7 +148,7 @@ public:
                  const FilenameFn &filenameFn,
                  const MetadataFn &metadataFn,
                  std::vector<Field> *evecs = nullptr,
-                 const std::vector<ComplexD> &evals = {},
+                 const Vector<ComplexD> &evals = {},
                  const SwapFn *swapEvecCheckerFn = nullptr);
 private:
     // I/O handler
@@ -645,7 +645,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 ::execute(const std::vector<Field> &left, const std::vector<Field> &right,
           A2AKernelMILC<T, Field> &kernel, const FilenameFn &ionameFn,
           const FilenameFn &filenameFn, const MetadataFn &metadataFn,
-          std::vector<Field> *evecs,const std::vector<ComplexD> &evals, const SwapFn *swapEvecCheckerFn)
+          std::vector<Field> *evecs,const Vector<ComplexD> &evals, const SwapFn *swapEvecCheckerFn)
 {
     //////////////////////////////////////////////////////////////////////////
     // i,j   is first  loop over _blockSize factors
@@ -713,6 +713,9 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                     l_temp_o = &lowBuf_i[0];
                     l_temp_e = &evecs->at(evec_i);
                 }
+            } else {
+                l_temp_e = &evecs->at(evec_i);
+                l_temp_o = nullptr;
             }
         } else {
             N_ii = MIN(N_i-i,_blockSize);
@@ -792,7 +795,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 
             {
                 int next = _next,nstr=_nstr,Lt=_nt;
-                T* evals_p = (ComplexD*)&evals[0];
+                T* evals_p = (T*)&evals[0];
                 TIo* result_p = mBuf.data();
                 T* cache_p = mBlock.data();
                 accelerator_for(jj,N_jj,1,{
@@ -806,7 +809,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 
                         if (low_j) {
                             coeff = coeff/evals_p[evec_j+(jj/2)];
-                            if (jj % 2 == 0)
+                            if (jj % 2 == 1)
                                 coeff = conjugate(coeff);
                         }
                     }

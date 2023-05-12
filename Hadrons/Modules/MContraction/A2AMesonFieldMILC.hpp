@@ -117,7 +117,7 @@ private:
     const std::vector<LatticeComplex> &_mom;
     GridBase                          *_grid;
     double                            _vol;
-    const std::vector<StagGamma::SpinTastePair>& _gamma;
+    const std::vector<StagGamma::SpinTastePair> _gamma;
     GaugeField *_U = nullptr;
 };
 
