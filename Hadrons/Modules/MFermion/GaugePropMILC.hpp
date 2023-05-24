@@ -314,6 +314,11 @@ void TGaugePropMILC<FImpl>::executeHelper(const TField &src)
         // Apply gamma to source
         if (hasGammas_) {
             gamma.setSpinTaste(pair);
+            if (par().spinTaste.applyG5) {
+                StagGamma g5(StagGamma::StagAlgebra::G5,StagGamma::StagAlgebra::G5);
+                gamma = gamma*g5;
+            }
+
             ext = gamma.getName();
 
             LOG(Message) << "Solve for '" << par().source << "' with spin-taste: '" << gamma.getName() << "'" << std::endl;

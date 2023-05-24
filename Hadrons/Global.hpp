@@ -387,8 +387,9 @@ struct Correlator: Serializable
 struct SpinTasteParams : Serializable {
   GRID_SERIALIZABLE_CLASS_MEMBERS(SpinTasteParams,
           std::string, gammas,
-          std::string, gauge);
-  SpinTasteParams(void): gammas(""), gauge("") {}
+          std::string, gauge,
+          bool,        applyG5);
+  SpinTasteParams(void): gammas(""), gauge(""), applyG5(false) {}
 };
 
 // check if grid is initlialised

@@ -177,6 +177,17 @@ void TStagMeson<FImpl>::setup(void)
 
     if (!par().sinkSpinTaste.gammas.empty()) {
         sinkGammas_ = strToVec<StagGamma::SpinTastePair>(par().sinkSpinTaste.gammas);
+
+        if (par().sinkSpinTaste.applyG5) {
+            StagGamma st;
+            StagGamma g5(StagGamma::StagAlgebra::G5,StagGamma::StagAlgebra::G5);
+            for (auto &g : sinkGammas_) {
+                st.setSpinTaste(g);
+                st = st*g5;
+                g.first = st._spin;
+                g.second = st._taste;
+            }
+        }
     } else {
         sinkGammas_.push_back(StagGamma::SpinTastePair(StagGamma::StagAlgebra::G1,StagGamma::StagAlgebra::G1));
     }

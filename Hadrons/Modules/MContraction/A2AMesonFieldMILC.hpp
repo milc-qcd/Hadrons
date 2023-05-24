@@ -201,6 +201,16 @@ void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
 {
     _gammas = strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas);
 
+    if (par().spinTaste.applyG5) {
+        StagGamma st;
+        StagGamma g5(StagGamma::StagAlgebra::G5,StagGamma::StagAlgebra::G5);
+        for (auto &g : _gammas) {
+            st.setSpinTaste(g);
+            st = st*g5;
+            g.first = st._spin;
+            g.second = st._taste;
+        }
+    }
     _mom.clear();
 
     for (auto &pstr: par().mom)
