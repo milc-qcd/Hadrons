@@ -653,7 +653,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     //////////////////////////////////////////////////////////////////////////
 
     std::vector<Field>    lowBuf_i, lowBuf_j;
-    commVector<T>           mCache;
+    Vector<T>           mCache;
     Vector<TIo>           mBuf;
 
     mCache.resize(_nt*_next*_nstr*_blockSize*_blockSize);
