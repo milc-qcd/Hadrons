@@ -48,7 +48,6 @@ class A2AMesonFieldMILCPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(A2AMesonFieldMILCPar,
-                                    int, cacheBlock,
                                     int, block,
                                     std::string, lowModes,
                                     std::string, left,
@@ -111,7 +110,7 @@ private:
 
  template<typename TFImpl, typename ... Args>
  IfStag<TFImpl,void> MesonFunction(Args && ... args){
-     A2Autils<FImpl>::StagMesonFieldLocalMILC(args...);
+     A2Autils<FImpl>::StagMesonFieldAccumLocalMILC(args...);
  }
 
 private:
@@ -241,8 +240,7 @@ void TA2AMesonFieldMILC<FImpl,Pack>::setup(void)
              par().mom.size(), envGetGrid(ComplexField));
     envTmpLat(ComplexField, "coor");
     envTmp(Computation, "computation", 1, envGetGrid(FermionField), 
-           env().getNd() - 1, mom_.size(), gamma_.size(), par().block, 
-           par().cacheBlock, this);
+           env().getNd() - 1, mom_.size(), gamma_.size(), par().block, this);
     envTmp(std::vector<FermionField>, "dummy", 1, 0, envGetGrid(FermionField));
 }
 
@@ -277,7 +275,6 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
     int ngamma     = gamma_.size();
     int nmom       = mom_.size();
     int block      = par().block;
-    int cacheBlock = par().cacheBlock;
 
     if (N_i < block || N_j < block)
     {
