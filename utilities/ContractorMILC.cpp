@@ -348,7 +348,8 @@ int main(int argc, char* argv[])
                     std::string filename = p.epack.fileStem + "." + std::to_string(traj) + (p.epack.multiFile ? "" : ".bin");
                     evalMap.emplace(p.name,std::vector<ComplexD>(2 * p.epack.nEigs));
 
-                    EigenPackIo::readEvals(evals,record,0,p.epack.nEigs,filename,p.epack.multiFile);
+                    EigenPackIo::readEvals(evals,record,0,p.epack.nEigs,filename,
+					   p.epack.multiFile, grid);
 
                     for (int i = p.epack.nEigs; i > p.njOffset/2; i--) {
                         int newIndex = 2*i-p.njOffset-1;
