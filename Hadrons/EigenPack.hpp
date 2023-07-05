@@ -61,11 +61,21 @@ struct VecRecord: Serializable
 
 namespace EigenPackIo
 {
-    inline void readHeader(PackRecord &record, ScidacReader &binReader)
+  inline void readHeader(PackRecord &record, ScidacReader &binReader, GridBase *grid)
     {
         std::string recordXml;
+	int len = 0;
 
-        binReader.readLimeObject(recordXml, SCIDAC_FILE_XML);
+	if(grid->IsBoss()){
+	  binReader.readLimeObject(recordXml, SCIDAC_FILE_XML);
+	  len = recordXml.size();
+	}
+	
+	grid->Broadcast(grid->BossRank(), (void *)&len, sizeof(len));
+	recordXml.resize(len);
+	grid->Broadcast(grid->BossRank(), (void *)recordXml.c_str(), len);
+	binReader.synchronizeLimePosition(grid);
+	
         XmlReader xmlReader(recordXml, true, "eigenPackPar");
         xmlReader.push();
         xmlReader.readCurrentSubtree(record.operatorXml);
@@ -109,15 +119,21 @@ namespace EigenPackIo
     }
 
     inline void readEval(RealD &eval, const unsigned int index,
-                     ScidacReader &binReader)
+			 ScidacReader &binReader, GridBase *grid)
     {
         VecRecord vecRecord;
 
         LOG(Message) << "Reading eigenvalue " << index << std::endl;
-        binReader.skipPastObjectRecord(std::string(GRID_FORMAT));
-        binReader.readLimeObject(vecRecord,vecRecord.SerialisableClassName(),std::string(SCIDAC_RECORD_XML));
-        binReader.skipPastObjectRecord(std::string(SCIDAC_PRIVATE_RECORD_XML));
-        binReader.skipPastBinaryRecord();
+	if(grid->IsBoss())
+	  binReader.skipPastObjectRecord(std::string(GRID_FORMAT));
+	binReader.readLimeObjectBroadcast(vecRecord, vecRecord.SerialisableClassName(),
+					  std::string(SCIDAC_RECORD_XML), grid);
+	if(grid->IsBoss()){
+	  binReader.skipPastObjectRecord(std::string(SCIDAC_PRIVATE_RECORD_XML));
+	  binReader.skipPastBinaryRecord();
+	}
+
+	binReader.synchronizeLimePosition(grid);
 
         if (vecRecord.index != index)
         {
@@ -128,11 +144,13 @@ namespace EigenPackIo
         eval = vecRecord.eval;
     }
 
-    inline void skipElements(ScidacReader &binReader, const unsigned int n)
+  inline void skipElements(ScidacReader &binReader, const unsigned int n, GridBase *grid)
     {
         for (unsigned int i = 0; i < n; ++i)
         {
+	  if(grid->IsBoss())
             binReader.skipScidacFieldRecord();
+	  binReader.synchronizeLimePosition(grid);
         }
     }
 
@@ -144,6 +162,7 @@ namespace EigenPackIo
     {
         std::unique_ptr<TIo> ioBuf{nullptr};
         ScidacReader         binReader;
+	GridBase             *grid = evec[0].Grid();
 
         if (typeHash<T>() != typeHash<TIo>())
         {
@@ -162,7 +181,7 @@ namespace EigenPackIo
             {
                 fullFilename = filename + "/v" + std::to_string(k) + ".bin";
                 binReader.open(fullFilename);
-                readHeader(record, binReader);
+                readHeader(record, binReader, grid);
                 readElement(evec[k - ki], eval[k - ki], k, binReader, ioBuf.get());
                 binReader.close();
             }
@@ -170,8 +189,8 @@ namespace EigenPackIo
         else
         {
             binReader.open(filename);
-            readHeader(record, binReader);
-            skipElements(binReader, ki);
+            readHeader(record, binReader, grid);
+            skipElements(binReader, ki, grid);
             for(int k = ki; k < kf; ++k) 
             {
                 readElement(evec[k - ki], eval[k - ki], k, binReader, ioBuf.get());
@@ -181,8 +200,9 @@ namespace EigenPackIo
     }
 
     static void readEvals(std::vector<RealD> &eval, PackRecord &record, 
-                         const unsigned int ki, const unsigned int kf,
-                         const std::string filename,  bool multiFile)
+			  const unsigned int ki, const unsigned int kf,
+			  const std::string filename,  bool multiFile,
+			  GridBase *grid)
     {
         ScidacReader         binReader;
 
@@ -194,17 +214,17 @@ namespace EigenPackIo
             {
                 fullFilename = filename + "/v" + std::to_string(k) + ".bin";
                 binReader.open(fullFilename);
-                readHeader(record, binReader);
-                readEval(eval[k - ki], k, binReader);
+                readHeader(record, binReader, grid);
+                readEval(eval[k - ki], k, binReader, grid);
                 binReader.close();
             }
         } else {
             binReader.open(filename);
-            readHeader(record, binReader);
-            skipElements(binReader, ki);
+            readHeader(record, binReader, grid);
+            skipElements(binReader, ki, grid);
             for(int k = ki; k < kf; ++k) 
             {
-                readEval(eval[k - ki], k, binReader);
+	      readEval(eval[k - ki], k, binReader, grid);
             }
             binReader.close();
         }
@@ -240,7 +260,7 @@ namespace EigenPackIo
         vecRecord.index = index;
         if ((ioBuf == nullptr) || (testBuf == nullptr))
         {
-            binWriter.writeScidacFieldRecord(evec, vecRecord, DEFAULT_ASCII_PREC);
+	  binWriter.writeScidacFieldRecord(evec, vecRecord, DEFAULT_ASCII_PREC);
         }
         else
         {
