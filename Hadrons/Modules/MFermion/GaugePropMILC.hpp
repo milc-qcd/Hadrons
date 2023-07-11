@@ -84,11 +84,12 @@ protected:
     void executeHelper(const TField &src);
     virtual void execute(void);
 private:
+    void parseGammas(void);
     void solveField(FermionField &prop, const FermionField &src, const FermionField* guess = nullptr);
     void solveField(PropagatorField &prop, const PropagatorField &src, const PropagatorField* guess = nullptr);
 private:
-    bool hasGammas_, hasGuess_;
-    std::vector<StagGamma::SpinTastePair> gammaList_;
+    bool _hasGuess;
+    std::map<std::string,StagGamma::SpinTastePair> _mapGammas;
 };
 
 MODULE_REGISTER_TMP(StagGaugeProp, TGaugePropMILC<STAGIMPL>, MFermion);
@@ -104,17 +105,33 @@ TGaugePropMILC<FImpl>::TGaugePropMILC(const std::string name)
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
+void TGaugePropMILC<FImpl>::parseGammas(void) {
+    _mapGammas.clear();
+    if(! par().spinTaste.gammas.empty()) {
+        auto gamma_vals = StagGamma::ParseSpinTasteString(par().spinTaste.gammas,par().spinTaste.applyG5);
+        auto gamma_keys = StagGamma::ParseSpinTasteString(par().spinTaste.gammas);
+        for (int i = 0; i < gamma_vals.size(); ++i)
+        {
+            _mapGammas.insert({StagGamma::GetName(gamma_keys[i]),gamma_vals[i]});
+        }
+    }
+}
+template <typename FImpl>
 std::vector<std::string> TGaugePropMILC<FImpl>::getInput(void)
 {
+
+    parseGammas();
+
     std::vector<std::string> in = {par().source, par().solver};
 
     if (!par().spinTaste.gauge.empty()) {
         in.push_back(par().spinTaste.gauge);
     }
 
-    if (!par().guess.empty() && !par().spinTaste.gammas.empty()) {
-        for (auto gamma : strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas)) {
-            in.push_back(par().guess+StagGamma::GetName(gamma));
+    if (!par().guess.empty() && !_mapGammas.empty()) {
+        for (auto iter = _mapGammas.begin(); iter != _mapGammas.end(); ++iter)
+        {
+            in.push_back(par().guess+iter->first);
         }
     } else if (!par().guess.empty()) {
         in.push_back(par().guess);
@@ -126,11 +143,13 @@ std::vector<std::string> TGaugePropMILC<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TGaugePropMILC<FImpl>::getOutput(void)
 {
+    parseGammas();
     std::vector<std::string> out;
 
-    if (!par().spinTaste.gammas.empty()) {
-        for (auto gamma : strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas)) {
-            out.push_back(getName()+StagGamma::GetName(gamma));
+    if (!_mapGammas.empty()) {
+        for (auto iter = _mapGammas.begin(); iter != _mapGammas.end(); ++iter)
+        {
+            out.push_back(getName()+iter->first);
         }
     } else {
         out.push_back(getName());
@@ -144,43 +163,39 @@ template <typename FImpl>
 template <typename TField>
 void TGaugePropMILC<FImpl>::setupHelper() {
     envTmpLat(TField, "field");
-    std::string ext;
 
-    if (hasGammas_) {
-        gammaList_ = strToVec<StagGamma::SpinTastePair>(par().spinTaste.gammas);
-    } else {
-        gammaList_.push_back(StagGamma::SpinTastePair(StagGamma::StagAlgebra::undef,StagGamma::StagAlgebra::undef));
-    }
+    // Create an output field for each gamma
+    auto initializeOutput = [this](std::string ext){
+        envCreate(TField, getName()+ext, 1, envGetGrid(TField));
+        auto &sol = envGet(TField, getName()+ext);
+        sol = Zero();
+    };
 
-    if (envHasType(TField,par().source)) {
-
-        // Create an output field for each gamma
-        for (auto& pair : gammaList_) {
-            ext = "";
-            if (hasGammas_) {
-                ext = StagGamma::GetName(pair);
-            }
-
-            envCreate(TField, getName()+ext, 1, envGetGrid(TField));
-            auto &sol = envGet(TField, getName()+ext);
-            sol = Zero();
-        }
-    } else {
+    // Create an output field for each gamma
+    auto initializeVectorOutput = [this](std::string ext){
         auto &src = envGet(std::vector<TField>, par().source);
+        envCreate(std::vector<TField>, getName()+ext, 1, std::vector<TField>(src.size(),envGetGrid(TField)));
 
-        // Create an output field for each gamma
-        for (auto& pair : gammaList_) {
-            ext = "";
-            if (hasGammas_) {
-                ext = StagGamma::GetName(pair);
-            }
+        auto &sol = envGet(std::vector<TField>, getName()+ext);
+        for (auto & s:sol) {
+            s = Zero();
+        }
+    };
 
-            envCreate(std::vector<TField>, getName()+ext, 1, std::vector<TField>(src.size(),envGetGrid(TField)));
 
-            auto &sol = envGet(std::vector<TField>, getName()+ext);
-            for (auto & s:sol) {
-                s = Zero();
-            }
+    for (auto iter = _mapGammas.begin(); iter != _mapGammas.end(); ++iter)
+    {
+        if (envHasType(TField,par().source)) {
+            initializeOutput(iter->first);
+        } else {
+            initializeVectorOutput(iter->first);
+        }
+    }
+    if (_mapGammas.empty()) {
+        if (envHasType(TField,par().source)) {
+            initializeOutput("");
+        } else {
+            initializeVectorOutput("");
         }
     }
 }
@@ -188,8 +203,7 @@ void TGaugePropMILC<FImpl>::setupHelper() {
 template <typename FImpl>
 void TGaugePropMILC<FImpl>::setup(void)
 {
-    hasGammas_ = !par().spinTaste.gammas.empty();
-    hasGuess_ = !par().guess.empty();
+    _hasGuess = !par().guess.empty();
 
     if (envHasType(PropagatorField,par().source) || envHasType(std::vector<PropagatorField>,par().source)) {
 
@@ -257,14 +271,14 @@ EnableIf<is_lattice<TField>,void> TGaugePropMILC<FImpl>::executeHelper(TField &s
 
     const TField* temp;
 
-    if (hasGammas_) {
+    if (_mapGammas.empty()) {
+        temp = &src;
+    } else {
         gamma(field,src);
         temp = &field;
-    } else {
-        temp = &src;
     }
 
-    if (hasGuess_) {
+    if (_hasGuess) {
         solveField(sol,*temp,guess);
     } else {
         solveField(sol,*temp);
@@ -280,14 +294,14 @@ EnableIf<is_lattice<TField>,void> TGaugePropMILC<FImpl>::executeHelper(std::vect
     for (int i = 0; i < src.size(); i++) {
 
         const TField* temp;
-        if (hasGammas_) {
+        if (_mapGammas.empty()) {
+            temp = &src[i];
+        } else {
             gamma(field,src[i]);
             temp = &field;
-        } else {
-            temp = &src[i];
         }
 
-        if (hasGuess_) {
+        if (_hasGuess) {
             const TField* guessTemp = &(guess->at(i));
             solveField(sol[i],*temp,guessTemp);
         } else {
@@ -300,33 +314,12 @@ template <typename FImpl>
 template<typename TField>
 void TGaugePropMILC<FImpl>::executeHelper(const TField &src)
 {
-    std::string ext;
-
     StagGamma gamma;
-    if (hasGammas_ && !par().spinTaste.gauge.empty()) {
-        auto& Umu = envGet(GaugeField,par().spinTaste.gauge);
-        gamma.setGaugeField(Umu);
-    }
 
-    for (auto& pair : gammaList_) {
-        ext = "";
-
-        // Apply gamma to source
-        if (hasGammas_) {
-            gamma.setSpinTaste(pair);
-            if (par().spinTaste.applyG5) {
-                StagGamma g5(StagGamma::StagAlgebra::G5,StagGamma::StagAlgebra::G5);
-                gamma = gamma*g5;
-            }
-
-            ext = gamma.getName();
-
-            LOG(Message) << "Solve for '" << par().source << "' with spin-taste: '" << gamma.getName() << "'" << std::endl;
-        }
-
+    auto solveFunc = [this, &src, &gamma](std::string ext) {
         auto& sol = envGet(TField,getName()+ext);
 
-        if (hasGuess_) {
+        if (!par().guess.empty()) {
             if (!envHasType(TField,par().guess+ext)) {
                HADRONS_ERROR(Argument, "guess parameter '" + par().guess + ext + "' must have same data structure as source, '"+par().source+"'");
             }
@@ -335,6 +328,26 @@ void TGaugePropMILC<FImpl>::executeHelper(const TField &src)
         } else {
             executeHelper(sol,src,gamma);
         }
+
+    };
+
+    if (!(_mapGammas.empty() || par().spinTaste.gauge.empty())) {
+        auto& Umu = envGet(GaugeField,par().spinTaste.gauge);
+        gamma.setGaugeField(Umu);
+    }
+
+    for (auto iter = _mapGammas.begin(); iter != _mapGammas.end(); ++iter)
+    {
+        // Apply gamma to source
+        gamma.setSpinTaste(iter->second);
+        LOG(Message) << "Solve for '" << par().source << "' with spin-taste: '" << iter->first << "'" << std::endl;
+
+        solveFunc(iter->first);
+    }
+
+    if (_mapGammas.empty()) {
+        gamma.setSpinTaste(StagGamma::StagAlgebra::G1,StagGamma::StagAlgebra::G1);
+        solveFunc("");
     }
 }
 

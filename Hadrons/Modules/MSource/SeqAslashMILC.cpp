@@ -1,10 +1,9 @@
 /*
- * StagMeson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SeqAslashMILC.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/StagMeson.hpp>
+#include <Hadrons/Modules/MSource/SeqAslashMILC.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MSource;
 
-template class Grid::Hadrons::MContraction::TStagMeson<STAGIMPL>;
+template class Grid::Hadrons::MSource::TSeqAslashMILC<STAGIMPL>;
 

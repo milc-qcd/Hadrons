@@ -137,10 +137,10 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
     rbFerm.Checkerboard() = cb;                                                       \
     rbFermNeg.Checkerboard() = cbNeg;                                                 \
     MrbFermNeg.Checkerboard() = cb;                                                   \
-                                                \
-    pickCheckerboard(cb,rbFerm,source);                                                  \
-    pickCheckerboard(cbNeg,rbFermNeg,source);                                            \
-                                                \
+    {                                            \
+      pickCheckerboard(cb,rbFerm,source);                                                  \
+      pickCheckerboard(cbNeg,rbFermNeg,source);                                            \
+    }                                           \
     mat.MeooeDag(rbFermNeg, MrbFermNeg); \
                                                 \
     for (int k=epack.evec.size()-1;k >= 0;k--) {                                      \
@@ -158,10 +158,10 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
     }                                                                                 \
                                                 \
     mat.Meooe(rbTempNeg, rbFermNeg); \
-                                                \
-    setCheckerboard(sol,rbTemp);                                                      \
-    setCheckerboard(sol,rbFermNeg);                                                   \
-                                                \
+    {                                            \
+      setCheckerboard(sol,rbTemp);                                                      \
+      setCheckerboard(sol,rbFermNeg);                                                   \
+    }                                            \
     sol *= norm;
 
 template <typename FImpl, typename Pack>
