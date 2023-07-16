@@ -78,7 +78,7 @@ public:
     virtual void operator()(A2AMatrixSet<T> &m, const Field *left_e, const Field *left_o, 
                             const Field *right_e, const Field *right_o,
                             const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr) = 0;
-    virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
+    virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej, int cbDiv=1) = 0;
     virtual double bytes(const unsigned int blockSizei, const unsigned int blockSizej) = 0;
 };
 
@@ -783,7 +783,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             kernel(mBlock, l_temp_e, l_temp_o, r_temp_e, r_temp_o, _orthogDim, &t);
             STOP_TIMER("kernel");
             t_kernel += t;
-            flops    += kernel.flops(N_ii, N_jj);
+            flops    += kernel.flops(N_ii, N_jj,(low_j?Ncb:1)*(low_i?Ncb:1));
             bytes    += kernel.bytes(N_ii, N_jj);
 
             t_gsum = -usecond();

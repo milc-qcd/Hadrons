@@ -73,12 +73,10 @@ class MesonFieldKernelMILC: public A2AKernelMILC<T, typename FImpl::FermionField
 public:
     FERM_TYPE_ALIASES(FImpl,);
 public:
-    MesonFieldKernelMILC(const std::vector<StagGamma::SpinTastePair> &gamma, const std::vector<LatticeComplex> &mom,
-                     GridBase *grid, GaugeField* U = nullptr)
-    : _gamma(gamma), _mom(mom), _grid(grid), _U(U)
-    {
+    MesonFieldKernelMILC(GridBase *grid, const std::vector<StagGamma::SpinTastePair>& gammas, const std::vector<ComplexField> &mom, LatticeGaugeField* U = nullptr, GridBase *cbGrid = nullptr)
+    :_worker(grid,gammas,mom,U,cbGrid) {
         _vol = 1.;
-        for (auto &d: _grid->GlobalDimensions())
+        for (auto &d: grid->GlobalDimensions())
         {
             _vol *= d;
         }
@@ -89,18 +87,20 @@ public:
                             const FermionField *right_e, const FermionField *right_o,
                             const unsigned int orthogDim, double *t = nullptr, double *tg = nullptr)
     {
-        MesonFunction<FImpl>(m, left_e, left_o, right_e, right_o, _gamma, _mom, orthogDim, _U, t);
+        MesonFunction<FImpl>(m, left_e, left_o, right_e, right_o, orthogDim, t);
     }
 
-    virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej)
+    virtual double flops(const unsigned int blockSizei, const unsigned int blockSizej, int cbDiv = 1)
     {
-        return _vol*(2*8.0+6.0+8.0*_mom.size())*blockSizei*blockSizej*_gamma.size();
+
+        return _vol/cbDiv*(_worker.getFlops())*blockSizei*blockSizej;
     }
 
     virtual double bytes(const unsigned int blockSizei, const unsigned int blockSizej)
     {
-        return _vol*(12.0*sizeof(T))*blockSizei*blockSizej
-               +  _vol*(2.0*sizeof(T)*_mom.size())*blockSizei*blockSizej*_gamma.size();
+       // return _vol*(12.0*sizeof(T))*blockSizei*blockSizej
+               // +  _vol*(2.0*sizeof(T)*_mom.size())*blockSizei*blockSizej*_gamma.size();
+        return -1.0;
     }
 private:
  template<typename TFImpl, typename ... Args>
@@ -110,15 +110,12 @@ private:
 
  template<typename TFImpl, typename ... Args>
  IfStag<TFImpl,void> MesonFunction(Args && ... args){
-    A2AutilsMILC<TFImpl>::StagMesonFieldNoGlobalSum(args...);
+    _worker.StagMesonFieldNoGlobalSum(args...);
  }
 
 private:
-    const std::vector<LatticeComplex> &_mom;
-    GridBase                          *_grid;
-    double                            _vol;
-    const std::vector<StagGamma::SpinTastePair> _gamma;
-    GaugeField *_U = nullptr;
+    double               _vol;
+    A2AWorkerMILC<FImpl> _worker;
 };
 
 template <typename FImpl, typename Pack>
@@ -345,12 +342,11 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
         U = env().getObject<GaugeField>(par().spinTaste.gauge);
     }
     
-    Kernel      kernel(_gammas, ph, envGetGrid(FermionField),U);
-
     if(hasLowModes) {
         auto &lowModes = envGet(Pack, par().lowModes);
 
         if (isCheckerBoarded) {
+            Kernel kernel(envGetGrid(FermionField), _gammas, ph, U, envGetRbGrid(FermionField));
             auto &action      = envGet(FMat, par().action);
 
             std::function<void(int)> swapEvecCheckerFn = [this,&action, &lowModes](int index)
@@ -368,9 +364,11 @@ void TA2AMesonFieldMILC<FImpl,Pack>::execute(void)
 
             computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModes.evec, lowModes.eval, &swapEvecCheckerFn);
         } else{
+            Kernel kernel(envGetGrid(FermionField), _gammas, ph, U);
             computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn, &lowModes.evec, lowModes.eval);
         }
     } else {
+        Kernel kernel(envGetGrid(FermionField), _gammas, ph, U);
         computation.execute(*left, *right, kernel, ionameFn, filenameFn, metadataFn);
     }
 }
