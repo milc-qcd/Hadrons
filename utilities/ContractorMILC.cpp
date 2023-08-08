@@ -351,11 +351,12 @@ int main(int argc, char* argv[])
                     EigenPackIo::readEvals(evals,record,0,p.epack.nEigs,filename,
 					   p.epack.multiFile, grid);
 
+                    int newIndex = 2*p.epack.nEigs-p.njOffset-1;
                     for (int i = p.epack.nEigs; i > p.njOffset/2; i--) {
-                        int newIndex = 2*i-p.njOffset-1;
                         ComplexD newVal = ComplexD(2.0*p.epack.massOld,sqrt(evals[i-1]))/ComplexD(2.0*p.epack.massNew,sqrt(evals[i-1]));
                         evalMap.at(p.name)[newIndex-1] = newVal;
                         evalMap.at(p.name)[newIndex] = conjugate(newVal);
+                        newIndex -= 2;
                     }
                 }
             }
