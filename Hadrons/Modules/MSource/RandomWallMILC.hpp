@@ -163,7 +163,7 @@ void TRandomWallMILC<FImpl>::execute(void)
         HADRONS_ERROR(Logic,"Parameter t0 >= tStep");
     }
 
-    int nSlices = nt/tStep;
+    int nSlices = nt/std::min(tStep,nt);
     int nVecs   = nSources*nSlices;
 
     time_shift.resize(nVecs,0);
