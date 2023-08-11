@@ -158,6 +158,8 @@ private:
     GridBase              *_grid;
     unsigned int          _orthogDim, _nt, _next, _nstr, _blockSize;
     std::vector<IoHelper> _nodeIo;
+    std::vector<Field>    _lowBuf_i, _lowBuf_j;
+
 };
 
 /******************************************************************************
@@ -652,7 +654,6 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     // Total index is sum of these  i+ii+iii etc...
     //////////////////////////////////////////////////////////////////////////
 
-    std::vector<Field>    lowBuf_i, lowBuf_j;
     Vector<T>           mCache;
     Vector<TIo>           mBuf;
 
@@ -665,7 +666,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
 
     int N_low = 0;
     if (evecs != nullptr) {
-        norm = 1.0/::sqrt(norm2(evecs->at(0))); //Calculate norm of eigenvectors
+        norm  = 1.0/::sqrt(norm2(evecs->at(0))); //Calculate norm of eigenvectors
         N_low = Ncb*evecs->size(); // N_low is the number of evecs for M + evecs for Mdag
     }
 
@@ -682,8 +683,8 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             HADRONS_ERROR(Implementation, "Blocksize must be divisible by 2 for checkerboarded low modes");
         }
 
-        lowBuf_i.resize(_blockSize/2,evecs->at(0).Grid()); // storage for caching checkerboards
-        lowBuf_j.resize(_blockSize/2,evecs->at(0).Grid());
+        _lowBuf_i.resize(_blockSize/2,evecs->at(0).Grid()); // storage for caching checkerboards
+        _lowBuf_j.resize(_blockSize/2,evecs->at(0).Grid());
     }
 
     int NBlock_i = N_i/_blockSize + (((N_i % _blockSize) != 0) ? 1 : 0); // Round up on the number of blocks to compute
@@ -692,73 +693,73 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     bool low_i, low_j;
     int i, j, evec_i, evec_j, N_ii, N_jj;
 
-    i = 0, evec_i = 0;
-    while (i < N_i) { // While we still have bra vectors to contract
+    j = 0, evec_j = 0;
+    while (j < N_j) { // While we still have bra vectors to contract
 
-        low_i = i < N_low;
+        low_j = j < N_low;
 
-        const Field *l_temp_e, *l_temp_o;
-        if (low_i) {
-            N_ii = MIN(N_low-i,_blockSize);
+        const Field *r_temp_e, *r_temp_o;
+        if (low_j) {
+            N_jj = MIN(N_low-j,_blockSize);
 
             if (checkerboarded_low) {
-                for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++) {
-                    lowBuf_i[idxi-evec_i] = evecs->at(idxi); // Cache original evecs to avoid excessive Meooe ops.
-                    (*swapEvecCheckerFn)(idxi); // Swap original evec checkerboard to complementary checkerboard.
+                for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++) {
+                    _lowBuf_j[idxj-evec_j] = evecs->at(idxj); // Cache original evecs to avoid excessive Meooe ops.
+                    (*swapEvecCheckerFn)(idxj); // Swap original evec checkerboard to complementary checkerboard.
                 }
-                if (lowBuf_i[0].Checkerboard() == Even) {
-                    l_temp_e = &lowBuf_i[0];
-                    l_temp_o = &evecs->at(evec_i);
+                if (_lowBuf_j[0].Checkerboard() == Even) {
+                    r_temp_e = &_lowBuf_j[0];
+                    r_temp_o = &evecs->at(evec_j);
                 } else {
-                    l_temp_o = &lowBuf_i[0];
-                    l_temp_e = &evecs->at(evec_i);
+                    r_temp_o = &_lowBuf_j[0];
+                    r_temp_e = &evecs->at(evec_j);
                 }
             } else {
-                l_temp_e = &evecs->at(evec_i);
-                l_temp_o = nullptr;
+                r_temp_e = &evecs->at(evec_j);
+                r_temp_o = nullptr;
             }
         } else {
-            N_ii = MIN(N_i-i,_blockSize);
-            l_temp_e = &left[i-N_low];
-            l_temp_o = nullptr;
+            N_jj = MIN(N_j-j,_blockSize);
+            r_temp_e = &right[j-N_low];
+            r_temp_o = nullptr;
         }
 
-        const Field *r_temp_e,*r_temp_o;
-        j = 0, evec_j = 0;
-        while (j < N_j) { // While we still have ket vectors to contract
+        const Field *l_temp_e,*l_temp_o;
+        i = 0, evec_i = 0;
+        while (i < N_i) { // While we still have ket vectors to contract
 
-            low_j = j < N_low;
+            low_i = i < N_low;
 
-            if (low_j) {
-                N_jj = MIN(N_low-j,_blockSize);
+            if (low_i) {
+                N_ii = MIN(N_low-i,_blockSize);
 
                 if (i == j) {
-                    r_temp_e = l_temp_e;
+                    l_temp_e = r_temp_e;
                     if (checkerboarded_low)
-                        r_temp_o = l_temp_o;
+                        l_temp_o = r_temp_o;
                     else 
-                        r_temp_o = nullptr;
+                        l_temp_o = nullptr;
 
                 } else if (checkerboarded_low){
-                    for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++) {
-                        lowBuf_j[idxj-evec_j] = evecs->at(idxj);
-                        (*swapEvecCheckerFn)(idxj);
+                    for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++) {
+                        _lowBuf_i[idxi-evec_i] = evecs->at(idxi);
+                        (*swapEvecCheckerFn)(idxi);
                     }
-                    if (lowBuf_j[0].Checkerboard() == Even) {
-                        r_temp_e = &lowBuf_j[0];
-                        r_temp_o = &evecs->at(evec_j);
+                    if (_lowBuf_i[0].Checkerboard() == Even) {
+                        l_temp_e = &_lowBuf_i[0];
+                        l_temp_o = &evecs->at(evec_i);
                     } else {
-                        r_temp_o = &lowBuf_j[0];
-                        r_temp_e = &evecs->at(evec_j);
+                        l_temp_o = &_lowBuf_i[0];
+                        l_temp_e = &evecs->at(evec_i);
                     }
                 } else {
-                    r_temp_e = &evecs->at(evec_j);
-                    r_temp_o = nullptr;
+                    l_temp_e = &evecs->at(evec_i);
+                    l_temp_o = nullptr;
                 }
             } else {
-                N_jj = MIN(N_j-j,_blockSize);
-                r_temp_e = &right[j-N_low];
-                r_temp_o = nullptr;
+                N_ii = MIN(N_i-i,_blockSize);
+                l_temp_e = &left[i-N_low];
+                l_temp_o = nullptr;
             }
 
             A2AMatrixSet<T> mBlock(mCache.data(), _next, _nstr, _nt, N_ii, N_jj);
@@ -769,7 +770,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             });
 
             LOG(Message) << "All-to-all matrix block " 
-                         << j/_blockSize + NBlock_j*i/_blockSize + 1 
+                         << i/_blockSize + NBlock_i*j/_blockSize + 1 
                          << "/" << NBlock_i*NBlock_j << " [" << i <<" .. " 
                          << i+N_ii-1 << ", " << j <<" .. " << j+N_jj-1 << "]" 
                          << std::endl;
@@ -889,21 +890,21 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                          << blockSize/ioTime*1.0e6/1024/1024
                          << " MB/s)" << std::endl;
 
-            if (checkerboarded_low && low_j && i != j) {
-                for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++)
-                    evecs->at(idxj) = lowBuf_j[idxj-evec_j];
+            if (checkerboarded_low && low_i && i != j) {
+                for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++)
+                    evecs->at(idxi) = _lowBuf_i[idxi-evec_i];
             }
-            j+=N_jj;
-            evec_j+=(N_jj/Ncb);
-        } // End while (j < N_j) Loop
+            i+=N_ii;
+            evec_i+=(N_ii/Ncb);
+        } // End while (i < N_i) Loop
 
-        if (checkerboarded_low && low_i) {
-            for (int idxi=evec_i;idxi<(MIN(N_low,i+N_ii)/2);idxi++)
-                evecs->at(idxi) = lowBuf_i[idxi-evec_i];
+        if (checkerboarded_low && low_j) {
+            for (int idxj=evec_j;idxj<(MIN(N_low,j+N_jj)/2);idxj++)
+                evecs->at(idxj) = _lowBuf_j[idxj-evec_j];
         }
-        i+=N_ii;
-        evec_i+=(N_ii/Ncb);
-    } // End while (i < N_i) Loop
+        j+=N_jj;
+        evec_j+=(N_jj/Ncb);
+    } // End while (j < N_j) Loop
 }
 
 // I/O handler /////////////////////////////////////////////////////////////////
