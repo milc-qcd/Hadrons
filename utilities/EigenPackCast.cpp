@@ -115,7 +115,7 @@ void convert(const std::string outFilename, const std::string inFilename,
             makeFileDir(outV, gOut);
             binWriter.open(outV);
             binReader.open(inV);
-            EigenPackIo::readHeader(record, binReader);
+            EigenPackIo::readHeader(record, binReader, gIn);
             EigenPackIo::writeHeader(binWriter, record);
             EigenPackIo::readElement<FIn>(bufIn, eval, k, binReader);
             EigenPackIo::writeElement<FIn, FOut>(binWriter, bufIn, eval, k, &bufOut, &testIn);
@@ -138,7 +138,7 @@ void convert(const std::string outFilename, const std::string inFilename,
         makeFileDir(outFilename, gOut);
         binWriter.open(outFilename);
         binReader.open(inFilename);
-        EigenPackIo::readHeader(record, binReader);
+        EigenPackIo::readHeader(record, binReader, gIn);
         EigenPackIo::writeHeader(binWriter, record);
         for(unsigned int k = 0; k < size; ++k)
         {
@@ -152,7 +152,7 @@ void convert(const std::string outFilename, const std::string inFilename,
         {
             LOG(Message) << "-- Test read" << std::endl;
             binReader.open(outFilename);
-            EigenPackIo::readHeader(record, binReader);
+            EigenPackIo::readHeader(record, binReader, gIn);
             for(unsigned int k = 0; k < size; ++k)
             {
                 EigenPackIo::readElement<FOut>(bufOut, eval, k, binReader);
