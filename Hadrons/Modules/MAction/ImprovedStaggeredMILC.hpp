@@ -45,7 +45,6 @@ class ImprovedStaggeredMILCPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(ImprovedStaggeredMILCPar,
-                                    std::string, gauge,
                                     std::string, gaugefat,
                                     std::string, gaugelong,
                                     double     , mass,
@@ -94,7 +93,7 @@ TImprovedStaggeredMILC<FImpl>::TImprovedStaggeredMILC(const std::string name)
 template <typename FImpl>
 std::vector<std::string> TImprovedStaggeredMILC<FImpl>::getInput(void)
 {
-    std::vector<std::string> in = {par().gauge, par().gaugefat, par().gaugelong };
+    std::vector<std::string> in = {par().gaugefat, par().gaugelong };
     
     return in;
 }
@@ -116,11 +115,9 @@ void TImprovedStaggeredMILC<FImpl>::setup(void)
     LOG(Message) << "Using c1=" << par().c1 << std::endl;
     LOG(Message) << "Using c2=" << par().c2 << std::endl;
     LOG(Message) << "Using tadpole u0=" << par().tad << std::endl;
-    LOG(Message) << "Using thin links: " << par().gauge << std::endl;
     LOG(Message) << "Using fat links: " << par().gaugefat << std::endl;
     LOG(Message) << "Using long links: " << par().gaugelong << std::endl;
                  
-    auto &U      = envGet(GaugeField, par().gauge);
     auto &Ufat   = envGet(GaugeField, par().gaugefat);
     auto &Ulong  = envGet(GaugeField, par().gaugelong);
     auto &grid   = *envGetGrid(FermionField);

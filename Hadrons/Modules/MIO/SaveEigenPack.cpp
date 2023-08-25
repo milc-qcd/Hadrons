@@ -1,10 +1,9 @@
 /*
- * StagMeson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LoadEigenPack.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Michael Lynch <michaellynch628@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +23,15 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/StagMeson.hpp>
+#include <Hadrons/Modules/MIO/SaveEigenPack.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MIO;
 
-template class Grid::Hadrons::MContraction::TStagMeson<STAGIMPL>;
-
+template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPL>>;
+template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPL>>;
+#ifdef GRID_DEFAULT_PRECISION_DOUBLE
+template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPLF>>;
+template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPLF>>;
+#endif
