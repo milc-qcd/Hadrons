@@ -142,6 +142,7 @@ void TImprovedStaggeredMILC<FImpl>::setup(void)
 
     auto &fmat = envGetDerived(FMat, ImprovedStaggeredFermion<FImpl>, getName());
     fmat.ImportGaugeSimple(Ulong, Ufat);
+    fmat.ZeroCounters();
 }
 
 // execution ///////////////////////////////////////////////////////////////////
