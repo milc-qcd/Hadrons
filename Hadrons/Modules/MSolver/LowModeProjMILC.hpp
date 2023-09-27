@@ -118,8 +118,10 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
 // C++11 does not support template lambdas so it is easier
 // to make a macro with the solver body
 #define SOLVER_BODY                                                                 \
-    auto &rbTemp = envGet(FermionField,"rbTemp");                                   \
-    auto &rbTempNeg = envGet(FermionField,"rbTempNeg");                             \
+    auto &rbTemp1 = envGet(FermionField,"rbTemp1");                                   \
+    auto &rbTemp2 = envGet(FermionField,"rbTemp2");                                   \
+    auto &rbTempNeg1 = envGet(FermionField,"rbTempNeg1");                             \
+    auto &rbTempNeg2 = envGet(FermionField,"rbTempNeg2");                             \
     auto &rbFerm = envGet(FermionField,"rbFerm");                                   \
     auto &rbFermNeg = envGet(FermionField,"rbFermNeg");                             \
     auto &MrbFermNeg = envGet(FermionField,"MrbFermNeg");                           \
@@ -129,10 +131,14 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
                                                 \
     RealD norm = 1./::sqrt(norm2(epack.evec[0]));                                     \
                                                 \
-    rbTemp = Zero();                                                                  \
-    rbTemp.Checkerboard() = cb;                                                       \
-    rbTempNeg = Zero();                                                               \
-    rbTempNeg.Checkerboard() = cb;                                                    \
+    rbTemp1 = Zero();                                                                  \
+    rbTemp1.Checkerboard() = cb;                                                       \
+    rbTemp2 = Zero();                                                                  \
+    rbTemp2.Checkerboard() = cb;                                                       \
+    rbTempNeg1 = Zero();                                                               \
+    rbTempNeg1.Checkerboard() = cb;                                                    \
+    rbTempNeg2 = Zero();                                                               \
+    rbTempNeg2.Checkerboard() = cb;                                                    \
                                                 \
     rbFerm.Checkerboard() = cb;                                                       \
     rbFermNeg.Checkerboard() = cbNeg;                                                 \
@@ -153,13 +159,17 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
         const ComplexD ip    = TensorRemove(innerProduct(e,rbFerm))*invmag;           \
         const ComplexD ipNeg = TensorRemove(innerProduct(e,MrbFermNeg))*invmag;       \
                                                 \
-        axpy(rbTemp,    mass*ip+ipNeg,   e,rbTemp);                                   \
-        axpy(rbTempNeg, mass*ipNeg*invlam_D*invlam_D-ip, e,rbTempNeg);                \
+        axpy(rbTemp1,    mass*ip,   e,rbTemp1);                                   \
+        axpy(rbTemp2,    ipNeg,   e,rbTemp2);                                   \
+        axpy(rbTempNeg1, mass*ipNeg*invlam_D*invlam_D, e,rbTempNeg1);                \
+        axpy(rbTempNeg2, ip, e,rbTempNeg2);                \
     }                                                                                 \
                                                 \
-    mat.Meooe(rbTempNeg, rbFermNeg); \
+    rbTemp1 += rbTemp2;
+    rbTempNeg1 -= rbTempNeg2;
+    mat.Meooe(rbTempNeg1, rbFermNeg); \
     {                                            \
-      setCheckerboard(sol,rbTemp);                                                      \
+      setCheckerboard(sol,rbTemp1);                                                      \
       setCheckerboard(sol,rbFermNeg);                                                   \
     }                                            \
     sol *= norm;
@@ -177,8 +187,10 @@ void TLowModeProjMILC<FImpl,Pack>::setup(void)
     envCache(FermionField, "rbFerm", 1, envGetRbGrid(FermionField));
     envCache(FermionField, "rbFermNeg", 1, envGetRbGrid(FermionField));
     envCache(FermionField, "MrbFermNeg", 1, envGetRbGrid(FermionField));
-    envCache(FermionField, "rbTemp", 1, envGetRbGrid(FermionField));
-    envCache(FermionField, "rbTempNeg", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTemp1", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTemp2", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTempNeg1", 1, envGetRbGrid(FermionField));
+    envCache(FermionField, "rbTempNeg2", 1, envGetRbGrid(FermionField));
 
     auto &rbFerm     = envGet(FermionField, "rbFerm");
     auto &rbFermNeg  = envGet(FermionField, "rbFermNeg");
