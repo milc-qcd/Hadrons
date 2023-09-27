@@ -165,8 +165,8 @@ DependencyMap TLowModeProjMILC<FImpl,Pack>::getObjectDependencies(void)
         axpy(rbTempNeg2, ip, e,rbTempNeg2);                \
     }                                                                                 \
                                                 \
-    rbTemp1 += rbTemp2;
-    rbTempNeg1 -= rbTempNeg2;
+    rbTemp1 += rbTemp2; \
+    rbTempNeg1 -= rbTempNeg2; \
     mat.Meooe(rbTempNeg1, rbFermNeg); \
     {                                            \
       setCheckerboard(sol,rbTemp1);                                                      \
