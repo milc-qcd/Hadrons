@@ -654,10 +654,11 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
     // Total index is sum of these  i+ii+iii etc...
     //////////////////////////////////////////////////////////////////////////
 
-    Vector<T>           mCache;
+    size_t mCache_bytes = _nt*_next*_nstr*_blockSize*_blockSize*sizeof(T);
+    T *mCache_p = (T*)acceleratorAllocDevice(mCache_bytes);
+
     Vector<TIo>           mBuf;
 
-    mCache.resize(_nt*_next*_nstr*_blockSize*_blockSize);
 
     bool checkerboarded_low = (swapEvecCheckerFn != nullptr);
     int Ncb = checkerboarded_low?2:1; // Ncb == 2 if the low modes are checkerboarded
@@ -762,9 +763,8 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
                 l_temp_o = nullptr;
             }
 
-            A2AMatrixSet<T> mBlock(mCache.data(), _next, _nstr, _nt, N_ii, N_jj);
+            A2AMatrixSet<T> mBlock(mCache_p, _next, _nstr, _nt, N_ii, N_jj);
 
-            T *mCache_p = mBlock.data();
             accelerator_for(idx,mBlock.size(),1,{
                 mCache_p[idx] = 0.0;
             });
@@ -791,7 +791,7 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
             _grid->GlobalSumVector(&mBlock(0,0,0,0,0),mBlock.size());
             t_gsum += usecond();
 
-            mBuf.resize(mCache.size());
+            mBuf.resize(mBlock.size());
             A2AMatrixSet<TIo> mIOBlock(mBuf.data(), _next, _nstr, _nt, N_ii, N_jj);
 
             {
@@ -905,6 +905,8 @@ void A2AMatrixBlockComputationMILC<T, Field, MetadataType, TIo>
         j+=N_jj;
         evec_j+=(N_jj/Ncb);
     } // End while (j < N_j) Loop
+  acceleratorFreeDevice(mCache_p);
+
 }
 
 // I/O handler /////////////////////////////////////////////////////////////////
