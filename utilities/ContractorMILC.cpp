@@ -337,10 +337,10 @@ int main(int argc, char* argv[])
             LOG(Message) << "Read " << a2aIo.getSize() << " bytes in " << t/1.0e6 
                     << " sec, " << a2aIo.getSize()/t*1.0e6/1024/1024 << " MB/s" << std::endl;
 
-            LOG(Message) << "Freeing memory for " << p.name << " on processor ranks != " << grid->BossRank() << std::endl;
-            if (!grid->IsBoss()) {
-                a2aMat.erase(p.name);
-            } else {
+            //LOG(Message) << "Freeing memory for " << p.name << " on processor ranks != " << grid->BossRank() << std::endl;
+            //if (!grid->IsBoss()) {
+            //    a2aMat.erase(p.name);
+            //} else {
                 if (p.epack.nEigs > 0) {
                     PackRecord record;
                     std::vector<RealD> evals(p.epack.nEigs);
@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
                         newIndex -= 2;
                     }
                 }
-            }
+		//}
         }
 
         if (grid->IsBoss()) {
