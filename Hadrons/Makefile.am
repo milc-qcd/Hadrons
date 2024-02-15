@@ -21,12 +21,9 @@ libHadrons_adir = $(includedir)/Hadrons
 nobase_libHadrons_a_HEADERS = \
 	A2AVectors.hpp            \
 	A2AMatrix.hpp             \
-	A2AVectorsMILC.hpp        \
-	A2AMatrixMILC.hpp         \
 	Application.hpp           \
 	Database.hpp              \
 	DilutedNoise.hpp          \
-	DilutedNoiseMILC.hpp      \
 	DiskVector.hpp            \
 	DistilMatrix.hpp          \
 	DistillationVectors.hpp   \
