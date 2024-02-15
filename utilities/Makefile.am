@@ -22,10 +22,7 @@ HadronsXmlValidate_LDADD   = -lHadrons -lGrid
 #HadronsFermionEP64To32_CXXFLAGS = $(AM_CXXFLAGS) -DFIN=WilsonImplD::FermionField -DFOUT=WilsonImplF::FermionField
 #HadronsFermionEP64To32_LDADD    = -lHadrons -lGrid
 
-# HadronsContractor_SOURCES = Contractor.cpp
-# HadronsContractor_LDADD   = -lHadrons -lGrid
-
-HadronsContractor_SOURCES = ContractorMILC.cpp
+HadronsContractor_SOURCES = Contractor.cpp
 HadronsContractor_LDADD   = -lHadrons -lGrid
 
 HadronsContractorBenchmark_SOURCES = ContractorBenchmark.cpp
