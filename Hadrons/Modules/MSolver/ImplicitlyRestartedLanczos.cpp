@@ -6,5 +6,3 @@ using namespace MSolver;
 
 template class Grid::Hadrons::MSolver::TImplicitlyRestartedLanczos<FIMPL::FermionField>;
 template class Grid::Hadrons::MSolver::TImplicitlyRestartedLanczos<FIMPL::FermionField, FIMPLF::FermionField>;
-template class Grid::Hadrons::MSolver::TImplicitlyRestartedLanczos<STAGIMPL::FermionField>;
-template class Grid::Hadrons::MSolver::TImplicitlyRestartedLanczos<STAGIMPL::FermionField, STAGIMPLF::FermionField>;

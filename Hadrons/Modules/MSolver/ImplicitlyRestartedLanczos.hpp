@@ -49,8 +49,6 @@ public:
 
 MODULE_REGISTER_TMP(FermionImplicitlyRestartedLanczos, TImplicitlyRestartedLanczos<FIMPL::FermionField>, MSolver);
 MODULE_REGISTER_TMP(FermionImplicitlyRestartedLanczosIo32, ARG(TImplicitlyRestartedLanczos<FIMPL::FermionField, FIMPLF::FermionField>), MSolver);
-MODULE_REGISTER_TMP(StagFermionIRL, TImplicitlyRestartedLanczos<STAGIMPL::FermionField>, MSolver);
-MODULE_REGISTER_TMP(StagFermionIRLIo32, ARG(TImplicitlyRestartedLanczos<STAGIMPL::FermionField, STAGIMPLF::FermionField>), MSolver);
 
 /******************************************************************************
  *                 TImplicitlyRestartedLanczos implementation                 *
