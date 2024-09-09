@@ -118,15 +118,18 @@ void makeTimeSeq(std::vector<std::vector<unsigned int>> &timeSeq,
                  const std::vector<std::set<unsigned int>> &times,
                  std::vector<unsigned int> &current,
                  const unsigned int depth)
-{
+{   // recursive. Goes through each term in product
     if (depth > 0)
     {
+        // Start from...first product and loop through times requested for first product
         for (auto t: times[times.size() - depth])
         {
-            current[times.size() - depth] = t;
+            current[times.size() - depth] = t; //Set 'nth' product to timeslice 't'
             makeTimeSeq(timeSeq, times, current, depth - 1);
         }
     }
+
+    // Once we've assigned a time slice to every product, save the time sequence
     else
     {
         timeSeq.push_back(current);
@@ -173,7 +176,7 @@ std::set<unsigned int> parseTimeRange(const std::string str, const unsigned int 
     for (auto &s: rstr)
     {
         std::regex_match(s, sm, rex);
-        if (sm[1].matched)
+        if (sm[1].matched) // A list of numbers was given
         {
             unsigned int t;
             
@@ -363,18 +366,18 @@ int main(int argc, char* argv[])
         }
 
         if (grid->IsBoss()) {
-            for (auto &p: par.product)
+            for (auto &p: par.product) // Multiple contractions can be performed in a single run. Loop over them
             {
-                std::vector<std::string>               term = strToVec<std::string>(p.terms);
+                std::vector<std::string>               term = strToVec<std::string>(p.terms); // Get list of meson fields to multiply
                 std::vector<std::set<unsigned int>>    times;
                 std::vector<std::vector<unsigned int>> timeSeq;
                 std::set<unsigned int>                 translations;
-                std::vector<A2AMatrixTr<ComplexD>>     lastTerm(par.global.nt);
+                std::vector<A2AMatrixTr<ComplexD>>     lastTerm(par.global.nt); // holds final meson field in product before trace is taken 
                 A2AMatrix<ComplexD>                    prod, tmp, ref;
                 TimerArray                             tAr;
                 double                                 fusec, busec, flops, bytes;
     	    //	    double  tusec;
-                ContractorMILC::CorrelatorResult           result;             
+                ContractorMILC::CorrelatorResult           result;
 
                 tAr.startTimer("Total");
                 LOG(Message) << "======== Contraction tr(";
@@ -383,28 +386,46 @@ int main(int argc, char* argv[])
                     std::cout << term[g] << ((g == term.size() - 1) ? ')' : '*');
                 }
                 std::cout << std::endl;
-                if (term.size() != p.times.size() + 1)
+                if (term.size() != p.times.size() + 1) // The time sequence (p.times) must have a list of elements for each matrix product to be taken
                 {
                     HADRONS_ERROR(Size, "number of terms (" + std::to_string(term.size()) 
                                 + ") different from number of times (" 
                                 + std::to_string(p.times.size() + 1) + ")");
                 }
                 for (auto &s: p.times)
-                {
-                    times.push_back(parseTimeRange(s, par.global.nt));
+                {   // Simply converts param input of, e.g. <elem>0</elem> or <elem>0..127</elem> to a vector of integers
+                    times.push_back(parseTimeRange(s, par.global.nt)); 
                 }
                 for (auto &m: par.a2aMatrix)
                 {
+                    // Add meson field name to the result data if not yet present
                     if (std::find(result.a2aMatrix.begin(), result.a2aMatrix.end(), m) == result.a2aMatrix.end())
                     {
                         result.a2aMatrix.push_back(m);
                         tokenReplace(result.a2aMatrix.back().file, "traj", traj);
                     }
                 }
-                result.contraction = p;
-                result.correlator.resize(par.global.nt, 0.);
+                result.contraction = p; // Save  product label to result output
+                result.correlator.resize(par.global.nt, 0.); // Holds final result
 
+                // Simply converts param input of, e.g. <elem>0</elem> or <elem>0..127</elem> to a vector of integers
                 translations = parseTimeRange(p.translations, par.global.nt);
+
+                // This converts the list of requested times to a list of lists to be calculated one by one.
+                // For example, when performing tr(A*B*C) for time params <time><elem>0..1</elem>1..5</elem>
+                // We would get the timeSeq
+                // {
+                //   {0,1},
+                //   {0,2},
+                //   {0,3},
+                //   {0,4},
+                //   {0,5},
+                //   {1,1},
+                //   {1,2},
+                //   {1,3},
+                //   {1,4},
+                //   {1,5},
+                // }
                 makeTimeSeq(timeSeq, times);
                 LOG(Message) << timeSeq.size()*translations.size()*(term.size() - 2) << " A*B, "
                         << timeSeq.size()*translations.size()*par.global.nt << " tr(A*B)"
@@ -431,19 +452,25 @@ int main(int argc, char* argv[])
             		});
                     tAr.stopTimer("Transpose caching");
                 }
+
                 bytes = par.global.nt*lastTerm[0].rows()*lastTerm[0].cols()*sizeof(ComplexD);
                 LOG(Message) << Sec(tAr.getDTimer("Transpose caching")) << " " 
                           << Bytes(bytes, tAr.getDTimer("Transpose caching")) << std::endl;
+
+                // loop through every desired time sequence (see example above)
                 for (unsigned int i = 0; i < timeSeq.size(); ++i)
                 {
                     unsigned int dti = 0;
                     auto         &t = timeSeq[i];
 
-                    result.times = t;
+                    result.times = t; // save current time sequence to result
+
                     for (unsigned int tLast = 0; tLast < par.global.nt; ++tLast)
                     {
                         result.correlator[tLast] = 0.;
                     }
+
+                    // Loop through desired time separations
                     for (auto &dt: translations)
                     {
                         LOG(Message) << "* Step " << i*translations.size() + dti + 1
@@ -459,6 +486,7 @@ int main(int argc, char* argv[])
                         busec  = tAr.getDTimer("A*B total");
                         tAr.startTimer("Linear algebra");
                         tAr.startTimer("Disk vector overhead");
+                        // get first meson field at time separation dt from first element in time sequence (t[0])
                         prod = a2aMat.at(term[0])[TIME_MOD(t[0] + dt)];
                         tAr.stopTimer("Disk vector overhead");
 
@@ -470,8 +498,10 @@ int main(int argc, char* argv[])
                             });
                         }
 
+                        // If there are more than 2 meson fields being contracted, perform intermediate products for this time sequence
                         for (unsigned int j = 1; j < term.size() - 1; ++j)
                         {
+                            // Again the t[j] controls the starting time slice of the intermediate meson field
                             tAr.startTimer("Disk vector overhead");
                             ref = a2aMat.at(term[j])[TIME_MOD(t[j] + dt)];
                             tAr.stopTimer("Disk vector overhead");
@@ -504,6 +534,9 @@ int main(int argc, char* argv[])
                         bytes  = 0.;
                         fusec  = tAr.getDTimer("tr(A*B)");
                         busec  = tAr.getDTimer("tr(A*B)");
+
+                        // Multiply final term in contraction to previously calculated product
+                        // For 2pt func, this multiplies C(tLast-dt) = A(t[0]+dt)*B(tLast)
                         for (unsigned int tLast = 0; tLast < par.global.nt; ++tLast)
                         {
                             tAr.startTimer("tr(A*B)");
