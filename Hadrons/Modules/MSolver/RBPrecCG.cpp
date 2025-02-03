@@ -29,7 +29,10 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MSolver;
 
-template class Grid::Hadrons::MSolver::TRBPrecCG<FIMPL>;
-template class Grid::Hadrons::MSolver::TRBPrecCG<STAGIMPL>;
-template class Grid::Hadrons::MSolver::TRBPrecCG<ZFIMPL>;
-
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<FIMPL>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<FIMPL, false>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<LIMPL>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<ZFIMPL>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<ZFIMPL, false>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<STAGIMPL>;
+template class HADRONS_NAMESPACE::MSolver::TRBPrecCG<STAGIMPL, false>;

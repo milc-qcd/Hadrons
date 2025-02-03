@@ -1,11 +1,15 @@
 /*
  * BaryonGamma3pt.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <dc-erbe1@tesseract-login2.ib0.sgi.cluster.dirac.ed.ac.uk>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +36,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Grid/qcd/utils/BaryonUtils.h>
 
 BEGIN_HADRONS_NAMESPACE
@@ -203,14 +208,17 @@ std::vector<std::string> TBaryonGamma3pt<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TBaryonGamma3pt<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
 template <typename FImpl>
 std::vector<std::string> TBaryonGamma3pt<FImpl>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back( resultFilename(par().output) );
     
     return output;
 }
@@ -235,6 +243,7 @@ void TBaryonGamma3pt<FImpl>::setup(void)
     envTmpLat(SpinMatrixField, "c");
     envTmpLat(LatticeComplex, "coor");
     envCacheLat(LatticeComplex, momphName_);
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 template <typename FImpl>
@@ -506,6 +515,8 @@ void TBaryonGamma3pt<FImpl>::execute(void)
     }
 
     saveResult(par().output, "baryongamma3pt", result);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = result;
 }
 
 END_MODULE_NAMESPACE

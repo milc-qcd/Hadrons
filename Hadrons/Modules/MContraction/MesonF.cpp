@@ -1,7 +1,7 @@
 /*
- * Meson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * A2AVectors.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -23,11 +23,11 @@
  */
 
 /*  END LEGAL */
-#include "MesonF.hpp"
+#include <Hadrons/Modules/MSolver/A2AVectors.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MSolver;
 
-template class Grid::Hadrons::MContraction::TStagMesonF<STAGIMPL,STAGIMPL>;
-
+template class HADRONS_NAMESPACE::MSolver::TA2AVectors<FIMPL, BaseFermionEigenPack<FIMPL>>;
+template class HADRONS_NAMESPACE::MSolver::TA2AVectors<ZFIMPL, BaseFermionEigenPack<ZFIMPL>>;

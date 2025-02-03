@@ -1,11 +1,13 @@
 /*
  * RHQInsertionVI.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2022
+ * Copyright (C) 2015 - 2023
  *
- * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Ryan Hill <rchrys.hill@gmail.com>
+ * Author: Alessandro Barone <ab1n19@soton.ac.uk>
  * Author: Alessandro Barone <barone1618@gmail.com>
+ * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +25,7 @@
  * See the full license in the file "LICENSE" in the top level distribution 
  * directory.
  */
- 
+
 /*  END LEGAL */
 
 #ifndef Hadrons_MRHQ_RHQInsertionVI_hpp_
@@ -54,8 +56,7 @@ template <typename FImpl, typename GImpl>
 class TRHQInsertionVI: public Module<RHQInsertionVIPar>
 {
 public:
-    BASIC_TYPE_ALIASES(FImpl,);
-    GAUGE_TYPE_ALIASES(GImpl,);
+    FERM_TYPE_ALIASES(FImpl,);
 public:
     // constructor
     TRHQInsertionVI(const std::string name);
@@ -104,6 +105,7 @@ template <typename FImpl, typename GImpl>
 void TRHQInsertionVI<FImpl, GImpl>::setup(void)
 {
     envCreateLat(PropagatorField, getName());//, 1, env().getDim(Tp));
+    envTmpLat(ColourMatrixField, "gauge_t");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -117,7 +119,8 @@ void TRHQInsertionVI<FImpl, GImpl>::execute(void)
 
     auto &field = envGet(PropagatorField, par().q);
     const auto &gaugefield = envGet(GaugeField, par().gauge);
-    const auto gauge_t = peekLorentz(gaugefield, 3);
+    envGetTmp(ColourMatrixField, gauge_t);
+    gauge_t = peekLorentz(gaugefield, 3);
 
     if (par().gamma5 != Gamma::Algebra::Gamma5 && par().gamma5 != Gamma::Algebra::Identity)
     {

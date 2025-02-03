@@ -1,10 +1,12 @@
 /*
  * Test_hadrons_spectrum.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Fabian Joswig <fabian.joswig@ed.ac.uk>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -34,14 +36,14 @@ using namespace Hadrons;
 
 struct MesonEntry: public SqlEntry
 {
-    HADRONS_SQL_FIELDS(SqlNotNull<std::string>, q1, 
+    HADRONS_SQL_FIELDS(SqlNotNull<std::string>, q1,
                        SqlNotNull<std::string>, q2,
                        SqlNotNull<std::string>, source);
 };
 
 struct BaryonEntry: public SqlEntry
 {
-    HADRONS_SQL_FIELDS(SqlNotNull<std::string>, q1, 
+    HADRONS_SQL_FIELDS(SqlNotNull<std::string>, q1,
                        SqlNotNull<std::string>, q2,
                        SqlNotNull<std::string>, q3,
                        SqlNotNull<std::string>, source);
@@ -57,13 +59,13 @@ int main(int argc, char *argv[])
     HadronsLogIterative.Active(GridLogIterative.isActive());
     HadronsLogDebug.Active(GridLogDebug.isActive());
     LOG(Message) << "Grid initialized" << std::endl;
-    
+
     // run setup ///////////////////////////////////////////////////////////////
     Application              application;
-    std::vector<std::string> flavour = {"l", "s", "c1", "c2", "c3"};
-    std::vector<std::string> flavour_baryon = {"l", "s", "a", "b", "c"}; //needs to be a single character
-    std::vector<double>      mass    = {.01, .04, .2  , .25 , .3  };
-    
+    std::vector<std::string> flavour = {"l", "s"};
+    std::vector<std::string> flavour_baryon = {"l", "s"}; //needs to be a single character
+    std::vector<double>      mass    = {.01, .04};
+
     // global parameters
     Application::GlobalPar globalPar;
     globalPar.trajCounter.start             = 1500;
@@ -93,7 +95,7 @@ int main(int argc, char *argv[])
     sinkPar.mom = "0 0 0";
     application.createModule<MSink::ScalarPoint>("sink", sinkPar);
     application.createModule<MSink::SMatPoint>("sinkMat", sinkPar);
-    
+
     // set fermion boundary conditions to be periodic space, antiperiodic time.
     std::string boundary = "1 1 1 -1";
     std::string twist = "0. 0. 0. 0.";
@@ -103,21 +105,21 @@ int main(int argc, char *argv[])
         // actions
         MAction::DWF::Par actionPar;
         actionPar.gauge = "gauge";
-        actionPar.Ls    = 12;
+        actionPar.Ls    = 8;
         actionPar.M5    = 1.8;
         actionPar.mass  = mass[i];
         actionPar.boundary = boundary;
         actionPar.twist = twist;
         application.createModule<MAction::DWF>("DWF_" + flavour[i], actionPar);
-        
+
         // solvers
         MSolver::RBPrecCG::Par solverPar;
         solverPar.action       = "DWF_" + flavour[i];
-        solverPar.residual     = 1.0e-8;
+        solverPar.residual     = 1.0e-3;  // High residual for test purposes only. Use 1.0e-8 or smaller for physics workflows.
         solverPar.maxIteration = 10000;
         application.createModule<MSolver::RBPrecCG>("CG_" + flavour[i],
                                                     solverPar);
-        
+
         // propagators
         MFermion::GaugeProp::Par quarkPar;
         quarkPar.solver = "CG_" + flavour[i];
@@ -131,7 +133,7 @@ int main(int argc, char *argv[])
     {
         MContraction::Meson::Par mesPar;
         MesonEntry               mesEntry;
-        
+
         mesPar.output   = "mesons/pt_" + flavour[i] + flavour[j];
         mesPar.q1       = "Qpt_" + flavour[i];
         mesPar.q2       = "Qpt_" + flavour[j];
@@ -165,7 +167,7 @@ int main(int argc, char *argv[])
     {
         MContraction::Baryon::Par barPar;
         BaryonEntry               barEntry;
-        
+
         barPar.output  = "baryons/pt_" + flavour[i] + flavour[j] + flavour[k];
         barPar.q1      = "Qpt_" + flavour[i];
         barPar.q2      = "Qpt_" + flavour[j];
@@ -178,7 +180,7 @@ int main(int argc, char *argv[])
             barPar.sinkq1    = "sink";
             barPar.sinkq2    = "sink";
             barPar.sinkq3    = "sink";
-	    computeTrace     = false; // alternate between trace and matrix to test both 
+	    computeTrace     = false; // alternate between trace and matrix to test both
 	}
 	else
 	{
@@ -186,7 +188,7 @@ int main(int argc, char *argv[])
             barPar.sinkq1    = "sinkMat";
             barPar.sinkq2    = "sinkMat";
             barPar.sinkq3    = "sinkMat";
-	    computeTrace     = true; // alternate between trace and matrix to test both 
+	    computeTrace     = true; // alternate between trace and matrix to test both
 	}
         barPar.sim_sink  = true;
         barPar.gammas    = "(j12 j12) (j32X j32Y)";
@@ -202,14 +204,14 @@ int main(int argc, char *argv[])
         application.setResultMetadata("baryon_pt_" + flavour[i] + flavour[j] + flavour[k],
                                       "baryon", barEntry);
     }
-    
+
     // execution
     application.saveParameterFile("spectrum.xml");
     application.run();
-    
+
     // epilogue
     LOG(Message) << "Grid is finalizing now" << std::endl;
     Grid_finalize();
-    
+
     return EXIT_SUCCESS;
 }

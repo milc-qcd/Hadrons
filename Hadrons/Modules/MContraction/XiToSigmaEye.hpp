@@ -1,11 +1,12 @@
 /*
  * XiToSigmaEye.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +34,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Grid/qcd/utils/BaryonUtils.h>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -144,14 +146,17 @@ std::vector<std::string> TXiToSigmaEye<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TXiToSigmaEye<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
 template <typename FImpl>
 std::vector<std::string> TXiToSigmaEye<FImpl>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back(resultFilename(par().output));
     
     return output;
 }
@@ -161,6 +166,7 @@ template <typename FImpl>
 void TXiToSigmaEye<FImpl>::setup(void)
 {
     envTmpLat(SpinMatrixField, "c");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -219,6 +225,8 @@ void TXiToSigmaEye<FImpl>::execute(void)
     }
 
     saveResult(par().output, "xtsEye", result);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = result;
 
 }
 

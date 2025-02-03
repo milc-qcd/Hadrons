@@ -1,12 +1,15 @@
 /*
  * FourQuarkLoop.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2022
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Ryan Abbott <rabbott@mit.edu>
+ * Author: Fabian Joswig <fabian.joswig@ed.ac.uk>
  * Author: Fabian Joswig <fabian.joswig@wwu.de>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Ryan Abbott <rabbott@mit.edu>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
+ * Author: rabbott <rabbott4927@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +24,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution
+ * See the full license in the file "LICENSE" in the top level distribution 
  * directory.
  */
 
@@ -32,6 +35,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MNPR/NPRUtils.hpp>
 
 
@@ -164,6 +168,7 @@ public:
 
     virtual std::vector<std::string> getInput();
     virtual std::vector<std::string> getOutput();
+    virtual std::vector<std::string> getOutputFiles(void);
 
 protected:
     virtual void setup(void);
@@ -188,9 +193,17 @@ std::vector<std::string> TFourQuarkLoop<FImpl>::getInput()
 template <typename FImpl>
 std::vector<std::string> TFourQuarkLoop<FImpl>::getOutput()
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName(), getName() + "_fourQuark", getName() + "_twoQuark"};
 
     return out;
+}
+
+template <typename FImpl>
+std::vector<std::string> TFourQuarkLoop<FImpl>::getOutputFiles(void)
+{
+    std::vector<std::string> output = {resultFilename(par().output)};
+
+    return output;
 }
 
 template <typename FImpl>
@@ -211,6 +224,9 @@ void TFourQuarkLoop<FImpl>::setup()
     {
         envTmpLat(ComplexField, "loop_trace");
     }
+
+    envCreate(HadronsSerializable, getName() + "_fourQuark", 1, 0);
+    envCreate(HadronsSerializable, getName() + "_twoQuark", 1, 0);
 }
 
 template <typename FImpl>
@@ -405,6 +421,8 @@ void TFourQuarkLoop<FImpl>::execute()
     LOG(Message) << "Done computing loop diagrams" << std::endl;
     saveResult(par().output + "_fourQuark", "FourQuarkLoop", fourq_result);
     saveResult(par().output + "_twoQuark", "TwoQuarkLoop", twoq_result);
+    envGet(HadronsSerializable, getName() + "_fourQuark") = fourq_result;
+    envGet(HadronsSerializable, getName() + "_twoQuark") = twoq_result;
 }
 
 END_MODULE_NAMESPACE

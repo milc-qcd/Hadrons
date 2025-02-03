@@ -1,11 +1,12 @@
 /*
  * WeakMesonDecayKl2.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Andrew Zhen Ning Yong <andrew.yong@ed.ac.uk>
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  * Author: Vera Guelpers <Vera.Guelpers@ed.ac.uk>
  * Author: Vera Guelpers <vmg1n14@soton.ac.uk>
  *
@@ -34,6 +35,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -78,11 +80,12 @@ public:
 				                    std::string, output);
 };
 
-template <typename FImpl>
+template <typename FImpl, typename LImpl>
 class TWeakMesonDecayKl2: public Module<WeakMesonDecayKl2Par>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
+    FERM_TYPE_ALIASES(LImpl, Lepton);
     typedef typename SpinMatrixField::vector_object::scalar_object SpinMatrix;
     class Result: Serializable
     {
@@ -106,55 +109,59 @@ protected:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(WeakMesonDecayKl2, TWeakMesonDecayKl2<FIMPL>, MContraction);
+MODULE_REGISTER_TMP(WeakMesonDecayKl2, ARG(TWeakMesonDecayKl2<FIMPL, LIMPL>), MContraction);
 
 /******************************************************************************
  *                           TWeakMesonDecayKl2 implementation                   *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl>
-TWeakMesonDecayKl2<FImpl>::TWeakMesonDecayKl2(const std::string name)
+template <typename FImpl, typename LImpl>
+TWeakMesonDecayKl2<FImpl, LImpl>::TWeakMesonDecayKl2(const std::string name)
 : Module<WeakMesonDecayKl2Par>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl>
-std::vector<std::string> TWeakMesonDecayKl2<FImpl>::getInput(void)
+template <typename FImpl, typename LImpl>
+std::vector<std::string> TWeakMesonDecayKl2<FImpl, LImpl>::getInput(void)
 {
     std::vector<std::string> input = {par().q1, par().q2, par().lepton};
     
     return input;
 }
 
-template <typename FImpl>
-std::vector<std::string> TWeakMesonDecayKl2<FImpl>::getOutput(void)
+template <typename FImpl, typename LImpl>
+std::vector<std::string> TWeakMesonDecayKl2<FImpl, LImpl>::getOutput(void)
 {
-    std::vector<std::string> output = {};
+    std::vector<std::string> output = {getName()};
     
     return output;
 }
 
-template <typename FImpl>
-std::vector<std::string> TWeakMesonDecayKl2<FImpl>::getOutputFiles(void)
+template <typename FImpl, typename LImpl>
+std::vector<std::string> TWeakMesonDecayKl2<FImpl, LImpl>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back(resultFilename(par().output));
     
     return output;
 }
 
 // setup ////////////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TWeakMesonDecayKl2<FImpl>::setup(void)
+template <typename FImpl, typename LImpl>
+void TWeakMesonDecayKl2<FImpl, LImpl>::setup(void)
 {
     envTmpLat(ComplexField, "c");
-    envTmpLat(PropagatorField, "prop_buf");
-    envCreateLat(PropagatorField, getName());
+    envTmpLat(PropagatorFieldLepton, "res_buf");
     envTmpLat(SpinMatrixField, "buf");
+    envCreate(HadronsSerializable, getName(), 1, 0);
+    envTmpLat(LatticeComplex, "coor");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename FImpl>
-void TWeakMesonDecayKl2<FImpl>::execute(void)
+template <typename FImpl, typename LImpl>
+void TWeakMesonDecayKl2<FImpl, LImpl>::execute(void)
 {
     LOG(Message) << "Computing QED Kl2 contractions '" << getName() << "' using"
                  << " quarks '" << par().q1 << "' and '" << par().q2 << "' and"
@@ -165,26 +172,26 @@ void TWeakMesonDecayKl2<FImpl>::execute(void)
     std::vector<SpinMatrix> res_summed;
     Result                  r;
 
-    auto &res    = envGet(PropagatorField, getName()); res = Zero();
     auto &q1     = envGet(PropagatorField, par().q1);
     auto &q2     = envGet(PropagatorField, par().q2);
-    auto &lepton = envGet(PropagatorField, par().lepton);
+    auto &lepton = envGet(PropagatorFieldLepton, par().lepton);
     envGetTmp(SpinMatrixField, buf);
     envGetTmp(ComplexField, c);
-    envGetTmp(PropagatorField, prop_buf);  
-
+    envGetTmp(PropagatorFieldLepton, res_buf); res_buf = Zero();
+    
     for (unsigned int mu = 0; mu < 4; ++mu)
     {
         c = Zero();
         //hadronic part: trace(q1*adj(q2)*g5*gL[mu]) 
         c = trace(q1*adj(q2)*g5*GammaL(Gamma::gmu[mu]));
-        prop_buf = 1.;
         //multiply lepton part
-        res += c * prop_buf * GammaL(Gamma::gmu[mu]) * lepton;
+        res_buf += c * (GammaL(Gamma::gmu[mu]) * lepton);
     }
-    buf = peekColour(res, 0, 0);
+    buf = peekColour(res_buf, 0, 0);
     sliceSum(buf, r.corr, Tp);
     saveResult(par().output, "weakdecay", r);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = r;
 }
 
 END_MODULE_NAMESPACE

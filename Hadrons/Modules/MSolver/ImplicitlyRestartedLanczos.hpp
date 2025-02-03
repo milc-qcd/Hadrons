@@ -1,3 +1,29 @@
+/*
+ * ImplicitlyRestartedLanczos.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ *
+ * Copyright (C) 2015 - 2023
+ *
+ * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ *
+ * Hadrons is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Hadrons is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * See the full license in the file "LICENSE" in the top level distribution
+ * directory.
+ */
+
+/*  END LEGAL */
 #ifndef Hadrons_MSolver_ImplicitlyRestartedLanczos_hpp_
 #define Hadrons_MSolver_ImplicitlyRestartedLanczos_hpp_
 
@@ -68,7 +94,7 @@ std::vector<std::string> TImplicitlyRestartedLanczos<Field, FieldIo>::getInput(v
     if (!par().epackIn.empty()) {
         in.push_back(par().epackIn);
     }
-    
+
     return in;
 }
 
@@ -110,9 +136,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::setup(void)
         par().lanczosParams.Nstop, par().lanczosParams.Nk, par().lanczosParams.Nm,
         par().lanczosParams.resid, par().lanczosParams.MaxIt, par().lanczosParams.betastp, 
         par().lanczosParams.MinRes);
-    envTmp(Field, "gauss", Ls, getGrid<Field>(false, Ls));
     envTmp(Field, "src", Ls, grid);
-    envTmp(Field, "polyVec", Ls, grid);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -122,20 +146,21 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     int          nconv;
     auto         &epack = envGetDerived(BasePack, Pack, getName());
     GridBase     *grid = nullptr;
+    [[maybe_unused]] GridBase *gridIo = nullptr;
     unsigned int Ls = env().getObjectLs(par().op);
     
     envGetTmp(ImplicitlyRestartedLanczos<Field>, irl);
     envGetTmp(Field, src);
-    envGetTmp(Field, gauss);
 
     grid = getGrid<Field>(par().redBlack, Ls);
+    if (typeHash<Field>() != typeHash<FieldIo>())
+    {
+        gridIo = getGrid<FieldIo>(par().redBlack, Ls);
+    }
+    gaussian(rng4d(), src);
     if (par().redBlack)
     {
-        envGetTmp(Field, gauss);
-        gaussian(rng4d(), gauss);
-        pickCheckerboard(par().evenEigen?Even:Odd,src,gauss);
-    } else {
-        gaussian(rng4d(), src);
+        src.Checkerboard() = Odd;
     }
 
     int offset = 0;

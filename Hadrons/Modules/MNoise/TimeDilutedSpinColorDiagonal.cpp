@@ -1,7 +1,7 @@
 /*
  * TimeDilutedSpinColorDiagonal.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,5 +29,5 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MNoise;
 
-template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<FIMPL>;
-template class Grid::Hadrons::MNoise::TTimeDilutedSpinColorDiagonal<ZFIMPL>;
+template class HADRONS_NAMESPACE::MNoise::TTimeDilutedSpinColorDiagonal<FIMPL>;
+template class HADRONS_NAMESPACE::MNoise::TTimeDilutedSpinColorDiagonal<ZFIMPL>;

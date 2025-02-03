@@ -1,13 +1,15 @@
 /*
  * WardIdentity.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Lanny91 <andrew.lawson@gmail.com>
- * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
- * Author: fionnoh <fionnoh@gmail.com>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Michael Marshall <Michael.Marshall@ed.ac.uk>
+ * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
+ * Author: fionnoh <fionnoh@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +24,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution
+ * See the full license in the file "LICENSE" in the top level distribution 
  * directory.
  */
 
@@ -33,6 +35,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -93,6 +96,7 @@ public:
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+    virtual std::vector<std::string> getOutputFiles(void);
 protected:
     // setup
     virtual void setup(void);
@@ -134,7 +138,20 @@ std::vector<std::string> TWardIdentity<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TWardIdentity<FImpl>::getOutput(void)
 {
-  return {};
+    std::vector<std::string> out = {getName()};
+    
+    return out;
+}
+
+template <typename FImpl>
+std::vector<std::string> TWardIdentity<FImpl>::getOutputFiles(void)
+{
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back(resultFilename(par().output));
+    
+    return output;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
@@ -155,6 +172,7 @@ void TWardIdentity<FImpl>::setup(void)
     // These temporaries are always 4d
     envTmpLat(PropagatorField, "tmp");
     envTmpLat(ComplexField, "tmp_current");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -223,6 +241,8 @@ void TWardIdentity<FImpl>::execute(void)
 
     LOG(Message) << "Writing results to " << par().output << "." << std::endl;
     saveResult(par().output, "wardIdentity", result);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = result;
 }
 
 END_MODULE_NAMESPACE

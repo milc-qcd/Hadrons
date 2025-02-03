@@ -1,7 +1,7 @@
 /*
  * LoadCosmHol.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,8 +29,8 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class Grid::Hadrons::MIO::TLoadCosmHol<ScalarNxNAdjImplR<2>>;
-template class Grid::Hadrons::MIO::TLoadCosmHol<ScalarNxNAdjImplR<3>>;
-template class Grid::Hadrons::MIO::TLoadCosmHol<ScalarNxNAdjImplR<4>>;
-template class Grid::Hadrons::MIO::TLoadCosmHol<ScalarNxNAdjImplR<5>>;
-template class Grid::Hadrons::MIO::TLoadCosmHol<ScalarNxNAdjImplR<6>>;
+template class HADRONS_NAMESPACE::MIO::TLoadCosmHol<ScalarNxNAdjImplR<2>>;
+template class HADRONS_NAMESPACE::MIO::TLoadCosmHol<ScalarNxNAdjImplR<3>>;
+template class HADRONS_NAMESPACE::MIO::TLoadCosmHol<ScalarNxNAdjImplR<4>>;
+template class HADRONS_NAMESPACE::MIO::TLoadCosmHol<ScalarNxNAdjImplR<5>>;
+template class HADRONS_NAMESPACE::MIO::TLoadCosmHol<ScalarNxNAdjImplR<6>>;

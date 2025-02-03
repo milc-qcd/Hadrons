@@ -1,11 +1,12 @@
 /*
  * WeakNonEye3pt.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Fionn O hOgain <fionn.o.hogain@ed.ac.uk>
  * Author: Lanny91 <andrew.lawson@gmail.com>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  * Author: ferben <ferben@debian.felix.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -32,6 +33,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -127,7 +129,7 @@ std::vector<std::string> TWeakNonEye3pt<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TWeakNonEye3pt<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
@@ -135,7 +137,10 @@ std::vector<std::string> TWeakNonEye3pt<FImpl>::getOutput(void)
 template <typename FImpl>
 std::vector<std::string> TWeakNonEye3pt<FImpl>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back(resultFilename(par().output));
     
     return output;
 }
@@ -145,6 +150,7 @@ template <typename FImpl>
 void TWeakNonEye3pt<FImpl>::setup(void)
 {
     envTmpLat(ComplexField, "corr");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -198,6 +204,8 @@ void TWeakNonEye3pt<FImpl>::execute(void)
         result.push_back(r);
     }
     saveResult(par().output, "weakNonEye3pt", result);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = result;
 }
 
 END_MODULE_NAMESPACE

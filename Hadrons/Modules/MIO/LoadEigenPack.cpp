@@ -1,9 +1,10 @@
 /*
  * LoadEigenPack.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Fionn O hOgain <fionn.o.hogain@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,11 +30,8 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<FIMPL>, GIMPL>;
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPL>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPL>, GIMPL>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<FIMPLF>, GIMPLF>;
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<FIMPL, FIMPLF>, GIMPL>;
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPLF>, GIMPLF>;
-template class Grid::Hadrons::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPLF>, GIMPLF>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPL, FIMPLF>, GIMPL>;
 #endif

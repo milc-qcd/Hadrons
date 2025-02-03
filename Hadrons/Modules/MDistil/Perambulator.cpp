@@ -1,9 +1,11 @@
 /*
  * Perambulator.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: nelsonlachini <nelsonlachini@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,8 +32,8 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MDistil;
 
-template class Grid::Hadrons::MDistil::TPerambulator<FIMPL>;
-template class Grid::Hadrons::MDistil::TPerambulator<ZFIMPL>;
+template class HADRONS_NAMESPACE::MDistil::TPerambulator<FIMPL>;
+template class HADRONS_NAMESPACE::MDistil::TPerambulator<ZFIMPL>;
 
 BEGIN_HADRONS_NAMESPACE
 

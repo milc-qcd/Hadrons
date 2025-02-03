@@ -1,10 +1,12 @@
 /*
  * Module.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
  * Author: ferben <ferben@debian.felix.com>
+ * Author: nelsonlachini <nelsonlachini@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -69,55 +71,55 @@ MODULE_REGISTER(mod, ARG(base), ns);
 #define HADRONS_MACRO_REDIRECT_23(arg1, arg2, arg3, macro, ...) macro
 
 #define envGetGrid4(latticeType)\
-env().template getGrid<typename latticeType::vector_type>()
+this->env().template getGrid<typename latticeType::vector_type>()
 
 #define envGetGrid5(latticeType, Ls)\
-((Ls>1)?env().template getGrid<typename latticeType::vector_type>(Ls) : envGetGrid4(latticeType))
+((Ls>1)?this->env().template getGrid<typename latticeType::vector_type>(Ls) : envGetGrid4(latticeType))
 
 #define envGetGrid(...)\
 HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetGrid5, envGetGrid4)(__VA_ARGS__)
 
 #define envGetCoarseGrid4(latticeType, blockSize)\
-env().template getCoarseGrid<typename latticeType::vector_type>(blockSize)
+this->env().template getCoarseGrid<typename latticeType::vector_type>(blockSize)
 
 #define envGetCoarseGrid5(latticeType, blockSize, Ls)\
-((Ls>1)?env().template getCoarseGrid<typename latticeType::vector_type>(blockSize, Ls) : envGetCoarseGrid4(latticeType,blockSize))
+((Ls>1)?this->env().template getCoarseGrid<typename latticeType::vector_type>(blockSize, Ls) : envGetCoarseGrid4(latticeType,blockSize))
 
 #define envGetCoarseGrid(...)\
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envGetCoarseGrid5, envGetCoarseGrid4)(__VA_ARGS__)
 
 #define envGetRbGrid4(latticeType)\
-env().template getRbGrid<typename latticeType::vector_type>()
+this->env().template getRbGrid<typename latticeType::vector_type>()
 
 #define envGetRbGrid5(latticeType, Ls)\
-((Ls>1)?env().template getRbGrid<typename latticeType::vector_type>(Ls) : envGetRbGrid4(latticeType))
+((Ls>1)?this->env().template getRbGrid<typename latticeType::vector_type>(Ls) : envGetRbGrid4(latticeType))
 
 #define envGetRbGrid(...)\
 HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetRbGrid5, envGetRbGrid4)(__VA_ARGS__)
 
 #define envGetSliceGrid(latticeType, orthDim)\
-env().template getSliceGrid<typename latticeType::vector_type>(orthDim)
+this->env().template getSliceGrid<typename latticeType::vector_type>(orthDim)
 
 #define envGet(type, name)\
-*env().template getObject<type>(name)
+*this->env().template getObject<type>(name)
 
 #define envGetDerived(base, type, name)\
-*env().template getDerivedObject<base, type>(name)
+*this->env().template getDerivedObject<base, type>(name)
 
 #define envGetTmp(type, var)\
-type &var = *env().template getObject<type>(getName() + "_tmp_" + #var)
+type &var = *this->env().template getObject<type>(getName() + "_tmp_" + #var)
 
 #define envHasType(type, name)\
-env().template isObjectOfType<type>(name)
+this->env().template isObjectOfType<type>(name)
 
 #define envHasDerivedType(base, type, name)\
-env().template isObjectOfDerivedType<base, type>(name)
+this->env().template isObjectOfDerivedType<base, type>(name)
 
 #define envCreate(type, name, Ls, ...)\
-env().template createObject<type>(name, Environment::Storage::standard, Ls, __VA_ARGS__)
+this->env().template createObject<type>(name, Environment::Storage::standard, Ls, __VA_ARGS__)
 
 #define envCreateDerived(base, type, name, Ls, ...)\
-env().template createDerivedObject<base, type>(name, Environment::Storage::standard, Ls, __VA_ARGS__)
+this->env().template createDerivedObject<base, type>(name, Environment::Storage::standard, Ls, __VA_ARGS__)
 
 #define envCreateLat4(type, name)\
 envCreate(type, name, 1, envGetGrid(type))
@@ -129,7 +131,7 @@ if(Ls>1) {envCreate(type, name, Ls, envGetGrid(type, Ls));} else {envGetGrid4(ty
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envCreateLat5, envCreateLat4)(__VA_ARGS__)
 
 #define envCache(type, name, Ls, ...)\
-env().template createObject<type>(name, Environment::Storage::cache, Ls, __VA_ARGS__)
+this->env().template createObject<type>(name, Environment::Storage::cache, Ls, __VA_ARGS__)
 
 #define envCacheLat4(type, name)\
 envCache(type, name, 1, envGetGrid(type))
@@ -141,7 +143,7 @@ envCache(type, name, 1, envGetGrid(type))
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envCacheLat5, envCacheLat4)(__VA_ARGS__)
 
 #define envTmp(type, name, Ls, ...)\
-env().template createObject<type>(getName() + "_tmp_" + name,         \
+this->env().template createObject<type>(getName() + "_tmp_" + name,         \
                                   Environment::Storage::temporary, Ls, __VA_ARGS__)
 
 #define envTmpLat4(type, name)\
@@ -174,6 +176,8 @@ public:
     virtual ~ModuleBase(void) = default;
     // access
     std::string getName(void) const;
+    // random seed override for testing
+    void seedOverride(const std::string seed);
     // get factory registration name if available
     virtual std::string getRegisteredName(void);
     // dependencies/products
@@ -227,10 +231,13 @@ protected:
     template <typename T>
     void saveResult(const std::string stem, const std::string name, const T &result) const;
 private:
+    // get seed
+    std::string getSeed(void);
     // make module unique string
     std::string makeSeedString(void);
 private:
-    std::string                             name_, currentTimer_, seed_, dbTable_;
+    bool                                    doSeedOverride_{false};
+    std::string                             name_, currentTimer_, seed_, seedOverride_, dbTable_;
     std::map<std::string, GridStopWatch>    timer_;
     Database                                *db_{nullptr};
     std::unique_ptr<SqlEntry>               entry_{nullptr};

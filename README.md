@@ -1,6 +1,6 @@
 <img src="graphics/hadrons-icon-title.png" height=100px>
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4063666.svg)](https://doi.org/10.5281/zenodo.4063666)  
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4063666.svg)](https://doi.org/10.5281/zenodo.4063666)  [![Teamcity status](https://ci.dev.dirac.ed.ac.uk/guestAuth/app/rest/builds/aggregated/strob:(buildType:(affectedProject(id:GridBasedSoftware_Hadrons)),branch:default:true)/statusIcon.svg)](https://ci.dev.dirac.ed.ac.uk/project/GridBasedSoftware_Hadrons?mode=builds)  
 _[Grid](https://github.com/paboyle/Grid)-based workflow management system for
 lattice field theory simulations_  
 
@@ -35,3 +35,8 @@ the `CXXFLAGS` and `CXX` environment variables.
 ## Run
 The main Hadrons executables are in the `utilities` directory, examples can be
 found in the `tests` directory, and can be built using `make tests`.
+
+## Contributors
+<a href="https://github.com/aportelli/Hadrons/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=aportelli/Hadrons" />
+</a>

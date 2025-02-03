@@ -1,7 +1,7 @@
 /*
  * Point.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,7 +29,6 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MSource;
 
-template class Grid::Hadrons::MSource::TPoint<FIMPL>;
-template class Grid::Hadrons::MSource::TPoint<ScalarImplCR>;
-template class Grid::Hadrons::MSource::TPoint<STAGIMPL>;
-
+template class HADRONS_NAMESPACE::MSource::TPoint<FIMPL>;
+template class HADRONS_NAMESPACE::MSource::TPoint<ScalarImplCR>;
+template class HADRONS_NAMESPACE::MSource::TPoint<STAGIMPL>;

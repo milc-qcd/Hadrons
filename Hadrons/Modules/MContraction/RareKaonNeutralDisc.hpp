@@ -1,11 +1,12 @@
 /*
  * RareKaonNeutralDisc.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Fionn O hOgain <fionn.o.hogain@ed.ac.uk>
  * Author: Lanny91 <andrew.lawson@gmail.com>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +33,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -146,7 +148,7 @@ std::vector<std::string> TRareKaonNeutralDisc<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TRareKaonNeutralDisc<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
@@ -154,7 +156,10 @@ std::vector<std::string> TRareKaonNeutralDisc<FImpl>::getOutput(void)
 template <typename FImpl>
 std::vector<std::string> TRareKaonNeutralDisc<FImpl>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
+        output.push_back(resultFilename(par().output));
     
     return output;
 }
@@ -164,6 +169,7 @@ template <typename FImpl>
 void TRareKaonNeutralDisc<FImpl>::setup(void)
 {
     envTmpLat(ComplexField, "corr");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -212,6 +218,8 @@ void TRareKaonNeutralDisc<FImpl>::execute(void)
     }
     // IO
     saveResult(par().output, "RK_disc0", result);
+    auto &out = envGet(HadronsSerializable, getName());
+    out = result;
 }
 
 

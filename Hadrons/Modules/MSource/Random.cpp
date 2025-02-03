@@ -30,5 +30,5 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MSource;
 
-template class Grid::Hadrons::MSource::TRandom<FIMPL>;
-template class Grid::Hadrons::MSource::TRandom<STAGIMPL>;
+template class HADRONS_NAMESPACE::MSource::TRandom<FIMPL>;
+template class HADRONS_NAMESPACE::MSource::TRandom<STAGIMPL>;
