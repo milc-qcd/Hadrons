@@ -45,8 +45,7 @@ class SparseSpinColorDiagonalPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(SparseSpinColorDiagonalPar,
                                     unsigned int, nsrc,
-                                    unsigned int, nsparseL,
-                                    unsigned int, nsparseT);
+                                    unsigned int, nsparse);
 };
 
 template <typename FImpl>
@@ -69,7 +68,6 @@ public:
 };
 
 MODULE_REGISTER_TMP(SparseSpinColorDiagonal, TSparseSpinColorDiagonal<FIMPL>, MNoise);
-MODULE_REGISTER_TMP(StagSparseSpinColorDiagonal, TSparseSpinColorDiagonal<STAGIMPL>, MNoise);
 MODULE_REGISTER_TMP(ZSparseSpinColorDiagonal, TSparseSpinColorDiagonal<ZFIMPL>, MNoise);
 
 /******************************************************************************
@@ -104,7 +102,7 @@ void TSparseSpinColorDiagonal<FImpl>::setup(void)
 {
     envCreateDerived(SpinColorDiagonalNoise<FImpl>, 
                      SparseNoise<FImpl>,
-                     getName(), 1, envGetGrid(FermionField), par().nsrc, par().nsparseL,par().nsparseT);    
+                     getName(), 1, envGetGrid(FermionField), par().nsrc, par().nsparse);    
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -114,7 +112,7 @@ void TSparseSpinColorDiagonal<FImpl>::execute(void)
     auto &noise = envGet(SpinColorDiagonalNoise<FImpl>, getName());
     LOG(Message) << "Generating sparse spin-color diagonal noise with" 
                  << " nsrc = " << par().nsrc
-                 << " and " << par().nsparseL << " in the spatial directions and " << par().nsparseT << " in the time direction." << std::endl;
+                 << " and nSparse = " << par().nsparse << std::endl;
     noise.generateNoise(rng4d());
 }
 
