@@ -70,6 +70,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(CGNE, TCGNE<FIMPL>, MSolver);
+MODULE_REGISTER_TMP(StagCGNE, TCGNE<STAGIMPL>, MSolver);
 
 /******************************************************************************
  *                           TCGNE implementation                             *

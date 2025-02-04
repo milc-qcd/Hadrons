@@ -77,6 +77,8 @@ MODULE_REGISTER_TMP(RBPrecCGNoFail, ARG(TRBPrecCG<FIMPL, false>), MSolver);
 MODULE_REGISTER_TMP(RBPrecCGLepton, ARG(TRBPrecCG<LIMPL>), MSolver);
 MODULE_REGISTER_TMP(ZRBPrecCG, ARG(TRBPrecCG<ZFIMPL>), MSolver);
 MODULE_REGISTER_TMP(ZRBPrecCGNoFail, ARG(TRBPrecCG<ZFIMPL, false>), MSolver);
+MODULE_REGISTER_TMP(StagRBPrecCG, ARG(TRBPrecCG<STAGIMPL>), MSolver);
+MODULE_REGISTER_TMP(StagRBPrecCGNoFail, ARG(TRBPrecCG<STAGIMPL, false>), MSolver);
 
 /******************************************************************************
  *                      TRBPrecCG template implementation                     *
