@@ -1,7 +1,7 @@
 /*
  * Meson.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2023
+ * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -18,7 +18,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
