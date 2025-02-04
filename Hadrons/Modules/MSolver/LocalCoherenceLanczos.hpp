@@ -50,8 +50,7 @@ public:
                                     RealD,         coarseRelaxTol,
                                     std::string,   blockSize,
                                     std::string,   output,
-                                    bool,          multiFile,
-                                    bool,          evenEigen);
+                                    bool,          multiFile);
 };
 
 template <typename FImpl, int nBasis, typename FImplIo = FImpl>
@@ -68,8 +67,7 @@ public:
     typedef typename CoarsePack::FieldIo                   FieldIo;
     typedef typename CoarsePack::CoarseField               CoarseField;
     typedef typename CoarsePack::CoarseFieldIo             CoarseFieldIo;
-
-
+    typedef HADRONS_DEFAULT_SCHUR_OP<FMat, FermionField>   SchurFMat;
 public:
     // constructor
     TLocalCoherenceLanczos(const std::string name);
@@ -85,12 +83,10 @@ public:
 };
 
 MODULE_REGISTER_TMP(LocalCoherenceLanczos, ARG(TLocalCoherenceLanczos<FIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
-MODULE_REGISTER_TMP(StagLocalCoherenceLanczos, ARG(TLocalCoherenceLanczos<STAGIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
 MODULE_REGISTER_TMP(LocalCoherenceLanczos600, ARG(TLocalCoherenceLanczos<FIMPL, 600>), MSolver);
 MODULE_REGISTER_TMP(ZLocalCoherenceLanczos, ARG(TLocalCoherenceLanczos<ZFIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>), MSolver);
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
 MODULE_REGISTER_TMP(LocalCoherenceLanczosIo32, ARG(TLocalCoherenceLanczos<FIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS, FIMPLF>), MSolver);
-MODULE_REGISTER_TMP(StagLocalCoherenceLanczosIo32, ARG(TLocalCoherenceLanczos<STAGIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS, STAGIMPLF>), MSolver);
 MODULE_REGISTER_TMP(LocalCoherenceLanczos600Io32, ARG(TLocalCoherenceLanczos<FIMPL, 600, FIMPLF>), MSolver);
 MODULE_REGISTER_TMP(ZLocalCoherenceLanczosIo32, ARG(TLocalCoherenceLanczos<ZFIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS, ZFIMPLF>), MSolver);
 #endif
@@ -152,10 +148,10 @@ void TLocalCoherenceLanczos<FImpl, nBasis, FImplIo>::setup(void)
 
     auto &epack = envGetDerived(BasePack, CoarsePack, getName());
 
-    envTmp(FSchurOp, "mat", Ls, envGet(FMat, par().action));
-    envGetTmp(FSchurOp, mat);
+    envTmp(SchurFMat, "mat", Ls, envGet(FMat, par().action));
+    envGetTmp(SchurFMat, mat);
     envTmp(LCL, "solver", Ls, envGetRbGrid(Field, Ls), cg, mat, 
-           (par().evenEigen ? Even : Odd), epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
+           Odd, epack.evec, epack.evecCoarse, epack.eval, epack.evalCoarse);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
