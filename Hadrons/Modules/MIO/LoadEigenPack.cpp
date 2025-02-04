@@ -31,7 +31,10 @@ using namespace Hadrons;
 using namespace MIO;
 
 template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPL>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPL>, GIMPL>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
 template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPLF>, GIMPLF>;
 template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<FIMPL, FIMPLF>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPLF>, GIMPLF>;
+template class HADRONS_NAMESPACE::MIO::TLoadEigenPack<FermionEigenPack<STAGIMPL, STAGIMPLF>, GIMPL>;
 #endif
