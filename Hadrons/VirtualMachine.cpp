@@ -1,9 +1,10 @@
 /*
  * VirtualMachine.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Fabian Joswig <fabian.joswig@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -116,7 +117,7 @@ void VirtualMachine::dbRestoreModules(void)
     {
         if (db_->tableExists("modules"))
         {
-            std::string prefix    = "Grid::Hadrons::";
+            std::string prefix    = "HADRONS_NAMESPACE::";
             auto        modTable  = db_->getTable<ModuleEntry>("modules", "ORDER BY moduleId");
            
             if (getNModule() > 0)
@@ -567,7 +568,8 @@ void VirtualMachine::makeModuleGraph(void)
                 HADRONS_ERROR_REF(ObjectDefinition, "dependency '" 
                              + env().getObjectName(in) + "' (address " 
                              + std::to_string(in)
-                             + ") is not produced by any module", in);
+                             + ", of module '" + getModuleName(m) 
+                             + "') is not produced by any module", in);
             }
             else
             {
@@ -787,28 +789,18 @@ VirtualMachine::makeGarbageSchedule(const Program &p) const
     std::function<unsigned int(const unsigned int)> earliestTimeNoDep = 
     [&](const unsigned int a)
     {
-        if (env().getObjectStorage(a) == Environment::Storage::standard)
+        
+        auto pred = [a, this](const unsigned int b)
         {
-            auto pred = [a, this](const unsigned int b)
-            {
-                auto &in = module_[b].input;
-                auto it  = std::find(in.begin(), in.end(), a);
-                
-                return (it != in.end()) or (b == env().getObjectModule(a));
-            };
-            auto it = std::find_if(p.rbegin(), p.rend(), pred);
-            assert(it != p.rend());
+            auto &in = module_[b].input;
+            auto it  = std::find(in.begin(), in.end(), a);
+            
+            return (it != in.end()) or (b == env().getObjectModule(a));
+        };
+        auto it = std::find_if(p.rbegin(), p.rend(), pred);
+        assert(it != p.rend());
 
-            return std::distance(it, p.rend()) - 1;
-        }
-        else // only temporaries
-        {
-            auto it = std::find(p.begin(), p.end(), env().getObjectModule(a));
-
-            assert(it != p.end());
-
-            return std::distance(p.begin(), it);
-        }
+        return std::distance(it, p.rend()) - 1;
     };
 
     // earliest time to destroy object (taking dependencies into account)
@@ -828,8 +820,7 @@ VirtualMachine::makeGarbageSchedule(const Program &p) const
 
     for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
     {
-        if (env().getObjectStorage(a) == Environment::Storage::temporary
-            or env().getObjectStorage(a) == Environment::Storage::standard)
+        if (env().getObjectStorage(a) == Environment::Storage::standard)
         {
             freeProg[earliestTime(a)].insert(a);
         }
@@ -934,6 +925,44 @@ VirtualMachine::Program VirtualMachine::schedule(const GeneticPar &par)
     return scheduler.getMinSchedule();
 }
 
+// naive scheduler ///////////////////////////////////////////////////////////
+VirtualMachine::Program VirtualMachine::naiveSchedule(void)
+{
+    LOG(Message) << "Using naive scheduler." << std::endl;
+    auto graph = getModuleGraph();
+
+    Program p;
+
+    for (unsigned int i = 0; i < graph.size(); ++i)
+    {
+        p.push_back(i);
+
+        for (auto &in : module_[i].input)
+        {
+            if (env().getObjectModule(in) > i)
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "Dependency '" + env().getObjectName(in)
+                                  + "' (address " + std::to_string(in) + ") is scheduled after "
+                                  + env().getObjectName(env().getObjectModule(i)), in);
+            }
+        }
+    }
+
+    if (hasDatabase() and makeScheduleDb_)
+    {
+        for (unsigned int i = 0; i < p.size(); ++i)
+        {
+            ScheduleEntry s;
+
+            s.step     = i;
+            s.moduleId = p[i];
+            db_->insert("schedule", s);
+        }
+    }
+
+    return p;
+}
+
 // general execution ///////////////////////////////////////////////////////////
 #define BIG_SEP   "================"
 #define SEP       "----------------"
@@ -962,6 +991,8 @@ void VirtualMachine::executeProgram(const Program &p)
     // program execution
     LOG(Debug) << "Executing program..." << std::endl;
     totalTime_ = GridTime::zero();
+    moduleTimeProfile_.clear();
+    moduleTypeTimeProfile_.clear();
     for (unsigned int i = 0; i < p.size(); ++i)
     {
         // execute module
@@ -991,7 +1022,16 @@ void VirtualMachine::executeProgram(const Program &p)
             LOG(Message) << "* CUSTOM TIMERS" << std::endl;
             printTimeProfile(ctiming, total);
         }
-        timeProfile_[module_[p[i]].name] = total;
+        moduleTimeProfile_[module_[p[i]].name] = total;
+        std::string moduleType = getModuleType(p[i]);
+        if (moduleTypeTimeProfile_.find(moduleType) == moduleTypeTimeProfile_.end())
+        {
+            moduleTypeTimeProfile_[getModuleType(p[i])] = total;
+        }
+        else
+        {
+            moduleTypeTimeProfile_.at(getModuleType(p[i])) += total;
+        }
         totalTime_ += total;
         // print used memory after execution
         LOG(Message) << SMALL_SEP << " Memory management" << std::endl;
@@ -1003,6 +1043,16 @@ void VirtualMachine::executeProgram(const Program &p)
         // garbage collection for step i
         LOG(Message) << "Garbage collection..." << std::endl;
         env().freeSet(freeProg[i]);
+
+        // Clean up remaining temporary objects
+        for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
+        {
+            if (env().getObjectStorage(a) == Environment::Storage::temporary)
+            {
+                env().freeObject(a);
+            }
+        }
+
         // print used memory after garbage collection if necessary
         sizeAfter = env().getTotalSize();
         if (sizeBefore != sizeAfter)
@@ -1015,10 +1065,12 @@ void VirtualMachine::executeProgram(const Program &p)
         }
     }
     // print total time profile
-     LOG(Message) << SEP << " Measurement time profile" << SEP << std::endl;
-     LOG(Message) << "Total measurement time: " << totalTime_ << " us" << std::endl;
-     LOG(Message) << SMALL_SEP << " Module breakdown" << std::endl;
-     printTimeProfile(timeProfile_, totalTime_);
+    LOG(Message) << SEP << " Measurement time profile" << SEP << std::endl;
+    LOG(Message) << "Total measurement time: " << timeString(totalTime_) << std::endl;
+    LOG(Message) << SMALL_SEP << " Module breakdown" << std::endl;
+    printTimeProfile(moduleTimeProfile_, totalTime_);
+    LOG(Message) << SMALL_SEP << " Module type breakdown" << std::endl;
+    printTimeProfile(moduleTypeTimeProfile_, totalTime_);
 }
 
 void VirtualMachine::executeProgram(const std::vector<std::string> &p)

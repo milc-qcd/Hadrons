@@ -31,5 +31,5 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-template class Grid::Hadrons::MContraction::TStagMesonCCLoopLMA<STAGIMPL,STAGIMPL>;
+template class HADRONS_NAMESPACE::MContraction::TStagMesonCCLoopLMA<STAGIMPL,STAGIMPL>;
 

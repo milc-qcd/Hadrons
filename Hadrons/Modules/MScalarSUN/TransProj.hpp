@@ -1,10 +1,11 @@
 /*
  * TransProj.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +31,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MScalarSUN/Utils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -111,6 +113,7 @@ std::vector<std::string> TTransProj<SImpl>::getOutput(void)
     {
         out.push_back(varName(getName(), mu, nu));
     }
+    out.push_back(getName());
     
     return out;
 }
@@ -127,6 +130,7 @@ void TTransProj<SImpl>::setup(void)
     envTmpLat(ComplexField, "buf1");
     envTmpLat(ComplexField, "buf2");
     envTmpLat(ComplexField, "lap");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -173,10 +177,9 @@ void TTransProj<SImpl>::execute(void)
             result.value[mu][nu] = result.value[nu][mu];
         }
     }
-    if (!par().output.empty())
-    {
-        saveResult(par().output, "transproj", result);
-    }
+
+    saveResult(par().output, "transproj", result);
+    envGet(HadronsSerializable, getName()) = result;
 }
 
 END_MODULE_NAMESPACE

@@ -1,7 +1,7 @@
 /*
  * MixedPrecisionRBPrecCG.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,6 +29,6 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MSolver;
 
-template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCG<FIMPLF, FIMPLD>;
-template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCG<STAGIMPLF, STAGIMPLD>;
-template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCG<ZFIMPLF, ZFIMPLD>;
+template class HADRONS_NAMESPACE::MSolver::TMixedPrecisionRBPrecCG<FIMPLF, FIMPLD>;
+template class HADRONS_NAMESPACE::MSolver::TMixedPrecisionRBPrecCG<STAGIMPLF, STAGIMPLD>;
+template class HADRONS_NAMESPACE::MSolver::TMixedPrecisionRBPrecCG<ZFIMPLF, ZFIMPLD>;

@@ -1,12 +1,14 @@
 /*
  * Baryon.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Felix Erben <dc-erbe1@tesseract-login1.ib0.sgi.cluster.dirac.ed.ac.uk>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  * Author: ferben <ferben@debian.felix.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -34,6 +36,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Grid/qcd/utils/BaryonUtils.h>
 
 BEGIN_HADRONS_NAMESPACE
@@ -136,7 +139,7 @@ std::vector<std::string> TBaryon<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TBaryon<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
     
     return out;
 }
@@ -145,10 +148,13 @@ std::vector<std::string> TBaryon<FImpl>::getOutputFiles(void)
 {
     std::vector<std::string> output;
 
-    if (par().trace)
-        output.push_back( resultFilename(par().output) );
-    else 
-        output.push_back( resultFilename(par().output+"_Matrix") );
+    if (!par().output.empty())
+    {
+        if (par().trace)
+            output.push_back(resultFilename(par().output));
+        else 
+            output.push_back(resultFilename(par().output+"_Matrix"));
+    }
     
     return output;
 }
@@ -216,6 +222,7 @@ void TBaryon<FImpl>::setup(void)
         envTmpLat(LatticeComplex, "c");
     else 
         envTmpLat(SpinMatrixField, "cMat");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -491,9 +498,17 @@ void TBaryon<FImpl>::execute(void)
     }
 
     if (par().trace)
+    {
         saveResult(par().output, "baryon", result);
+        auto &out = envGet(HadronsSerializable, getName());
+        out = result;
+    }
     else 
+    {
         saveResult(par().output + "_Matrix", "baryonMat", resultMat);
+        auto &out = envGet(HadronsSerializable, getName());
+        out = resultMat;
+    }
 
 }
 

@@ -1,9 +1,10 @@
 /*
  * TwoPointNPR.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +30,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MScalarSUN/Utils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -105,9 +107,7 @@ std::vector<std::string> TTwoPointNPR<SImpl>::getInput(void)
 template <typename SImpl>
 std::vector<std::string> TTwoPointNPR<SImpl>::getOutput(void)
 {
-    std::vector<std::string> out;
-    
-    return out;
+    return {getName()};
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
@@ -125,6 +125,7 @@ void TTwoPointNPR<SImpl>::setup(void)
     }
     envTmpLat(ComplexField, "ftBuf");
     envTmpLat(Field, "ftMatBuf");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -207,6 +208,7 @@ void TTwoPointNPR<SImpl>::execute(void)
         doAux = false;
     }
     saveResult(par().output, "twoptnpr", result);
+    envGet(HadronsSerializable, getName()) = result;
 }
 
 END_MODULE_NAMESPACE

@@ -1,9 +1,10 @@
 /*
  * FreeProp.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,72 +25,9 @@
 
 /*  END LEGAL */
 #include <Hadrons/Modules/MScalar/FreeProp.hpp>
-#include <Hadrons/Modules/MScalar/Scalar.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MScalar;
 
-/******************************************************************************
-*                        TFreeProp implementation                             *
-******************************************************************************/
-// constructor /////////////////////////////////////////////////////////////////
-TFreeProp::TFreeProp(const std::string name)
-: Module<FreePropPar>(name)
-{}
-
-// dependencies/products ///////////////////////////////////////////////////////
-std::vector<std::string> TFreeProp::getInput(void)
-{
-    std::vector<std::string> in = {par().source};
-    
-    return in;
-}
-
-std::vector<std::string> TFreeProp::getOutput(void)
-{
-    std::vector<std::string> out = {getName()};
-    
-    return out;
-}
-
-// setup ///////////////////////////////////////////////////////////////////////
-void TFreeProp::setup(void)
-{
-    freeMomPropName_ = FREEMOMPROP(par().mass);
-    
-    freePropDone_ = env().hasCreatedObject(freeMomPropName_);
-    envCacheLat(ScalarField, freeMomPropName_);
-    envCreateLat(ScalarField, getName());
-}
-
-// execution ///////////////////////////////////////////////////////////////////
-void TFreeProp::execute(void)
-{
-    auto &freeMomProp = envGet(ScalarField, freeMomPropName_);
-    auto &prop        = envGet(ScalarField, getName());
-    auto &source      = envGet(ScalarField, par().source);
-
-    if (!freePropDone_)
-    {
-        LOG(Message) << "Caching momentum space free scalar propagator"
-                     << " (mass= " << par().mass << ")..." << std::endl;
-        SIMPL::MomentumSpacePropagator(freeMomProp, par().mass);
-    }
-    LOG(Message) << "Computing free scalar propagator..." << std::endl;
-    SIMPL::FreePropagator(source, prop, freeMomProp);
-    
-    if (!par().output.empty())
-    {
-        std::vector<TComplex> buf;
-        std::vector<Complex>  result;
-        
-        sliceSum(prop, buf, Tp);
-        result.resize(buf.size());
-        for (unsigned int t = 0; t < buf.size(); ++t)
-        {
-            result[t] = TensorRemove(buf[t]);
-        }
-        saveResult(par().output, "freeprop", result);
-    }
-}
+template class HADRONS_NAMESPACE::MScalar::TFreeProp<SIMPL>;

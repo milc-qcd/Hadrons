@@ -1,7 +1,7 @@
 /*
  * TrKinetic.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,9 +29,9 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MScalarSUN;
 
-template class Grid::Hadrons::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<2>>;
-template class Grid::Hadrons::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<3>>;
-template class Grid::Hadrons::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<4>>;
-template class Grid::Hadrons::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<5>>;
-template class Grid::Hadrons::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<6>>;
+template class HADRONS_NAMESPACE::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<2>>;
+template class HADRONS_NAMESPACE::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<3>>;
+template class HADRONS_NAMESPACE::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<4>>;
+template class HADRONS_NAMESPACE::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<5>>;
+template class HADRONS_NAMESPACE::MScalarSUN::TTrKinetic<ScalarNxNAdjImplR<6>>;
 

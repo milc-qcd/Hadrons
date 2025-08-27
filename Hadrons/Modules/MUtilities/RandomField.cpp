@@ -1,7 +1,7 @@
 /*
  * RandomField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  *
@@ -29,7 +29,7 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MUtilities;
 
-template class Grid::Hadrons::MUtilities::TRandomField<FIMPL::PropagatorField>;
-template class Grid::Hadrons::MUtilities::TRandomField<FIMPL::FermionField>;
-template class Grid::Hadrons::MUtilities::TRandomField<FIMPL::ComplexField>;
-template class Grid::Hadrons::MUtilities::TRandomField<GIMPL::GaugeLinkField>;
+template class HADRONS_NAMESPACE::MUtilities::TRandomField<FIMPL::PropagatorField>;
+template class HADRONS_NAMESPACE::MUtilities::TRandomField<FIMPL::FermionField>;
+template class HADRONS_NAMESPACE::MUtilities::TRandomField<FIMPL::ComplexField>;
+template class HADRONS_NAMESPACE::MUtilities::TRandomField<GIMPL::GaugeLinkField>;

@@ -30,6 +30,6 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MUtilities;
 
-template class Grid::Hadrons::MUtilities::TSourcePickIndices<STAGIMPL::ComplexField>;
-template class Grid::Hadrons::MUtilities::TSourcePickIndices<STAGIMPL::FermionField>;
-template class Grid::Hadrons::MUtilities::TSourcePickIndices<STAGIMPL::PropagatorField>;
+template class HADRONS_NAMESPACE::MUtilities::TSourcePickIndices<STAGIMPL::ComplexField>;
+template class HADRONS_NAMESPACE::MUtilities::TSourcePickIndices<STAGIMPL::FermionField>;
+template class HADRONS_NAMESPACE::MUtilities::TSourcePickIndices<STAGIMPL::PropagatorField>;

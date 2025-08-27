@@ -1,15 +1,17 @@
 /*
  * LoadPerambulator.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  *  Author: Felix Erben <ferben@ed.ac.uk>
  *  Author: Michael Marshall <Michael.Marshall@ed.ac.uk>
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Felix Erben <dc-erbe1@tesseract-login1.ib0.sgi.cluster.dirac.ed.ac.uk>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
  * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: ferben <ferben@debian.felix.com>
  * Author: ferben <ferben@localhost.localdomain>
+ * Author: nelsonlachini <nelsonlachini@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -128,11 +130,9 @@ void TLoadPerambulator<FImpl>::execute(void)
     const int  Nt{env().getDim(Tdir)};
 
     std::string sourceT = par().timeSources;
-    int nSourceT;
-    std::vector<int> invT;
-    nSourceT = MDistil::getSourceTimesFromInput(sourceT,nDT,dilNoise,invT);    
+    std::vector<int> invT;   
+
     perambulator.MetaData.timeSources = invT;
-    
     envGetTmp(MDistil::PerambIndexTensor, PerambTmp);
     for (int dt = 0; dt < Nt; dt++)
     {
@@ -145,6 +145,8 @@ void TLoadPerambulator<FImpl>::execute(void)
         LOG(Message) <<  "reading perambulator dt= " << dt << std::endl;
         int idt=it - std::begin(invT);
         std::string sPerambName {par().perambFileName};
+        sPerambName.append(".");
+        sPerambName.append(std::to_string(vm().getTrajectory()));
         sPerambName.append("/iDT_");
         sPerambName.append(std::to_string(dt));
         sPerambName.append(".");

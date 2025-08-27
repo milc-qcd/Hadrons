@@ -31,4 +31,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class Grid::Hadrons::MIO::TLoadIldg<GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadIldg<GIMPL>;

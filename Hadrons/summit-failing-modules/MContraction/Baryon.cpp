@@ -1,10 +1,13 @@
 /*
  * Baryon.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <dc-erbe1@tesseract-login2.ib0.sgi.cluster.dirac.ed.ac.uk>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +33,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-#if (!defined(GRID_HIP))
-template class Grid::Hadrons::MContraction::TBaryon<FIMPL>;
-#endif
-
+template class HADRONS_NAMESPACE::MContraction::TBaryon<FIMPL>;

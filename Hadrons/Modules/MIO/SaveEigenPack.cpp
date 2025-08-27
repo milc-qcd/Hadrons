@@ -29,9 +29,9 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPL>>;
-template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPL>>;
+template class HADRONS_NAMESPACE::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPL>>;
+template class HADRONS_NAMESPACE::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPL>>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPLF>>;
-template class Grid::Hadrons::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPLF>>;
+template class HADRONS_NAMESPACE::MIO::TSaveEigenPack<BaseFermionEigenPack<FIMPLF>>;
+template class HADRONS_NAMESPACE::MIO::TSaveEigenPack<BaseFermionEigenPack<STAGIMPLF>>;
 #endif

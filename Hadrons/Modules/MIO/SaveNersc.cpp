@@ -1,9 +1,10 @@
 /*
- * LoadNersc.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * SaveNersc.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,4 +30,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class Grid::Hadrons::MIO::TSaveNersc<GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TSaveNersc<GIMPL>;

@@ -1,14 +1,17 @@
 /*
  * ExternalLeg.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2022
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Fabian Joswig <fabian.joswig@ed.ac.uk>
+ * Author: Fabian Joswig <fabian.joswig@wwu.de>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
  * Author: Julia Kettle J.R.Kettle-2@sms.ed.ac.uk
  * Author: Michael Marshall <43034299+mmphys@users.noreply.github.com>
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
- * Author: Fabian Joswig <fabian.joswig@wwu.de>
- * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
+ * Author: rabbott <rabbott4927@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +26,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution
+ * See the full license in the file "LICENSE" in the top level distribution 
  * directory.
  */
 
@@ -35,6 +38,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MNPR/NPRUtils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -75,6 +79,7 @@ public:
     // dependencies/products
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+    virtual std::vector<std::string> getOutputFiles(void);
     // setup
     virtual void setup(void);
     // execution
@@ -101,6 +106,8 @@ void TExternalLeg<FImpl>::setup(void)
     envTmpLat(PropagatorField, "qIn_phased");
     envTmpLat(ComplexField, "pDotXIn");
     envTmpLat(ComplexField, "xMu");
+
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // dependencies/products ///////////////////////////////////////////////////////
@@ -115,9 +122,17 @@ std::vector<std::string> TExternalLeg<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TExternalLeg<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
 
     return out;
+}
+
+template <typename FImpl>
+std::vector<std::string> TExternalLeg<FImpl>::getOutputFiles(void)
+{
+    std::vector<std::string> output = {resultFilename(par().output)};
+
+    return output;
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -149,8 +164,10 @@ void TExternalLeg<FImpl>::execute(void)
     r.info.pIn  = par().pIn;
     r.corr.push_back( (1.0 / volume) * sum(qIn_phased) );
 
-    saveResult(par().output, "ExternalLeg", r);
     LOG(Message) << "Complete. Writing results to " << par().output << std:: endl;
+    saveResult(par().output, "ExternalLeg", r);
+    auto& out = envGet(HadronsSerializable, getName());
+    out = r;
 }
 
 END_MODULE_NAMESPACE

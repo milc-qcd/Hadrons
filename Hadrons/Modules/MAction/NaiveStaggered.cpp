@@ -4,7 +4,7 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MAction;
 
-template class Grid::Hadrons::MAction::TNaiveStaggered<STAGIMPL>;
+template class HADRONS_NAMESPACE::MAction::TNaiveStaggered<STAGIMPL>;
 #ifdef GRID_DEFAULT_PRECISION_DOUBLE
-template class Grid::Hadrons::MAction::TNaiveStaggered<STAGIMPLF>;
+template class HADRONS_NAMESPACE::MAction::TNaiveStaggered<STAGIMPLF>;
 #endif

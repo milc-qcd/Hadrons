@@ -1,9 +1,11 @@
 /*
  * Test_exact_distil.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
+ * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: nelsonlachini <nelsonlachini@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -128,10 +130,11 @@ int main(int argc, char *argv[])
         // perabmulators
         MDistil::Perambulator::Par perambPar;
         perambPar.lapEigenPack = "lapevec";
+        perambPar.sourceBatchSize = 1; // pass by batch deflation
         perambPar.solver = "cg_" + flavour[i];
-        perambPar.perambFileName = "./Peramb_" + flavour[i] + "_nvec6";
-        perambPar.fullSolveFileName = ""; // only used for perambMode::saveSolve
-        perambPar.fullSolve = ""; // only used for perambMode::loadSolve
+        perambPar.perambOutFileName = "./Peramb_" + flavour[i] + "_nvec6";
+        perambPar.unsmSolveOutFileName = ""; // only used for perambMode::saveSolveOnly
+        perambPar.unsmSolve = ""; // only used for perambMode::loadSolve
         perambPar.distilNoise = "exact";
         perambPar.timeSources = ""; // empty -> invert on all time slices
         perambPar.perambMode = MDistil::pMode::perambOnly; // compute perambulator from lap evecs, discard unsmeared solves

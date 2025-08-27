@@ -1,12 +1,15 @@
 /*
  * SubtractionOperators.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2022
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Ryan Abbott <rabbott@mit.edu>
+ * Author: Fabian Joswig <fabian.joswig@ed.ac.uk>
  * Author: Fabian Joswig <fabian.joswig@wwu.de>
  * Author: Felix Erben <felix.erben@ed.ac.uk>
+ * Author: Ryan Abbott <rabbott@mit.edu>
+ * Author: Simon Bürger <simon.buerger@rwth-aachen.de>
+ * Author: rabbott <rabbott4927@gmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +24,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution
+ * See the full license in the file "LICENSE" in the top level distribution 
  * directory.
  */
 
@@ -32,6 +35,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MNPR/NPRUtils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -84,6 +88,7 @@ public:
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+    virtual std::vector<std::string> getOutputFiles(void);
 
     // setup
     virtual void setup(void);
@@ -119,6 +124,13 @@ std::vector<std::string> TSubtractionOperators<FImpl>::getOutput(void)
     return out;
 }
 
+template <typename FImpl>
+std::vector<std::string> TSubtractionOperators<FImpl>::getOutputFiles(void)
+{
+    std::vector<std::string> output = {resultFilename(par().output)};
+
+    return output;
+}
 
 // setup ///////////////////////////////////////////////////////////////////////
 template <typename FImpl>
@@ -136,6 +148,8 @@ void TSubtractionOperators<FImpl>::setup(void)
     envTmpLat(ComplexField, "coordinate");
 
     envTmpLat(PropagatorField, "tmp");
+
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -226,10 +240,9 @@ void TSubtractionOperators<FImpl>::execute(void)
     bilinear = g5 * adj(qOut) * qIn;
     compute_result(result.psuedoscalar);
 
-    if (par().output != "") {
-        saveResult(par().output, "SubtractionOperators", result);
-        LOG(Message) << "Complete. Writing results to " << par().output << std::endl;
-    }
+    LOG(Message) << "Complete. Writing results to " << par().output << std::endl;
+    saveResult(par().output, "SubtractionOperators", result);
+    envGet(HadronsSerializable, getName()) = result;
 }
 
 END_MODULE_NAMESPACE

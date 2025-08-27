@@ -1,7 +1,7 @@
 /*
  * Point.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
@@ -32,8 +32,8 @@ using namespace MSink;
 
 typedef Lattice<iScalar<iMatrix<iScalar<vComplex>,Ns>>> SpinMatField;
 
-template class Grid::Hadrons::MSink::TPoint<FIMPL::PropagatorField>;
-template class Grid::Hadrons::MSink::TPoint<ScalarImplCR::Field>;
-template class Grid::Hadrons::MSink::TPoint<SpinMatField>;
-template class Grid::Hadrons::MSink::TPoint<STAGIMPL::PropagatorField>;
+template class HADRONS_NAMESPACE::MSink::TPoint<FIMPL::PropagatorField>;
+template class HADRONS_NAMESPACE::MSink::TPoint<ScalarImplCR::Field>;
+template class HADRONS_NAMESPACE::MSink::TPoint<SpinMatField>;
+template class HADRONS_NAMESPACE::MSink::TPoint<STAGIMPL::PropagatorField>;
 

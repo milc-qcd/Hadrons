@@ -31,4 +31,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MFermion;
 
-template class Grid::Hadrons::MFermion::TStagGaugeSpectProp<STAGIMPL>;
+template class HADRONS_NAMESPACE::MFermion::TStagGaugeSpectProp<STAGIMPL>;

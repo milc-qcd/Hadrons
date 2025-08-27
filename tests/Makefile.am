@@ -7,12 +7,16 @@ EXTRA_PROGRAMS = \
   Test_database             \
   Test_database_concurrency \
   Test_diskvector           \
-  Test_exact_distil               \
+  Test_em_field             \
+  Test_exact_distil         \
+  Test_fermion_flow			\
   Test_field_io             \
   Test_free_prop            \
+  Test_gradient_flow		\
   Test_hadrons_meson_3pt    \
   Test_hadrons_spectrum     \
   Test_highfreq_stat        \
+  Test_result_bundling      \
   Test_sigma_to_nucleon     \
   Test_stoch_distil         \
   Test_xi_to_sigma
@@ -36,14 +40,23 @@ Test_database_LDADD=-lHadrons -lGrid
 Test_database_concurrency_SOURCES=Test_database_concurrency.cpp
 Test_database_concurrency_LDADD=-lHadrons -lGrid
 
+Test_em_field_SOURCES=Test_em_field.cpp
+Test_em_field_LDADD=-lHadrons -lGrid
+
 Test_exact_distil_SOURCES=Test_exact_distil.cpp
 Test_exact_distil_LDADD=-lHadrons -lGrid
+
+Test_fermion_flow_SOURCES=Test_fermion_flow.cpp
+Test_fermion_flow_LDADD=-lHadrons -lGrid
 
 Test_field_io_SOURCES=Test_field_io.cpp
 Test_field_io_LDADD=-lHadrons -lGrid
 
 Test_free_prop_SOURCES=Test_free_prop.cpp
 Test_free_prop_LDADD=-lHadrons -lGrid
+
+Test_gradient_flow_SOURCES=Test_gradient_flow.cpp
+Test_gradient_flow_LDADD=-lHadrons -lGrid
 
 Test_hadrons_meson_3pt_SOURCES=Test_hadrons_meson_3pt.cpp
 Test_hadrons_meson_3pt_LDADD=-lHadrons -lGrid
@@ -53,6 +66,9 @@ Test_hadrons_spectrum_LDADD=-lHadrons -lGrid
 
 Test_highfreq_stat_SOURCES=Test_highfreq_stat.cpp
 Test_highfreq_stat_LDADD=-lHadrons -lGrid
+
+Test_result_bundling_SOURCES=Test_result_bundling.cpp
+Test_result_bundling_LDADD=-lHadrons -lGrid
 
 Test_sigma_to_nucleon_SOURCES=Test_sigma_to_nucleon.cpp
 Test_sigma_to_nucleon_LDADD=-lHadrons -lGrid

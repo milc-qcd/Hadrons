@@ -1,10 +1,11 @@
 /*
  * FreeProp.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
  * Author: Peter Boyle <paboyle@ph.ed.ac.uk>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  * Author: Vera Guelpers <Vera.Guelpers@ed.ac.uk>
  * Author: Vera Guelpers <vmg1n14@soton.ac.uk>
  * Author: guelpers <Vera.Guelpers@ed.ac.uk>
@@ -81,6 +82,7 @@ public:
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
+    virtual std::vector<std::string> getOutputFiles(void);
 protected:
     // setup
     virtual void setup(void);
@@ -116,6 +118,17 @@ std::vector<std::string> TFreeProp<FImpl>::getOutput(void)
     std::vector<std::string> out = {getName(), getName() + "_5d"};
     
     return out;
+}
+
+template <typename FImpl>
+std::vector<std::string> TFreeProp<FImpl>::getOutputFiles(void)
+{
+    std::vector<std::string> output;
+    
+    if (!par().outputTrace.empty())
+        output.push_back(resultFilename(par().outputTrace));
+    
+    return output;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
