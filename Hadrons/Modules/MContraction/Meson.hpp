@@ -35,7 +35,6 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/Modules/MSource/Point.hpp>
 #include <Hadrons/TimerArray.hpp>
 #include <Hadrons/Serialization.hpp>
 
@@ -72,7 +71,6 @@ public:
                                     std::string, q2,
                                     std::string, gammas,
                                     std::string, sink,
-                                    std::string, source,
                                     std::string, output);
 };
 

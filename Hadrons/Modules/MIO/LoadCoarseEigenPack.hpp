@@ -137,7 +137,7 @@ void TLoadCoarseEigenPack<Pack,GImpl>::setup(void)
 
     if (typeHash<Field>() != typeHash<FieldIo>())
     {
-        gridIo = (par().Ls>1?envGetRbGrid(FieldIo, par().Ls):envGetRbGrid(FieldIo));
+        gridIo = envGetRbGrid(FieldIo, par().Ls);
     }
     if (typeHash<CoarseField>() != typeHash<CoarseFieldIo>())
     {

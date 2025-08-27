@@ -32,4 +32,3 @@ using namespace MSource;
 template class HADRONS_NAMESPACE::MSource::TPoint<FIMPL>;
 template class HADRONS_NAMESPACE::MSource::TPoint<ScalarImplCR>;
 template class HADRONS_NAMESPACE::MSource::TPoint<STAGIMPL>;
-

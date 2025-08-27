@@ -74,7 +74,7 @@ MODULE_REGISTER(mod, ARG(base), ns);
 this->env().template getGrid<typename latticeType::vector_type>()
 
 #define envGetGrid5(latticeType, Ls)\
-((Ls>1)?env().template getGrid<typename latticeType::vector_type>(Ls) : envGetGrid4(latticeType))
+((Ls>1)?this->env().template getGrid<typename latticeType::vector_type>(Ls) : envGetGrid4(latticeType))
 
 #define envGetGrid(...)\
 HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetGrid5, envGetGrid4)(__VA_ARGS__)
@@ -83,7 +83,7 @@ HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetGrid5, envGetGrid4)(__VA_ARGS__)
 this->env().template getCoarseGrid<typename latticeType::vector_type>(blockSize)
 
 #define envGetCoarseGrid5(latticeType, blockSize, Ls)\
-((Ls>1)?env().template getCoarseGrid<typename latticeType::vector_type>(blockSize, Ls) : envGetCoarseGrid4(latticeType,blockSize))
+((Ls>1)?this->env().template getCoarseGrid<typename latticeType::vector_type>(blockSize, Ls) : envGetCoarseGrid4(latticeType,blockSize))
 
 #define envGetCoarseGrid(...)\
 HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envGetCoarseGrid5, envGetCoarseGrid4)(__VA_ARGS__)
@@ -92,7 +92,7 @@ HADRONS_MACRO_REDIRECT_23(__VA_ARGS__, envGetCoarseGrid5, envGetCoarseGrid4)(__V
 this->env().template getRbGrid<typename latticeType::vector_type>()
 
 #define envGetRbGrid5(latticeType, Ls)\
-((Ls>1)?env().template getRbGrid<typename latticeType::vector_type>(Ls) : envGetRbGrid4(latticeType))
+((Ls>1)?this->env().template getRbGrid<typename latticeType::vector_type>(Ls) : envGetRbGrid4(latticeType))
 
 #define envGetRbGrid(...)\
 HADRONS_MACRO_REDIRECT_12(__VA_ARGS__, envGetRbGrid5, envGetRbGrid4)(__VA_ARGS__)

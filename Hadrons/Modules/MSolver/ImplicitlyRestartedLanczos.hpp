@@ -19,7 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
@@ -94,7 +94,7 @@ std::vector<std::string> TImplicitlyRestartedLanczos<Field, FieldIo>::getInput(v
     if (!par().epackIn.empty()) {
         in.push_back(par().epackIn);
     }
-    
+
     return in;
 }
 
@@ -136,9 +136,7 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::setup(void)
         par().lanczosParams.Nstop, par().lanczosParams.Nk, par().lanczosParams.Nm,
         par().lanczosParams.resid, par().lanczosParams.MaxIt, par().lanczosParams.betastp, 
         par().lanczosParams.MinRes);
-    envTmp(Field, "gauss", Ls, getGrid<Field>(false, Ls));
     envTmp(Field, "src", Ls, grid);
-    envTmp(Field, "polyVec", Ls, grid);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -152,16 +150,16 @@ void TImplicitlyRestartedLanczos<Field, FieldIo>::execute(void)
     
     envGetTmp(ImplicitlyRestartedLanczos<Field>, irl);
     envGetTmp(Field, src);
-    envGetTmp(Field, gauss);
 
     grid = getGrid<Field>(par().redBlack, Ls);
+    if (typeHash<Field>() != typeHash<FieldIo>())
+    {
+        gridIo = getGrid<FieldIo>(par().redBlack, Ls);
+    }
+    gaussian(rng4d(), src);
     if (par().redBlack)
     {
-        envGetTmp(Field, gauss);
-        gaussian(rng4d(), gauss);
-        pickCheckerboard(par().evenEigen?Even:Odd,src,gauss);
-    } else {
-        gaussian(rng4d(), src);
+        src.Checkerboard() = Odd;
     }
 
     int offset = 0;
