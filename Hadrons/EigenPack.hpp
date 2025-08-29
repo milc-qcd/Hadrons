@@ -28,10 +28,10 @@
 #ifndef Hadrons_EigenPack_hpp_
 #define Hadrons_EigenPack_hpp_
 
-#include <Grid/algorithms/deflation/Deflation.h>
-#include <Grid/algorithms/iterative/LocalCoherenceLanczos.h>
 #include <Hadrons/Global.hpp>
 #include <Hadrons/LatticeUtilities.hpp>
+#include <Grid/algorithms/deflation/Deflation.h>
+#include <Grid/algorithms/iterative/LocalCoherenceLanczos.h>
 
 BEGIN_HADRONS_NAMESPACE
 

@@ -19,7 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
@@ -40,47 +40,44 @@ BEGIN_HADRONS_NAMESPACE
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MSolver)
 
-class RBPrecCGPar: Serializable
-{
+class RBPrecCGPar : Serializable {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(RBPrecCGPar ,
-                                    std::string , action,
-                                    unsigned int, maxIteration,
-                                    double      , residual,
-                                    std::string , guesser);
+  GRID_SERIALIZABLE_CLASS_MEMBERS(RBPrecCGPar, std::string, action,
+                                  unsigned int, maxIteration, double, residual,
+                                  std::string, guesser);
 };
 
 template <typename FImpl, bool failIfNoConverge = true>
-class TRBPrecCG: public Module<RBPrecCGPar>
-{
+class TRBPrecCG : public Module<RBPrecCGPar> {
 public:
-    FERM_TYPE_ALIASES(FImpl,);
-    SOLVER_TYPE_ALIASES(FImpl,);
+  FERM_TYPE_ALIASES(FImpl, );
+  SOLVER_TYPE_ALIASES(FImpl, );
+
 public:
-    // constructor
-    TRBPrecCG(const std::string name);
-    // destructor
-    virtual ~TRBPrecCG(void) {};
-    // dependencies/products
-    virtual std::vector<std::string> getInput(void);
-    virtual std::vector<std::string> getOutput(void);
-    virtual DependencyMap getObjectDependencies(void);
+  // constructor
+  TRBPrecCG(const std::string name);
+  // destructor
+  virtual ~TRBPrecCG(void) {};
+  // dependencies/products
+  virtual std::vector<std::string> getInput(void);
+  virtual std::vector<std::string> getOutput(void);
+  virtual DependencyMap getObjectDependencies(void);
+
 protected:
-    // setup
-    virtual void setup(void);
-    // execution
-    virtual void execute(void);
+  // setup
+  virtual void setup(void);
+  // execution
+  virtual void execute(void);
 };
 
 MODULE_REGISTER_TMP(StagRBPrecCG, ARG(TRBPrecCG<STAGIMPL>), MSolver);
-MODULE_REGISTER_TMP(StagRBPrecCGNoFail, ARG(TRBPrecCG<STAGIMPL, false>), MSolver);
+MODULE_REGISTER_TMP(StagRBPrecCGNoFail, ARG(TRBPrecCG<STAGIMPL, false>),
+                    MSolver);
 MODULE_REGISTER_TMP(RBPrecCG, ARG(TRBPrecCG<FIMPL>), MSolver);
 MODULE_REGISTER_TMP(RBPrecCGNoFail, ARG(TRBPrecCG<FIMPL, false>), MSolver);
 MODULE_REGISTER_TMP(RBPrecCGLepton, ARG(TRBPrecCG<LIMPL>), MSolver);
 MODULE_REGISTER_TMP(ZRBPrecCG, ARG(TRBPrecCG<ZFIMPL>), MSolver);
 MODULE_REGISTER_TMP(ZRBPrecCGNoFail, ARG(TRBPrecCG<ZFIMPL, false>), MSolver);
-MODULE_REGISTER_TMP(StagRBPrecCG, ARG(TRBPrecCG<STAGIMPL>), MSolver);
-MODULE_REGISTER_TMP(StagRBPrecCGNoFail, ARG(TRBPrecCG<STAGIMPL, false>), MSolver);
 
 /******************************************************************************
  *                      TRBPrecCG template implementation                     *
@@ -88,107 +85,98 @@ MODULE_REGISTER_TMP(StagRBPrecCGNoFail, ARG(TRBPrecCG<STAGIMPL, false>), MSolver
 // constructor /////////////////////////////////////////////////////////////////
 template <typename FImpl, bool failIfNoConverge>
 TRBPrecCG<FImpl, failIfNoConverge>::TRBPrecCG(const std::string name)
-: Module(name)
-{}
+    : Module(name) {}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl, bool failIfNoConverge>
-std::vector<std::string> TRBPrecCG<FImpl, failIfNoConverge>::getInput(void)
-{
-    std::vector<std::string> in = {par().action};
-    
-    if (!par().guesser.empty())
-    {
-        in.push_back(par().guesser);
-    }
+std::vector<std::string> TRBPrecCG<FImpl, failIfNoConverge>::getInput(void) {
+  std::vector<std::string> in = {par().action};
 
-    return in;
+  if (!par().guesser.empty()) {
+    in.push_back(par().guesser);
+  }
+
+  return in;
 }
 
 template <typename FImpl, bool failIfNoConverge>
-std::vector<std::string> TRBPrecCG<FImpl, failIfNoConverge>::getOutput(void)
-{
-    std::vector<std::string> out = {getName(), getName() + "_subtract"};
-    
-    return out;
+std::vector<std::string> TRBPrecCG<FImpl, failIfNoConverge>::getOutput(void) {
+  std::vector<std::string> out = {getName(), getName() + "_subtract"};
+
+  return out;
 }
 
 template <typename FImpl, bool failIfNoConverge>
-DependencyMap TRBPrecCG<FImpl, failIfNoConverge>::getObjectDependencies(void)
-{
-    DependencyMap dep;
+DependencyMap TRBPrecCG<FImpl, failIfNoConverge>::getObjectDependencies(void) {
+  DependencyMap dep;
 
-    dep.insert({par().action, getName()});
-    dep.insert({par().action, getName() + "_subtract"});
-    if (!par().guesser.empty())
-    {
-        dep.insert({par().guesser, getName(),             });
-        dep.insert({par().guesser, getName() + "_subtract"});
-    }
+  dep.insert({par().action, getName()});
+  dep.insert({par().action, getName() + "_subtract"});
+  if (!par().guesser.empty()) {
+    dep.insert({
+        par().guesser,
+        getName(),
+    });
+    dep.insert({par().guesser, getName() + "_subtract"});
+  }
 
-    return dep;
+  return dep;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
 // C++11 does not support template lambdas so it is easier
 // to make a macro with the solver body
-#define SOLVER_BODY                                                                          \
-ZeroGuesser<FermionField>    defaultGuesser;                                                 \
-LinearFunction<FermionField> &guesser = (guesserPt == nullptr) ? defaultGuesser : *guesserPt;\
-ConjugateGradient<FermionField> cg(par().residual, par().maxIteration, failIfNoConverge);    \
-HADRONS_DEFAULT_SCHUR_SOLVE<FermionField> schurSolver(cg);                                   \
-schurSolver.subtractGuess(subGuess);                                                         \
-schurSolver(mat, source, sol, guesser);
+#define SOLVER_BODY                                                            \
+  ZeroGuesser<FermionField> defaultGuesser;                                    \
+  LinearFunction<FermionField> &guesser =                                      \
+      (guesserPt == nullptr) ? defaultGuesser : *guesserPt;                    \
+  ConjugateGradient<FermionField> cg(par().residual, par().maxIteration,       \
+                                     failIfNoConverge);                        \
+  HADRONS_DEFAULT_SCHUR_SOLVE<FermionField> schurSolver(cg);                   \
+  schurSolver.subtractGuess(subGuess);                                         \
+  schurSolver(mat, source, sol, guesser);
 
 template <typename FImpl, bool failIfNoConverge>
-void TRBPrecCG<FImpl, failIfNoConverge>::setup(void)
-{
-    if (par().maxIteration == 0)
-    {
-        HADRONS_ERROR(Argument, "zero maximum iteration");
-    }
+void TRBPrecCG<FImpl, failIfNoConverge>::setup(void) {
+  if (par().maxIteration == 0) {
+    HADRONS_ERROR(Argument, "zero maximum iteration");
+  }
 
-    LOG(Message) << "setting up Schur red-black preconditioned CG for"
-                 << " action '" << par().action << "' with residual "
-                 << par().residual << ", maximum iteration " 
-                 << par().maxIteration << std::endl;
+  LOG(Message) << "setting up Schur red-black preconditioned CG for"
+               << " action '" << par().action << "' with residual "
+               << par().residual << ", maximum iteration " << par().maxIteration
+               << std::endl;
 
-    auto                         Ls         = env().getObjectLs(par().action);
-    auto                         &mat       = envGet(FMat, par().action);
-    LinearFunction<FermionField> *guesserPt = nullptr;
+  auto Ls = env().getObjectLs(par().action);
+  auto &mat = envGet(FMat, par().action);
+  LinearFunction<FermionField> *guesserPt = nullptr;
 
-    if (!par().guesser.empty())
-    {
-        guesserPt = &envGet(LinearFunction<FermionField>, par().guesser);
-    }
-    auto makeSolver = [&mat, guesserPt, this](bool subGuess) {
-        return [&mat, guesserPt, subGuess, this]
-        (FermionField &sol, const FermionField &source) 
-        {
-            SOLVER_BODY;
-        };
-    };
-    auto makeVecSolver = [&mat, guesserPt, this](bool subGuess) {
-        return [&mat, guesserPt, subGuess, this]
-        (std::vector<FermionField> &sol, const std::vector<FermionField> &source) 
-        {
-            SOLVER_BODY;
-        };
-    };
-    auto solver    = makeSolver(false);
-    auto vecSolver = makeVecSolver(false);
-    envCreate(Solver, getName(), Ls, solver, vecSolver, mat);
-    auto solver_subtract    = makeSolver(true);
-    auto vecSolver_subtract = makeVecSolver(true);
-    envCreate(Solver, getName() + "_subtract", Ls, solver_subtract, vecSolver_subtract, mat);
+  if (!par().guesser.empty()) {
+    guesserPt = &envGet(LinearFunction<FermionField>, par().guesser);
+  }
+  auto makeSolver = [&mat, guesserPt, this](bool subGuess) {
+    return [&mat, guesserPt, subGuess, this](
+               FermionField &sol, const FermionField &source) { SOLVER_BODY; };
+  };
+  auto makeVecSolver = [&mat, guesserPt, this](bool subGuess) {
+    return [&mat, guesserPt, subGuess,
+            this](std::vector<FermionField> &sol,
+                  const std::vector<FermionField> &source) { SOLVER_BODY; };
+  };
+  auto solver = makeSolver(false);
+  auto vecSolver = makeVecSolver(false);
+  envCreate(Solver, getName(), Ls, solver, vecSolver, mat);
+  auto solver_subtract = makeSolver(true);
+  auto vecSolver_subtract = makeVecSolver(true);
+  envCreate(Solver, getName() + "_subtract", Ls, solver_subtract,
+            vecSolver_subtract, mat);
 }
 
 #undef SOLVER_BODY
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl, bool failIfNoConverge>
-void TRBPrecCG<FImpl, failIfNoConverge>::execute(void)
-{}
+void TRBPrecCG<FImpl, failIfNoConverge>::execute(void) {}
 
 END_MODULE_NAMESPACE
 

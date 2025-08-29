@@ -1,5 +1,6 @@
 /*
- * LoadCoarseEigenPack.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * LoadCoarseEigenPack.cpp, part of Hadrons
+ * (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2023
  *
@@ -19,7 +20,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
@@ -30,13 +31,24 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MIO;
 
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPL,HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPL>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPL,200>, GIMPL>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPL,250>, GIMPL>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPL,400>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPL, 200>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPL, 250>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPL, 400>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<STAGIMPL, HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPL>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<STAGIMPLF, HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPLF>;
 
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPLF,HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPLF>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPLF,200>, GIMPLF>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPLF,250>, GIMPLF>;
-template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<CoarseFermionEigenPack<FIMPLF,400>, GIMPLF>;
-
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPLF, HADRONS_DEFAULT_LANCZOS_NBASIS>, GIMPLF>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPLF, 200>, GIMPLF>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPLF, 250>, GIMPLF>;
+template class HADRONS_NAMESPACE::MIO::TLoadCoarseEigenPack<
+    CoarseFermionEigenPack<FIMPLF, 400>, GIMPLF>;
