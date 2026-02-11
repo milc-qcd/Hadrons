@@ -7,7 +7,11 @@ sha256='01df06a84803c1ab4d62c64e995b151b2dbcf5dbc93bbc5eee213cb18225d987'
 
 echo '-- generating module list...'
 cd Hadrons
-./make_module_list.sh
+if [[ "$@" =~ --custom ]]; then
+    ./make_module_list.sh --custom
+else
+    ./make_module_list.sh
+fi
 cd ..
 echo '-- downloading SQLite...'
 wget ${sqlite_link}
