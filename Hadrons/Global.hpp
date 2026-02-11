@@ -24,7 +24,7 @@
  * You should have received a copy of the GNU General Public License
  * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
  *
- * See the full license in the file "LICENSE" in the top level distribution 
+ * See the full license in the file "LICENSE" in the top level distribution
  * directory.
  */
 
@@ -33,13 +33,13 @@
 #ifndef Hadrons_Global_hpp_
 #define Hadrons_Global_hpp_
 
+#include <Grid/Grid.h>
 #include <atomic>
+#include <cxxabi.h>
+#include <regex>
 #include <set>
 #include <stack>
 #include <thread>
-#include <regex>
-#include <Grid/Grid.h>
-#include <cxxabi.h>
 
 #ifndef SITE_SIZE_TYPE
 #define SITE_SIZE_TYPE size_t
@@ -51,7 +51,7 @@
 
 #ifndef HADRONS_XML_TOPLEV
 #define HADRONS_XML_TOPLEV "grid"
-#endif 
+#endif
 
 #define ARG(...) __VA_ARGS__
 
@@ -61,134 +61,160 @@
 
 #define HADRONS_NAMESPACE Grid::Hadrons
 
-#define BEGIN_HADRONS_NAMESPACE \
-namespace HADRONS_NAMESPACE {\
-using Grid::operator<<;\
-using Grid::operator>>;
+#define BEGIN_HADRONS_NAMESPACE                                                \
+  namespace HADRONS_NAMESPACE {                                                \
+  using Grid::operator<<;                                                      \
+  using Grid::operator>>;
 #define END_HADRONS_NAMESPACE }
 
-#define BEGIN_MODULE_NAMESPACE(name)\
-namespace name {\
-using Grid::operator<<;\
-using Grid::operator>>;
+#define BEGIN_MODULE_NAMESPACE(name)                                           \
+  namespace name {                                                             \
+  using Grid::operator<<;                                                      \
+  using Grid::operator>>;
 
 #define END_MODULE_NAMESPACE }
 
 #define _HADRONS_IMPL(impl, sub) impl##sub
-#define HADRONS_IMPL(impl, sub)   _HADRONS_IMPL(impl, sub)
+#define HADRONS_IMPL(impl, sub) _HADRONS_IMPL(impl, sub)
 
-typedef Grid::WilsonImpl<Grid::vComplex, 
-                         Grid::FundamentalRep<1,Grid::GroupName::SU>, 
-                         Grid::CoeffReal> LeptonWilsonImplR;
-typedef Grid::WilsonImpl<Grid::vComplexF, 
-                         Grid::FundamentalRep<1,Grid::GroupName::SU>, 
-                         Grid::CoeffReal> LeptonWilsonImplF;
-typedef Grid::WilsonImpl<Grid::vComplexD, 
-                         Grid::FundamentalRep<1,Grid::GroupName::SU>, 
-                         Grid::CoeffReal> LeptonWilsonImplD;
-typedef Grid::PeriodicGaugeImpl<Grid::GaugeImplTypes<Grid::vComplex, 1, 12, Grid::SU<1>>> PeriodicGImplU1;
-typedef Grid::PeriodicGaugeImpl<Grid::GaugeImplTypes<Grid::vComplexF, 1, 12, Grid::SU<1>>> PeriodicGImplU1F;
-typedef Grid::PeriodicGaugeImpl<Grid::GaugeImplTypes<Grid::vComplexD, 1, 12, Grid::SU<1>>> PeriodicGImplU1D;
+typedef Grid::WilsonImpl<Grid::vComplex,
+                         Grid::FundamentalRep<1, Grid::GroupName::SU>,
+                         Grid::CoeffReal>
+    LeptonWilsonImplR;
+typedef Grid::WilsonImpl<Grid::vComplexF,
+                         Grid::FundamentalRep<1, Grid::GroupName::SU>,
+                         Grid::CoeffReal>
+    LeptonWilsonImplF;
+typedef Grid::WilsonImpl<Grid::vComplexD,
+                         Grid::FundamentalRep<1, Grid::GroupName::SU>,
+                         Grid::CoeffReal>
+    LeptonWilsonImplD;
+typedef Grid::PeriodicGaugeImpl<
+    Grid::GaugeImplTypes<Grid::vComplex, 1, 12, Grid::SU<1>>>
+    PeriodicGImplU1;
+typedef Grid::PeriodicGaugeImpl<
+    Grid::GaugeImplTypes<Grid::vComplexF, 1, 12, Grid::SU<1>>>
+    PeriodicGImplU1F;
+typedef Grid::PeriodicGaugeImpl<
+    Grid::GaugeImplTypes<Grid::vComplexD, 1, 12, Grid::SU<1>>>
+    PeriodicGImplU1D;
 
 #ifndef FIMPLBASE
 #define FIMPLBASE WilsonImpl
 #endif
-#define FIMPL  HADRONS_IMPL(FIMPLBASE, R)
+#define FIMPL HADRONS_IMPL(FIMPLBASE, R)
 #define FIMPLF HADRONS_IMPL(FIMPLBASE, F)
 #define FIMPLD HADRONS_IMPL(FIMPLBASE, D)
 
 #ifndef LIMPLBASE
 #define LIMPLBASE LeptonWilsonImpl
 #endif
-#define LIMPL  HADRONS_IMPL(LIMPLBASE, R)
+#define LIMPL HADRONS_IMPL(LIMPLBASE, R)
 #define LIMPLF HADRONS_IMPL(LIMPLBASE, F)
 #define LIMPLD HADRONS_IMPL(LIMPLBASE, D)
 
 #ifndef ZFIMPLBASE
 #define ZFIMPLBASE ZWilsonImpl
 #endif
-#define ZFIMPL  HADRONS_IMPL(ZFIMPLBASE, R)
+#define ZFIMPL HADRONS_IMPL(ZFIMPLBASE, R)
 #define ZFIMPLF HADRONS_IMPL(ZFIMPLBASE, F)
 #define ZFIMPLD HADRONS_IMPL(ZFIMPLBASE, D)
 
 #ifndef STAGIMPLBASE
-#define STAGIMPLBASE StaggeredImpl // use 4d for impl for now since 5d is Lsvectorised
+#define STAGIMPLBASE                                                           \
+  StaggeredImpl // use 4d for impl for now since 5d is Lsvectorised
 #endif
-#define STAGIMPL  HADRONS_IMPL(STAGIMPLBASE, R)
+#define STAGIMPL HADRONS_IMPL(STAGIMPLBASE, R)
 #define STAGIMPLF HADRONS_IMPL(STAGIMPLBASE, F)
 #define STAGIMPLD HADRONS_IMPL(STAGIMPLBASE, D)
 
 #ifndef SIMPLBASE
 #define SIMPLBASE ScalarImplC
 #endif
-#define SIMPL  HADRONS_IMPL(SIMPLBASE, R)
+#define SIMPL HADRONS_IMPL(SIMPLBASE, R)
 #define SIMPLF HADRONS_IMPL(SIMPLBASE, F)
 #define SIMPLD HADRONS_IMPL(SIMPLBASE, D)
 
 #ifndef GIMPLBASE
 #define GIMPLBASE PeriodicGimpl
 #endif
-#define GIMPL  HADRONS_IMPL(GIMPLBASE, R)
+#define GIMPL HADRONS_IMPL(GIMPLBASE, R)
 #define GIMPLF HADRONS_IMPL(GIMPLBASE, F)
 #define GIMPLD HADRONS_IMPL(GIMPLBASE, D)
 
 BEGIN_HADRONS_NAMESPACE
 
 // type aliases
-#define BASIC_TYPE_ALIASES(Impl, suffix)\
-typedef typename Impl::Field                         ScalarField##suffix;\
-typedef typename Impl::PropagatorField               PropagatorField##suffix;\
-typedef typename Impl::SitePropagator::scalar_object SitePropagator##suffix;\
-typedef typename Impl::ComplexField                  ComplexField##suffix;\
-typedef std::vector<SitePropagator##suffix>          SlicedPropagator##suffix;\
-typedef std::vector<typename ComplexField##suffix::vector_object::scalar_object> SlicedComplex##suffix;
+#define BASIC_TYPE_ALIASES(Impl, suffix)                                       \
+  typedef typename Impl::Field ScalarField##suffix;                            \
+  typedef typename Impl::PropagatorField PropagatorField##suffix;              \
+  typedef typename Impl::SitePropagator::scalar_object SitePropagator##suffix; \
+  typedef typename Impl::ComplexField ComplexField##suffix;                    \
+  typedef std::vector<SitePropagator##suffix> SlicedPropagator##suffix;        \
+  typedef std::vector<                                                         \
+      typename ComplexField##suffix::vector_object::scalar_object>             \
+      SlicedComplex##suffix;
 
-#define FERM_TYPE_ALIASES(FImpl, suffix)\
-BASIC_TYPE_ALIASES(FImpl, suffix);\
-typedef FermionOperator<FImpl>                     FMat##suffix;\
-typedef typename FImpl::FermionField               FermionField##suffix;\
-typedef typename FImpl::GaugeField                 GaugeField##suffix;\
-typedef typename FImpl::DoubledGaugeField          DoubledGaugeField##suffix;\
-typedef LinearOperatorBase<FermionField##suffix>   FBaseOp##suffix;\
-typedef NonHermitianLinearOperator<FMat##suffix, FermionField##suffix>   FOp##suffix;\
-typedef MdagMLinearOperator<FMat##suffix, FermionField##suffix>   FHermOp##suffix;\
-typedef HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_OP<FMat##suffix, FermionField##suffix> FNonHermitianSchurOp##suffix;\
-HADRONS_DEFINE_SCHUR_OP(TSchurOp##suffix,FImpl);\
-typedef TSchurOp##suffix<FMat##suffix, FermionField##suffix> FSchurOp##suffix;\
-typedef Lattice<iSpinMatrix<typename FImpl::Simd>> SpinMatrixField##suffix;\
-typedef Lattice<iColourVector<typename FImpl::Simd>> ColourVectorField##suffix;\
-typedef Lattice<iColourMatrix<typename FImpl::Simd>> ColourMatrixField##suffix;\
-typedef typename PropagatorField##suffix::vector_object::scalar_object    SpinColourMatrixScalar##suffix;\
-typedef Lattice<iSpinColourSpinColourMatrix<typename FImpl::Simd>> SpinColourSpinColourMatrixField##suffix;
+#define FERM_TYPE_ALIASES(FImpl, suffix)                                       \
+  BASIC_TYPE_ALIASES(FImpl, suffix);                                           \
+  typedef FermionOperator<FImpl> FMat##suffix;                                 \
+  typedef typename FImpl::FermionField FermionField##suffix;                   \
+  typedef typename FImpl::GaugeField GaugeField##suffix;                       \
+  typedef typename FImpl::DoubledGaugeField DoubledGaugeField##suffix;         \
+  typedef LinearOperatorBase<FermionField##suffix> FBaseOp##suffix;            \
+  typedef NonHermitianLinearOperator<FMat##suffix, FermionField##suffix>       \
+      FOp##suffix;                                                             \
+  typedef MdagMLinearOperator<FMat##suffix, FermionField##suffix>              \
+      FHermOp##suffix;                                                         \
+  typedef HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_OP<FMat##suffix,                 \
+                                                 FermionField##suffix>         \
+      FNonHermitianSchurOp##suffix;                                            \
+  HADRONS_DEFINE_SCHUR_OP(TSchurOp##suffix, FImpl);                            \
+  typedef TSchurOp##suffix<FMat##suffix, FermionField##suffix>                 \
+      FSchurOp##suffix;                                                        \
+  typedef Lattice<iSpinMatrix<typename FImpl::Simd>> SpinMatrixField##suffix;  \
+  typedef Lattice<iColourVector<typename FImpl::Simd>>                         \
+      ColourVectorField##suffix;                                               \
+  typedef Lattice<iColourMatrix<typename FImpl::Simd>>                         \
+      ColourMatrixField##suffix;                                               \
+  typedef typename PropagatorField##suffix::vector_object::scalar_object       \
+      SpinColourMatrixScalar##suffix;                                          \
+  typedef Lattice<iSpinColourSpinColourMatrix<typename FImpl::Simd>>           \
+      SpinColourSpinColourMatrixField##suffix;
 
 // hacky compile-time sqrt to get number of colours
 // likely bad for large N
 template <std::size_t N, std::size_t I = 1>
-struct ct_sqrt : std::integral_constant<std::size_t, (I*I<N) ? ct_sqrt<N, I+1>::value : I> {};
+struct ct_sqrt
+    : std::integral_constant<std::size_t,
+                             (I * I < N) ? ct_sqrt<N, I + 1>::value : I> {};
 
 template <std::size_t N>
 struct ct_sqrt<N, N> : std::integral_constant<std::size_t, N> {};
 
 // very hacky way to get the gauge group
 // TODO: change when Grid #369 is merged
-#define GAUGE_TYPE_ALIASES(GImpl, suffix)\
-typedef typename GImpl::GaugeField GaugeField##suffix;\
-typedef typename GImpl::GaugeLinkField GaugeLinkField##suffix;\
-typedef typename Grid::SU<ct_sqrt<sizeof(typename GaugeLinkField::scalar_object)/sizeof(typename GImpl::Scalar)>::value> Group;
+#define GAUGE_TYPE_ALIASES(GImpl, suffix)                                      \
+  typedef typename GImpl::GaugeField GaugeField##suffix;                       \
+  typedef typename GImpl::GaugeLinkField GaugeLinkField##suffix;               \
+  typedef typename Grid::SU<                                                   \
+      ct_sqrt<sizeof(typename GaugeLinkField::scalar_object) /                 \
+              sizeof(typename GImpl::Scalar)>::value>                          \
+      Group;
 
-#define SOLVER_TYPE_ALIASES(FImpl, suffix)\
-typedef Hadrons::Solver<FImpl> Solver##suffix;
+#define SOLVER_TYPE_ALIASES(FImpl, suffix)                                     \
+  typedef Hadrons::Solver<FImpl> Solver##suffix;
 
-#define SINK_TYPE_ALIASES(suffix)\
-typedef std::function<SlicedPropagator##suffix\
-                      (const PropagatorField##suffix &)> SinkFn##suffix;
+#define SINK_TYPE_ALIASES(suffix)                                              \
+  typedef std::function<SlicedPropagator##suffix(                              \
+      const PropagatorField##suffix &)>                                        \
+      SinkFn##suffix;
 
 // logger
-class HadronsLogger: public Logger
-{
+class HadronsLogger : public Logger {
 public:
-    HadronsLogger(int on, std::string nm): Logger("Hadrons", on, nm,
-                                                  GridLogColours, "BLACK"){};
+  HadronsLogger(int on, std::string nm)
+      : Logger("Hadrons", on, nm, GridLogColours, "BLACK") {};
 };
 
 #define LOG(channel) std::cout << HadronsLog##channel
@@ -204,90 +230,70 @@ extern HadronsLogger HadronsLogIRL;
 void initLogger(void);
 
 // singleton pattern
-#define SINGLETON(name)\
-public:\
-    name(const name &e) = delete;\
-    void operator=(const name &e) = delete;\
-    static name & getInstance(void)\
-    {\
-        static name e;\
-        return e;\
-    }\
-private:\
-    name(void);
+#define SINGLETON(name)                                                        \
+public:                                                                        \
+  name(const name &e) = delete;                                                \
+  void operator=(const name &e) = delete;                                      \
+  static name &getInstance(void) {                                             \
+    static name e;                                                             \
+    return e;                                                                  \
+  }                                                                            \
+                                                                               \
+private:                                                                       \
+  name(void);
 
-#define SINGLETON_DEFCTOR(name)\
-public:\
-    name(const name &e) = delete;\
-    void operator=(const name &e) = delete;\
-    static name & getInstance(void)\
-    {\
-        static name e;\
-        return e;\
-    }\
-private:\
-    name(void) = default;
+#define SINGLETON_DEFCTOR(name)                                                \
+public:                                                                        \
+  name(const name &e) = delete;                                                \
+  void operator=(const name &e) = delete;                                      \
+  static name &getInstance(void) {                                             \
+    static name e;                                                             \
+    return e;                                                                  \
+  }                                                                            \
+                                                                               \
+private:                                                                       \
+  name(void) = default;
 
 // type utilities
-template <typename T>
-const std::type_info * typeIdPt(const T &x)
-{
-    return &typeid(x);
+template <typename T> const std::type_info *typeIdPt(const T &x) {
+  return &typeid(x);
 }
 
-template <typename T>
-const std::type_info * typeIdPt(void)
-{
-    return &typeid(T);
+template <typename T> const std::type_info *typeIdPt(void) {
+  return &typeid(T);
 }
 
 size_t typeHash(const std::type_info *info);
 
-template <typename T>
-size_t typeHash(const T &x)
-{
-    return typeHash(typeIdPt(x));
+template <typename T> size_t typeHash(const T &x) {
+  return typeHash(typeIdPt(x));
 }
 
-template <typename T>
-size_t typeHash(void)
-{
-    return typeHash(typeIdPt<T>());
+template <typename T> size_t typeHash(void) { return typeHash(typeIdPt<T>()); }
+
+template <typename T, typename U> bool sameType(const T &x, const U &y) {
+  return (typeHash(x) == typeHash(y));
 }
 
-template <typename T, typename U>
-bool sameType(const T &x, const U &y)
-{
-    return (typeHash(x) == typeHash(y));
-}
-
-template <typename T, typename U>
-bool sameType(void)
-{
-    return (typeHash<T>() == typeHash<U>());
+template <typename T, typename U> bool sameType(void) {
+  return (typeHash<T>() == typeHash<U>());
 }
 
 std::string typeName(const std::type_info *info);
 
-template <typename T>
-std::string typeName(const T &x)
-{
-    return typeName(typeIdPt(x));
+template <typename T> std::string typeName(const T &x) {
+  return typeName(typeIdPt(x));
 }
 
-template <typename T>
-std::string typeName(void)
-{
-    return typeName(typeIdPt<T>());
+template <typename T> std::string typeName(void) {
+  return typeName(typeIdPt<T>());
 }
 
 // test if string is white-space separated vector
 // return false with just one element
 // fragile... will be better with JSON inputs and proper array support
-template <typename T>
-bool isVector(const std::string s)
-{
-    return (strToVec<T>(s).size() > 1);
+template <typename T> bool isVector(const std::string s) {
+  return (strToVec<T>(s).size() > 1);
 }
 
 // default writers/readers
@@ -303,10 +309,10 @@ typedef XmlWriter ResultWriter;
 
 // recursive mkdir
 #define MAX_PATH_LENGTH 512u
-int         mkdir(const std::string dirName);
+int mkdir(const std::string dirName);
 std::string basename(const std::string &s);
 std::string dirname(const std::string &s);
-void        makeFileDir(const std::string filename, GridBase *g = nullptr);
+void makeFileDir(const std::string filename, GridBase *g = nullptr);
 
 // default Schur convention
 #ifndef HADRONS_DEFAULT_SCHUR
@@ -321,71 +327,96 @@ void        makeFileDir(const std::string filename, GridBase *g = nullptr);
 #define HADRONS_SCHUR_OP(conv) _HADRONS_SCHUR_OP_(conv)
 #define HADRONS_DEFAULT_SCHUR_OP HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR)
 #define _HADRONS_NON_HERMITIAN_SCHUR_OP_(conv) NonHermitianSchur##conv##Operator
-#define HADRONS_NON_HERMITIAN_SCHUR_OP(conv) _HADRONS_NON_HERMITIAN_SCHUR_OP_(conv)
-#define HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_OP HADRONS_NON_HERMITIAN_SCHUR_OP(HADRONS_DEFAULT_SCHUR)
+#define HADRONS_NON_HERMITIAN_SCHUR_OP(conv)                                   \
+  _HADRONS_NON_HERMITIAN_SCHUR_OP_(conv)
+#define HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_OP                                 \
+  HADRONS_NON_HERMITIAN_SCHUR_OP(HADRONS_DEFAULT_SCHUR)
 #define _HADRONS_SCHUR_SOLVE_(conv) SchurRedBlack##conv##Solve
 #define HADRONS_SCHUR_SOLVE(conv) _HADRONS_SCHUR_SOLVE_(conv)
 #define HADRONS_DEFAULT_SCHUR_SOLVE HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR)
-#define _HADRONS_NON_HERMITIAN_SCHUR_SOLVE_(conv) NonHermitianSchurRedBlack##conv##Solve
-#define HADRONS_NON_HERMITIAN_SCHUR_SOLVE(conv) _HADRONS_NON_HERMITIAN_SCHUR_SOLVE_(conv)
-#define HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_SOLVE HADRONS_NON_HERMITIAN_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR)
+#define _HADRONS_NON_HERMITIAN_SCHUR_SOLVE_(conv)                              \
+  NonHermitianSchurRedBlack##conv##Solve
+#define HADRONS_NON_HERMITIAN_SCHUR_SOLVE(conv)                                \
+  _HADRONS_NON_HERMITIAN_SCHUR_SOLVE_(conv)
+#define HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_SOLVE                              \
+  HADRONS_NON_HERMITIAN_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR)
 #define _HADRONS_SCHUR_A2A_(conv) A2AVectorsSchur##conv
 #define HADRONS_SCHUR_A2A(conv) _HADRONS_SCHUR_A2A_(conv)
 #define HADRONS_DEFAULT_SCHUR_A2A HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR)
 // #define _HADRONS_SCHUR_A2A_(conv) A2AVectorsSchur##conv
 // #define HADRONS_SCHUR_A2A(conv) _HADRONS_SCHUR_A2A_(conv)
 // #define HADRONS_DEFAULT_SCHUR_A2A HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR)
-// #define HADRONS_DEFAULT_SCHUR_A2A_STAGGERED HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR_STAGGERED)
-#define HADRONS_DEFAULT_SCHUR_OP_STAGGERED HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
-#define HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR_STAGGERED)
+// #define HADRONS_DEFAULT_SCHUR_A2A_STAGGERED
+// HADRONS_SCHUR_A2A(HADRONS_DEFAULT_SCHUR_STAGGERED)
+#define HADRONS_DEFAULT_SCHUR_OP_STAGGERED                                     \
+  HADRONS_SCHUR_OP(HADRONS_DEFAULT_SCHUR_STAGGERED)
+#define HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED                                  \
+  HADRONS_SCHUR_SOLVE(HADRONS_DEFAULT_SCHUR_STAGGERED)
 
-#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,condition,true_type,false_type)\
-template<typename... Args>\
-using type_name = typename std::conditional<condition, true_type<Args...>, false_type<Args...> >::type;
+#define HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name, condition, true_type,       \
+                                        false_type)                            \
+  template <typename... Args>                                                  \
+  using type_name = typename std::conditional<condition, true_type<Args...>,   \
+                                              false_type<Args...>>::type;
 
-#define HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl)\
-(std::is_same<FImpl,STAGIMPLD>::value || std::is_same<FImpl,STAGIMPLF>::value || std::is_same<FImpl,STAGIMPL>::value)
+#define HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl)                             \
+  (std::is_same<FImpl, STAGIMPLD>::value ||                                    \
+   std::is_same<FImpl, STAGIMPLF>::value ||                                    \
+   std::is_same<FImpl, STAGIMPL>::value)
 
-#define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name,FImpl,staggered_type,non_staggered_type)\
-HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl), staggered_type, non_staggered_type)
+#define HADRONS_TYPEDEF_BRANCH_STAGGERED(type_name, FImpl, staggered_type,     \
+                                         non_staggered_type)                   \
+  HADRONS_TYPEDEF_TEMPLATE_BRANCH(type_name,                                   \
+                                  HADRONS_IS_STAGGERED_IMPLEMENTATION(FImpl),  \
+                                  staggered_type, non_staggered_type)
 
-#define HADRONS_DEFINE_SCHUR_OP(name,FImpl)\
-HADRONS_TYPEDEF_BRANCH_STAGGERED(name,FImpl,HADRONS_DEFAULT_SCHUR_OP_STAGGERED,HADRONS_DEFAULT_SCHUR_OP)
+#define HADRONS_DEFINE_SCHUR_OP(name, FImpl)                                   \
+  HADRONS_TYPEDEF_BRANCH_STAGGERED(name, FImpl,                                \
+                                   HADRONS_DEFAULT_SCHUR_OP_STAGGERED,         \
+                                   HADRONS_DEFAULT_SCHUR_OP)
 
-#define HADRONS_DEFINE_SCHUR_SOLVE(name,FImpl)\
-HADRONS_TYPEDEF_BRANCH_STAGGERED(name,FImpl,HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED,HADRONS_DEFAULT_SCHUR_SOLVE)
+#define HADRONS_DEFINE_SCHUR_SOLVE(name, FImpl)                                \
+  HADRONS_TYPEDEF_BRANCH_STAGGERED(name, FImpl,                                \
+                                   HADRONS_DEFAULT_SCHUR_SOLVE_STAGGERED,      \
+                                   HADRONS_DEFAULT_SCHUR_SOLVE)
 
-template <typename T, typename U = int> using IfStag = Invoke<std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
-template <typename T, typename U = int> using IfNotStag = Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U> >;
+template <typename T, typename U = int>
+using IfStag =
+    Invoke<std::enable_if<HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U>>;
+template <typename T, typename U = int>
+using IfNotStag =
+    Invoke<std::enable_if<!HADRONS_IS_STAGGERED_IMPLEMENTATION(T), U>>;
 
-#define HADRONS_DEFINE_setProp_setFerm(FImpl)\
-template <typename T = FImpl>\
-IfNotStag<T,void> setFerm(FermionField& ferm, const PropagatorField& prop, const int s, const int c=0)\
-{\
-    PropToFerm<FImpl>(ferm, prop, s, c);\
-}\
-\
-template <typename T = FImpl>\
-IfStag<T,void> setFerm(FermionField& ferm, const PropagatorField& prop, const int c)\
-{\
-    PropToFerm<FImpl>(ferm, prop, c);\
-}\
-template <typename T = FImpl>\
-IfNotStag<T,void> setProp(PropagatorField& prop, const FermionField& ferm, const int s, const int c=0)\
-{\
-    FermToProp<FImpl>(prop, ferm, s, c);\
-}\
-\
-template <typename T = FImpl>\
-IfStag<T,void> setProp(PropagatorField& prop, const FermionField& ferm, const int c)\
-{\
-    FermToProp<FImpl>(prop, ferm, c);\
+#define HADRONS_DEFINE_setProp_setFerm(FImpl)                                  \
+  template <typename T = FImpl>                                                \
+  IfNotStag<T, void> setFerm(FermionField &ferm, const PropagatorField &prop,  \
+                             const int s, const int c = 0) {                   \
+    PropToFerm<FImpl>(ferm, prop, s, c);                                       \
+  }                                                                            \
+                                                                               \
+  template <typename T = FImpl>                                                \
+  IfStag<T, void> setFerm(FermionField &ferm, const PropagatorField &prop,     \
+                          const int c) {                                       \
+    PropToFerm<FImpl>(ferm, prop, c);                                          \
+  }                                                                            \
+  template <typename T = FImpl>                                                \
+  IfNotStag<T, void> setProp(PropagatorField &prop, const FermionField &ferm,  \
+                             const int s, const int c = 0) {                   \
+    FermToProp<FImpl>(prop, ferm, s, c);                                       \
+  }                                                                            \
+                                                                               \
+  template <typename T = FImpl>                                                \
+  IfStag<T, void> setProp(PropagatorField &prop, const FermionField &ferm,     \
+                          const int c) {                                       \
+    FermToProp<FImpl>(prop, ferm, c);                                          \
+  }
+
+template <typename T, IfStag<T> = 0> static bool IsStaggeredImpl() {
+  return true;
 }
-
-template <typename T, IfStag<T> = 0>
-static bool IsStaggeredImpl(){ return true; }
-template <typename T, IfNotStag<T> = 0>
-static bool IsStaggeredImpl(){ return false; }
+template <typename T, IfNotStag<T> = 0> static bool IsStaggeredImpl() {
+  return false;
+}
 
 // stringify macro
 #define _HADRONS_STR(x) #x
@@ -393,38 +424,26 @@ static bool IsStaggeredImpl(){ return false; }
 
 // pretty print time profile
 std::string timeString(const GridTime t);
-void printTimeProfile(const std::map<std::string, GridTime> &timing, GridTime total);
+void printTimeProfile(const std::map<std::string, GridTime> &timing,
+                      GridTime total);
 
 // token replacement utility
 template <typename T>
-void tokenReplace(std::string &str, const std::string token,
-                  const T &x, const std::string mark = "@")
-{
-    std::string fullToken = mark + token + mark;
-    
-    auto pos = str.find(fullToken);
-    if (pos != std::string::npos)
-    {
-        str.replace(pos, fullToken.size(), std::to_string(x));
-    }
+void tokenReplace(std::string &str, const std::string token, const T &x,
+                  const std::string mark = "@") {
+  std::string fullToken = mark + token + mark;
+
+  auto pos = str.find(fullToken);
+  if (pos != std::string::npos) {
+    str.replace(pos, fullToken.size(), std::to_string(x));
+  }
 }
 
 // generic correlator class
 template <typename Metadata, typename Scalar = Complex>
-struct Correlator: Serializable
-{
-    GRID_SERIALIZABLE_CLASS_MEMBERS(ARG(Correlator<Metadata, Scalar>),
-                                    Metadata,             info,
-                                    std::vector<Scalar>, corr);
-};
-
-// Spin taste parameters for modules that require StagGamma objects.
-struct SpinTasteParams : Serializable {
-  GRID_SERIALIZABLE_CLASS_MEMBERS(SpinTasteParams,
-          std::string, gammas,
-          std::string, gauge,
-          bool,        applyG5);
-  SpinTasteParams(void): gammas(""), gauge(""), applyG5(false) {}
+struct Correlator : Serializable {
+  GRID_SERIALIZABLE_CLASS_MEMBERS(ARG(Correlator<Metadata, Scalar>), Metadata,
+                                  info, std::vector<Scalar>, corr);
 };
 
 // check if grid is initlialised
