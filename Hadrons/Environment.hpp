@@ -33,6 +33,32 @@
 
 BEGIN_HADRONS_NAMESPACE
 
+template <typename T>
+struct IsLattice : std::false_type {};
+template <typename Vobj>
+struct IsLattice<Lattice<Vobj>> : std::true_type {};
+// std::vector<Lattice<Vobj>> — e.g. time-diluted noise sources, multi-gamma
+// propagator outputs. These are scatter-leaves exactly like scalar lattices:
+// each element is Grid_split onto the subgrid independently, and the producing
+// module is NOT rebuilt (the data, not the computation, is what's needed).
+template <typename T>
+struct IsLatticeVector : std::false_type {};
+template <typename Vobj>
+struct IsLatticeVector<std::vector<Lattice<Vobj>>> : std::true_type {};
+// anything scatterable onto a subgrid (scalar lattice OR vector of lattices)
+template <typename T>
+struct IsScatterable
+: std::integral_constant<bool, IsLattice<T>::value || IsLatticeVector<T>::value> {};
+
+// Grid-independent metadata that can be cheaply deep-copied into the shadow
+// store instead of triggering a full producer rebuild. E.g. std::vector<Integer>
+// (time-dilution source shifts), scalar parameters. These contain no Grid
+// lattices and no RNG state, so a copy is valid on any subgrid.
+template <typename T>
+struct IsCloneableMetadata : std::false_type {};
+template <typename T>
+struct IsCloneableMetadata<std::vector<T>> : std::is_arithmetic<T> {};
+
 /******************************************************************************
  *                         Global environment                                 *
  ******************************************************************************/
@@ -41,6 +67,28 @@ class Object
 public:
     Object(void) = default;
     virtual ~Object(void) = default;
+    // type-erased scatter into the active per-VType subgrid; returns nullptr
+    // if the held object is not a scatterable Lattice field
+    virtual std::unique_ptr<Object> splitTo(void) const
+    {
+        return nullptr;
+    }
+    // lightweight (non-mutating) lattice test — true iff the held object is a
+    // scatterable Lattice field. Used by the GC scheduler to tell scatter-leaf
+    // objects (lattices) from rebuildable objects (solvers/actions) without
+    // performing a Grid_split.
+    virtual bool isLattice(void) const
+    {
+        return false;
+    }
+    // type-erased deep copy for grid-independent metadata (e.g.
+    // std::vector<Integer>). Returns nullptr for types that are NOT safe to
+    // clone (solvers, actions, sink functions — these are grid-bound and must
+    // be rebuilt on the subgrid via setup()+execute()).
+    virtual std::unique_ptr<Object> clone(void) const
+    {
+        return nullptr;
+    }
 };
 
 template <typename T>
@@ -53,8 +101,35 @@ public:
     T &       get(void) const;
     T *       getPt(void) const;
     void      reset(T *pt);
+    std::unique_ptr<Object> splitTo(void) const override;
+    bool      isLattice(void) const override
+    {
+        return IsScatterable<T>::value;
+    }
+    std::unique_ptr<Object> clone(void) const override
+    {
+        if constexpr (IsCloneableMetadata<T>::value)
+        {
+            return std::make_unique<Holder<T>>(new T(*objPt_));
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
 private:
     std::unique_ptr<T> objPt_{nullptr};
+};
+
+// Handle carrying the split sub-communicator grid built by the VirtualMachine
+// and consumed by the scope-aware grid/object fetch. The owned GridCartesian
+// frees its MPI sub-communicator on destruction.
+struct SubGrids
+{
+    std::unique_ptr<GridCartesian> grid;      // base 4d sub-communicator grid (owned)
+    Coordinate                     mpiSplit;   // per-subcomm processor layout
+    int                            nrhs;       // number of sub-comms
+    int                            me;         // this rank's sub-comm index [0, nrhs)
 };
 
 #define DEFINE_ENV_ALIAS \
@@ -101,6 +176,8 @@ public:
     template <typename VType = vComplex>
     void                    createSliceGrid(const unsigned int orthDim);
     template <typename VType = vComplex>
+    void                    createSubGrid(void);
+    template <typename VType = vComplex>
     GridCartesian *         getGrid(void);
     template <typename VType = vComplex>
     GridRedBlackCartesian * getRbGrid(void);
@@ -122,6 +199,42 @@ public:
     // random number generator
     GridParallelRNG *       get4dRng(void);
     GridSerialRNG *         getSerialRng(void);
+    // subgrid scope management
+    void                    setActiveSubGrid(GridCartesian *subGrid,
+                                             const int splitKey);
+    void                    clearActiveSubGrid(void);
+    bool                    isSubGridActive(void) const;
+    int                     getActiveSplitKey(void) const { return activeSplitKey_; }
+    // toggle the subgrid scope on/off for the current module without clearing
+    // the subgrid caches or shadow store (which must persist across the split
+    // phase). setActiveSubGrid/clearActiveSubGrid bracket the whole split phase.
+    void                    setSubGridScope(const bool on);
+    // subgrid shadow store (scattered/rebuilt global objects, populated by VM)
+    void                    addShadowObject(const unsigned int address,
+                                            const int splitKey,
+                                            std::unique_ptr<Object> obj);
+    bool                    hasShadowObject(const unsigned int address) const;
+    // scatter a lattice global object onto the active subgrid; returns true if
+    // the object was scattered (it is a Lattice), false otherwise (non-lattice
+    // objects must be rebuilt by the VM via setup() in shadow-create mode).
+    bool                    scatterObject(const unsigned int address,
+                                          const int splitKey);
+    // clone a grid-independent non-lattice metadata object (e.g.
+    // std::vector<Integer>) into the shadow store. Returns true if the object
+    // was cloned, false if it is not cloneable (the VM then rebuilds the
+    // producer via setup()+execute() in shadow-create mode).
+    bool                    cloneObject(const unsigned int address,
+                                        const int splitKey);
+    // lightweight, non-mutating test: true iff the (created) object is a
+    // scatterable Lattice field. Used by the GC scheduler to mirror
+    // ensureShadowed's lattice-leaf behaviour when computing which global
+    // objects must survive for the subgrid rebuild.
+    bool                    isLatticeObject(const unsigned int address) const;
+    // route subsequent createDerivedObject calls into the shadow store so a
+    // non-lattice object can be rebuilt on the subgrid leaving the world-grid
+    // global copy intact for global consumers.
+    void                    enterShadowCreate(const int splitKey);
+    void                    exitShadowCreate(void);
     // general memory management
     void                    addObject(const std::string name,
                                       const int moduleAddress = -1);
@@ -207,6 +320,25 @@ private:
     std::map<CoarseGridKey, GridPt>     gridCoarse4d_;
     std::map<CoarseGridKey, GridPt>     gridCoarse5d_;
     unsigned int                        nd_;
+    // subgrid scope state
+    GridCartesian                          *activeSubGrid_{nullptr};
+    // subGridScopeOn_ toggles per-module: it is true only while a split-phase
+    // module executes. activeSubGrid_ stays set for the whole split phase (so
+    // the subgrid caches / shadow store persist), but getGrid/getObject only
+    // serve the subgrid/shadow when subGridScopeOn_ is true — global modules
+    // interleaved between split-phase modules thus run on the world grid.
+    bool                                    subGridScopeOn_{false};
+    // (no activeSubRbGrid_ — createSubGrid builds per-VType RB grids from per-VType 4d subgrids)
+    int                                     activeSplitKey_{-1};
+    std::map<FineGridKey, GridPt>           gridSub4d_;
+    std::map<FineGridKey, GridRbPt>         gridSubRb4d_;
+    std::map<std::pair<unsigned int, int>, std::unique_ptr<Object>> shadowStore_;
+    // shadow-create mode: when true, createDerivedObject routes the newly built
+    // object into shadowStore_ (keyed by shadowCreateKey_) instead of object_.
+    // Used by the VM to rebuild non-lattice global objects (e.g. fermion
+    // actions) onto the subgrid without overwriting the world-grid original.
+    bool                                    shadowCreateMode_{false};
+    int                                     shadowCreateKey_{-1};
     // random number generator
     RngPt                               rng4d_{nullptr};
     SerialRngPt                         rngSerial_{nullptr};
@@ -241,6 +373,43 @@ template <typename T>
 void Holder<T>::reset(T *pt)
 {
     objPt_.reset(pt);
+}
+
+// subgrid scatter ////////////////////////////////////////////////////////////
+template <typename T>
+std::unique_ptr<Object> Holder<T>::splitTo(void) const
+{
+    if constexpr (IsLattice<T>::value)
+    {
+        using VType = typename T::vector_type;
+        auto  &env  = Environment::getInstance();
+        auto  *sg   = env.template getGrid<VType>();
+        auto   split = std::make_unique<T>(sg);
+        Grid_split(*objPt_, *split);
+        return std::make_unique<Holder<T>>(split.release());
+    }
+    else if constexpr (IsLatticeVector<T>::value)
+    {
+        // std::vector<Lattice<Vobj>>: scatter each element onto the subgrid.
+        // All elements share the same lattice grid, so derive VType from the
+        // element type and split element-by-element.
+        using ElemT  = typename T::value_type;          // Lattice<Vobj>
+        using VType  = typename ElemT::vector_type;
+        auto  &env   = Environment::getInstance();
+        auto  *sg    = env.template getGrid<VType>();
+        auto   split = std::make_unique<T>();
+        split->reserve(objPt_->size());
+        for (auto &e : *objPt_)
+        {
+            split->emplace_back(sg);
+            Grid_split(e, split->back());
+        }
+        return std::make_unique<Holder<T>>(split.release());
+    }
+    else
+    {
+        return nullptr;
+    }
 }
 
 /******************************************************************************
@@ -374,11 +543,40 @@ void Environment::createSliceGrid(const unsigned int orthDim)
     }
 }
 
+template <typename VType>
+void Environment::createSubGrid(void)
+{
+    size_t hash = typeHash<VType>();
+    FineGridKey key = {hash, 1};
+
+    if (gridSub4d_.find(key) == gridSub4d_.end())
+    {
+        Coordinate simd = simdDecomposition(activeSubGrid_->_ndimension,
+                                            VType::Nsimd());
+        gridSub4d_[key].reset(
+            new GridCartesian(activeSubGrid_->_gdimensions, simd,
+                              activeSubGrid_->_processors, *activeSubGrid_));
+        HADRONS_DUMP_GRID(gridSub4d_[key].get());
+        gridSubRb4d_[key].reset(
+            SpaceTimeGrid::makeFourDimRedBlackGrid(gridSub4d_[key].get()));
+        HADRONS_DUMP_GRID(gridSubRb4d_[key].get());
+    }
+}
+
 #undef HADRONS_DUMP_GRID
 
 template <typename VType>
 GridCartesian * Environment::getGrid(void)
 {
+    if (activeSubGrid_ && subGridScopeOn_)
+    {
+        FineGridKey key = {typeHash<VType>(), 1};
+        auto it = gridSub4d_.find(key);
+        if (it != gridSub4d_.end())
+            return it->second.get();
+        createSubGrid<VType>();
+        return gridSub4d_.at(key).get();
+    }
     FineGridKey key = {typeHash<VType>(), 1};
 
     auto it = grid4d_.find(key);
@@ -398,6 +596,15 @@ GridCartesian * Environment::getGrid(void)
 template <typename VType>
 GridRedBlackCartesian * Environment::getRbGrid(void)
 {
+    if (activeSubGrid_ && subGridScopeOn_)
+    {
+        FineGridKey key = {typeHash<VType>(), 1};
+        auto it = gridSubRb4d_.find(key);
+        if (it != gridSubRb4d_.end())
+            return it->second.get();
+        createSubGrid<VType>();
+        return gridSubRb4d_.at(key).get();
+    }
     FineGridKey key = {typeHash<VType>(), 1};
     auto        it  = gridRb4d_.find(key);
 
@@ -457,6 +664,10 @@ GridCartesian * Environment::getSliceGrid(const unsigned int orthDir)
 template <typename VType>
 GridCartesian * Environment::getGrid(const unsigned int Ls)
 {
+    if (activeSubGrid_ && subGridScopeOn_)
+    {
+        HADRONS_ERROR(Logic, "5d subgrid not yet supported in split scope");
+    }
     FineGridKey key = {typeHash<VType>(), Ls};
     auto        it  = grid5d_.find(key);
 
@@ -475,6 +686,10 @@ GridCartesian * Environment::getGrid(const unsigned int Ls)
 template <typename VType>
 GridRedBlackCartesian * Environment::getRbGrid(const unsigned int Ls)
 {
+    if (activeSubGrid_ && subGridScopeOn_)
+    {
+        HADRONS_ERROR(Logic, "5d subgrid not yet supported in split scope");
+    }
     FineGridKey key = {typeHash<VType>(), Ls};
     auto        it  = gridRb5d_.find(key);
 
@@ -528,6 +743,26 @@ void Environment::createDerivedObject(const std::string name,
     
     unsigned int address = getObjectAddress(name);
     
+    // shadow-create mode: a non-lattice global object is being rebuilt onto the
+    // subgrid by the VM. Route the new object into the shadow store (keyed by
+    // splitKey) so the world-grid object_ entry is left intact for global
+    // consumers; getDerivedObject under scope returns this shadow copy.
+    if (shadowCreateMode_)
+    {
+        MemoryStats memStats;
+        if (!MemoryProfiler::stats)
+        {
+            MemoryProfiler::stats = &memStats;
+        }
+        shadowStore_[{address, shadowCreateKey_}].reset(
+            new Holder<B>(new T(std::forward<Ts>(args)...)));
+        if (MemoryProfiler::stats == &memStats)
+        {
+            MemoryProfiler::stats = nullptr;
+        }
+        return;
+    }
+
     if (!object_[address].data or !objectsProtected())
     {
         MemoryStats memStats;
@@ -571,6 +806,45 @@ void Environment::createObject(const std::string name,
 template <typename B, typename T>
 T * Environment::getDerivedObject(const unsigned int address) const
 {
+    // subgrid scope: check shadow store first (only while scope is on for the
+    // current module — a global module must see the world-grid global store)
+    if (activeSubGrid_ && subGridScopeOn_)
+    {
+        auto key = std::make_pair(address, activeSplitKey_);
+        auto it  = shadowStore_.find(key);
+        if (it != shadowStore_.end())
+        {
+            if (auto h = dynamic_cast<Holder<B> *>(it->second.get()))
+            {
+                if (&typeid(T) == &typeid(B))
+                {
+                    return dynamic_cast<T *>(h->getPt());
+                }
+                else
+                {
+                    if (auto hder = dynamic_cast<T *>(h->getPt()))
+                    {
+                        return hder;
+                    }
+                    else
+                    {
+                        HADRONS_ERROR_REF(ObjectType, "object with address " +
+                            std::to_string(address) +
+                            " cannot be casted to '" + typeName(&typeid(T)) +
+                            "' (has type '" + typeName(&typeid(h->get())) + "')", address);
+                    }
+                }
+            }
+            else
+            {
+                HADRONS_ERROR_REF(ObjectType, "object with address " +
+                            std::to_string(address) +
+                            " does not have type '" + typeName(&typeid(B)) +
+                            "' (has type '" + getObjectType(address) + "')", address);
+            }
+        }
+        // no shadow entry: fall through to the global store below
+    }
     if (hasObject(address))
     {
         if (hasCreatedObject(address))

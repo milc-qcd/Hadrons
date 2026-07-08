@@ -74,6 +74,44 @@ public:
         SchedulerPar(void): schedulerType{"genetic"} {}
     };
 
+    // Manual read/write (NOT GRID_SERIALIZABLE_CLASS_MEMBERS) so the read is
+    // SILENT on missing <split> nodes — legacy XML without <split> produces no
+    // "IO: Cannot open node" warning (review finding S2).
+    //
+    // mpiSplit is stored as a space-separated string (the same convention as
+    // <boundary>, <twist>, <outputMom> elsewhere) and parsed at the call site
+    // with strToVec<int>(). Legacy XML without <split> -> empty string ->
+    // strToVec returns {} -> buildSubGrids no-op.
+    struct SplitPar: Serializable
+    {
+        std::string mpiSplit;
+        SplitPar(void) {}
+        template <typename T>
+        static inline void write(::Grid::Writer<T> &WR, const std::string &s,
+                                 const SplitPar &obj)
+        {
+            push(WR, s);
+            ::Grid::write(WR, "mpiSplit", obj.mpiSplit);
+            pop(WR);
+        }
+        template <typename T>
+        static inline void read(::Grid::Reader<T> &RD, const std::string &s,
+                                SplitPar &obj)
+        {
+            if (!push(RD, s)) return;   // SILENT — no warning on legacy XML
+            ::Grid::read(RD, "mpiSplit", obj.mpiSplit);
+            pop(RD);
+        }
+        // Hand-written Serializable (not via GRID_SERIALIZABLE_CLASS_MEMBERS),
+        // so it needs its own operator== — GlobalPar's macro-generated
+        // operator== calls CompareMember(lhs.split, rhs.split), which requires
+        // SplitPar == SplitPar (BaseIO.h:558).
+        friend inline bool operator==(const SplitPar &lhs, const SplitPar &rhs)
+        {
+            return lhs.mpiSplit == rhs.mpiSplit;
+        }
+    };
+
     struct GlobalPar: Serializable
     {
         GRID_SERIALIZABLE_CLASS_MEMBERS(GlobalPar,
@@ -85,7 +123,8 @@ public:
                                         std::string,                graphFile,
                                         std::string,                scheduleFile,
                                         bool,                       saveSchedule,
-                                        int,                        parallelWriteMaxRetry);
+                                        int,                        parallelWriteMaxRetry,
+                                        SplitPar,                   split,);
         GlobalPar(void): parallelWriteMaxRetry{-1}, saveSchedule{false} {}
     };
 
@@ -111,7 +150,7 @@ public:
     void createModule(const std::string name);
     template <typename M>
     void createModule(const std::string name, const typename M::Par &par);
-    void createModule(const std::string name, const std::string type, XmlReader &reader);
+    void createModule(const std::string name, const std::string type, XmlReader &reader, const int subgrid = -1);
     // test if module exists
     bool hasModule(const std::string name) const;
     // module DB entry for result files

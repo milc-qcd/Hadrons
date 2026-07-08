@@ -318,7 +318,7 @@ unsigned int VirtualMachine::dbInsertObjectType(const std::string type,
 }
 
 // module management ///////////////////////////////////////////////////////////
-void VirtualMachine::pushModule(VirtualMachine::ModPt &pt)
+void VirtualMachine::pushModule(VirtualMachine::ModPt &pt, const int subgrid)
 {
     std::string name = pt->getName();
     
@@ -339,6 +339,7 @@ void VirtualMachine::pushModule(VirtualMachine::ModPt &pt)
 
         // input & output scan -------------------------------------------------
         ModuleInfo &mInfo = module_[address];
+        mInfo.subgrid = subgrid;   // store subgrid tag (-1 = global)
 
         // scan inputs and add objects to the environment if necessary
         for (auto &in: m->getInput())
@@ -427,13 +428,88 @@ unsigned int VirtualMachine::getNModule(void) const
 }
 
 void VirtualMachine::createModule(const std::string name, const std::string type,
-                                  XmlReader &reader, const std::string blockName)
+                                  XmlReader &reader, const std::string blockName,
+                                  const int subgrid)
 {
     auto &factory = ModuleFactory::getInstance();
     auto pt       = factory.create(type, name);
     
     pt->parseParameters(reader, blockName);
-    pushModule(pt);
+    pushModule(pt, subgrid);
+}
+
+int VirtualMachine::getModuleSubgrid(const unsigned int address) const
+{
+    if (hasModule(address))
+    {
+        return module_[address].subgrid;
+    }
+    return -1;
+}
+
+void VirtualMachine::buildSubGrids(const std::vector<int> &mpiSplit)
+{
+    if (mpiSplit.empty())
+    {
+        splitConfigured_ = false;
+        return;
+    }
+    GridCartesian *world = env().getGrid();          // default 4d world grid
+    int            childsize = 1;
+    for (auto &p: mpiSplit) childsize *= p;
+    int            nproc = world->_Nprocessors;
+    int            nrhs  = nproc / childsize;
+    if (childsize * nrhs != nproc)
+    {
+        HADRONS_ERROR(Definition, "mpiSplit product " + std::to_string(childsize)
+                      + " does not divide world size " + std::to_string(nproc));
+    }
+    for (unsigned int d = 0; d < mpiSplit.size(); ++d)
+    {
+        if (world->_processors[d] % mpiSplit[d] != 0)
+        {
+            HADRONS_ERROR(Definition, "mpiSplit[" + std::to_string(d) + "]="
+                          + std::to_string(mpiSplit[d])
+                          + " does not divide world procs["
+                          + std::to_string(d) + "]="
+                          + std::to_string(world->_processors[d]));
+        }
+    }
+    Coordinate dims  = world->_gdimensions;
+    Coordinate simd  = world->_simd_layout;
+    Coordinate procSplit(mpiSplit);   // AcceleratorVector<int> from std::vector<int>
+    int        splitRank;
+    subGrid_.grid.reset(new GridCartesian(dims, simd, procSplit, *world, splitRank));
+    subGrid_.mpiSplit = procSplit;
+    subGrid_.nrhs     = nrhs;
+    subGrid_.me       = splitRank;
+    me_               = splitRank;
+    splitConfigured_  = true;
+    computeSplitPhase();
+    LOG(Message) << "Split grid: " << nrhs << " sub-comms, this rank is subcomm "
+                 << me_ << std::endl;
+}
+
+void VirtualMachine::computeSplitPhase(void)
+{
+    // The split phase is exactly the set of modules explicitly TAGGED into a
+    // subgrid (subgrid >= 0). Untagged producers (solvers / fermion actions)
+    // are deliberately NOT pulled in by a transitive closure: they execute once
+    // on the world grid at their own schedule step and are rebuilt on the
+    // subgrid lazily by ensureShadowed when a tagged consumer first needs them
+    // (see ensureShadowed and makeGarbageSchedule). Pulling them in caused them
+    // to execute under the subgrid scope at their original step, producing a
+    // grid-mismatched object and skipping the subgrid rebuild.
+    // This cached tagged set is reused by makeGarbageSchedule to pin the lattice
+    // inputs (e.g. gauge links) needed for those lazy subgrid rebuilds.
+    splitPhaseModules_.clear();
+    for (unsigned int m = 0; m < module_.size(); ++m)
+    {
+        if (module_[m].subgrid >= 0)
+        {
+            splitPhaseModules_.insert(m);
+        }
+    }
 }
 
 ModuleBase * VirtualMachine::getModule(const unsigned int address) const
@@ -698,6 +774,7 @@ void VirtualMachine::resetProfile(void)
 {
     profile_.module.clear();
     profile_.object.clear();
+    objectIsLattice_.clear();
 }
 
 void VirtualMachine::resizeProfile(void)
@@ -728,6 +805,12 @@ void VirtualMachine::updateProfile(const unsigned int address)
             if (envMod < 0)
             {
                 env().setObjectModule(a, address);
+            }
+            // record lattice-ness while the object exists (it is freed again
+            // by the profiling pass), for makeGarbageSchedule's GC pinning.
+            if (env().hasCreatedObject(a))
+            {
+                objectIsLattice_[a] = env().isLatticeObject(a);
             }
         }
     }
@@ -818,11 +901,84 @@ VirtualMachine::makeGarbageSchedule(const Program &p) const
         return t;
     };
 
+    // ---- split-grid: keep lattice inputs alive for the subgrid rebuild --------
+    // Tagged modules run on a sub-comm. Their non-lattice inputs (solvers /
+    // fermion actions) are rebuilt on the subgrid by ensureShadowed, which
+    // recursively Grid_split-scatters the producers' lattice inputs (e.g. gauge
+    // links) from the GLOBAL store. Those lattice inputs would otherwise be
+    // freed by normal GC right after their last standard consumer (e.g. gauge
+    // smear links freed once the world-grid action has copied them), long before
+    // the split phase scatters them — a use-after-free. Pin every object in the
+    // transitive input closure of the tagged modules (stopping at tagged
+    // producers, which self-rebuild on their subgrid) to survive until the first
+    // split-phase step at which ensureShadowed actually scatters it. After that
+    // scatter a subgrid copy lives in the shadow store, so the global original is
+    // dead and may be freed at the end of that step.
+    std::map<unsigned int, unsigned int> shadowFirstNeed;
+    if (splitConfigured_ && !splitPhaseModules_.empty())
+    {
+        for (unsigned int i = 0; i < p.size(); ++i)
+        {
+            if (!splitPhaseModules_.count(p[i]))
+            {
+                continue;
+            }
+            // BFS this tagged module's shadow closure; assign the earliest split
+            // step (i) to every object not yet seen by an earlier tagged module.
+            std::vector<unsigned int> stack(module_[p[i]].input);
+
+            while (!stack.empty())
+            {
+                unsigned int a = stack.back();
+                stack.pop_back();
+                if (shadowFirstNeed.count(a))
+                {
+                    continue;
+                }
+                shadowFirstNeed[a] = i;
+                int m = env().getObjectModule(a);
+                if (m < 0)
+                {
+                    continue;   // externally provided object
+                }
+                if (module_[static_cast<unsigned int>(m)].subgrid >= 0)
+                {
+                    continue;   // tagged producer: rebuilt on its subgrid
+                }
+                // Lattice objects are scatter-leaves in ensureShadowed: they
+                // are Grid_split onto the subgrid but their producer is NOT
+                // rebuilt, so do NOT descend into the producer's inputs here.
+                // Without this, the closure would walk through a scattered
+                // lattice (e.g. a guess propagator) into unrelated heavy
+                // producers (e.g. an eigenvector pack) and pin them, defeating
+                // the split's memory reclamation. Objects not seen during the
+                // profiling pass are descended to avoid under-pinning a genuine
+                // rebuild input.
+                auto lat = objectIsLattice_.find(a);
+                if (lat != objectIsLattice_.end() && lat->second)
+                {
+                    continue;   // lattice scatter-leaf: do not descend
+                }
+                for (auto &in: module_[static_cast<unsigned int>(m)].input)
+                {
+                    stack.push_back(in);
+                }
+            }
+        }
+    }
+
     for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
     {
         if (env().getObjectStorage(a) == Environment::Storage::standard)
         {
-            freeProg[earliestTime(a)].insert(a);
+            unsigned int t = earliestTime(a);
+            auto         it = shadowFirstNeed.find(a);
+
+            if (it != shadowFirstNeed.end())
+            {
+                t = std::max(t, it->second);
+            }
+            freeProg[t].insert(a);
         }
     }
 
@@ -968,11 +1124,97 @@ VirtualMachine::Program VirtualMachine::naiveSchedule(void)
 #define SEP       "----------------"
 #define SMALL_SEP "................"
 
+// subgrid shadowing of a split-phase module's global inputs ////////////////////
+// For each input produced by a global (non-split-phase) module and not yet
+// shadowed:
+//   - lattice inputs are scattered onto the subgrid via Grid_split;
+//   - non-lattice inputs (e.g. fermion actions) cannot be Grid_split, so the
+//     producer module's setup() is re-run under the subgrid scope in
+//     shadow-create mode, building a fresh subgrid copy into the shadow store
+//     (the world-grid original is preserved for global consumers).
+// Recursion guarantees the producer's own inputs are shadowed first. This is
+// collective: the schedule, splitPhase set and module inputs are identical on
+// every rank, so all ranks issue the same Grid_split / setup() at the same step.
+void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
+{
+    for (auto &a: inputs)
+    {
+        if (shadowedObjects_.count(a))
+        {
+            continue;
+        }
+        int m = env().getObjectModule(a);
+        if (m < 0)
+        {
+            continue;   // no producing module (e.g. externally provided object)
+        }
+        // Only producers that are TAGGED into a subgrid (subgrid >= 0) execute
+        // on their subgrid and produce their output there directly, so they
+        // need no shadow copy. UNTAGGED producers (solvers / fermion actions)
+        // execute exactly once, at their original schedule step, on the WORLD
+        // grid (with shadowCreateMode_ off), landing in the global store bound
+        // to world-grid inputs. A subgrid consumer would otherwise fetch that
+        // grid-mismatched global object (getDerivedObject finds no shadow entry
+        // and falls through). Such producers MUST be rebuilt here on the subgrid
+        // in shadow-create mode — so do NOT skip them (fall through below).
+        if (module_[static_cast<unsigned int>(m)].subgrid >= 0)
+        {
+            continue;   // tagged producer: self-rebuilds on its subgrid
+        }
+        if (!env().hasCreatedObject(a))
+        {
+            continue;   // not created yet — will be shadowed by a later consumer
+        }
+        if (env().scatterObject(a, 0))
+        {
+            shadowedObjects_.insert(a);
+            continue;   // lattice: scattered onto the subgrid
+        }
+        if (env().cloneObject(a, 0))
+        {
+            shadowedObjects_.insert(a);
+            continue;   // grid-independent metadata (e.g. std::vector<Integer>):
+                        // deep-copied, no producer rebuild needed
+        }
+        // non-lattice: rebuild the producer on the subgrid into the shadow
+        // store. Mark before recursing to break dependency cycles.
+        shadowedObjects_.insert(a);
+        ensureShadowed(module_[static_cast<unsigned int>(m)].input);
+        env().enterShadowCreate(0);
+        try
+        {
+            // Call both setup() and execute(). setup() alone fully constructs
+            // grid-bound objects (solvers, fermion actions) whose execute() is
+            // empty. But some non-lattice objects — notably sink functions
+            // (std::function produced by MSink modules) — are only populated
+            // during execute(), not setup(). Calling execute() here ensures
+            // those objects are usable on the subgrid; for solver/action
+            // modules execute() is a harmless no-op.
+            module_[static_cast<unsigned int>(m)].data->resetShadowState();
+            module_[static_cast<unsigned int>(m)].data->setup();
+            module_[static_cast<unsigned int>(m)].data->execute();
+        }
+        catch (...)
+        {
+            env().exitShadowCreate();
+            throw;
+        }
+        env().exitShadowCreate();
+    }
+}
+
 void VirtualMachine::executeProgram(const Program &p)
 {
     Size            memPeak = 0, sizeBefore, sizeAfter;
     GarbageSchedule freeProg;
-    
+
+    // Ensure the memory profile (and the objectIsLattice_ cache it populates)
+    // is up to date. makeGarbageSchedule relies on objectIsLattice_ to avoid
+    // pinning unrelated heavy objects (e.g. eigenvector packs) reached through a
+    // scattered lattice. The genetic scheduler computes the profile via
+    // memoryNeeded; this guarantees it for naive scheduling too. No-op once
+    // computed (memoryProfileOutdated_ is false).
+    getMemoryProfile();
     // build garbage collection schedule
     LOG(Debug) << "Building garbage collection schedule..." << std::endl;
     freeProg = makeGarbageSchedule(p);
@@ -993,8 +1235,94 @@ void VirtualMachine::executeProgram(const Program &p)
     totalTime_ = GridTime::zero();
     moduleTimeProfile_.clear();
     moduleTypeTimeProfile_.clear();
+
+    // Determine the split-phase boundaries (contiguous range of tagged steps).
+    // All world-collective Grid_split calls are front-loaded into a pre-scatter
+    // pass at the start of this range so that per-step ensureShadowed becomes a
+    // no-op, eliminating world-collective barriers from the tagged-step loop.
+    // Without this, every tagged step calls ensureShadowed (which does
+    // Grid_split → full_grid->AllToAll, a WORLD-collective) BEFORE the
+    // per-subcomm skip, forcing all ranks to synchronize at each tagged step
+    // and serializing the two sub-comms' work.
+    unsigned int firstTagged = p.size(), lastTagged = 0;
+    bool         hasTagged   = false;
+    if (splitConfigured_)
+    {
+        for (unsigned int i = 0; i < p.size(); ++i)
+        {
+            if (module_[p[i]].subgrid >= 0)
+            {
+                if (!hasTagged) { firstTagged = i; }
+                lastTagged = i;
+                hasTagged  = true;
+            }
+        }
+    }
+
     for (unsigned int i = 0; i < p.size(); ++i)
     {
+        // ---- Split-phase exit: join barrier before post-split global steps ----
+        // Synchronize all sub-comms before processing any global step that
+        // follows the split phase. During the split phase the sub-comms ran
+        // concurrently (no per-step world barriers); this is the "join".
+        if (hasTagged && i == lastTagged + 1)
+        {
+            env().setSubGridScope(false);
+            env().getGrid()->Barrier();
+        }
+
+        // ---- Split-phase entry: pre-scatter ALL tagged modules' inputs ----
+        // Front-load every world-collective Grid_split / rebuild here, while
+        // all ranks are still synchronized. After this pass, shadowedObjects_
+        // contains every input any tagged module will need, so the per-step
+        // ensureShadowed below is a no-op — no world-collective barrier.
+        // This is what lets the two sub-comms execute their tagged modules
+        // concurrently instead of serializing at each step.
+        if (hasTagged && i == firstTagged)
+        {
+            if (!env().isSubGridActive())
+            {
+                env().setActiveSubGrid(subGrid_.grid.get(), 0);
+            }
+            env().setSubGridScope(true);
+            LOG(Message) << "Pre-scattering subgrid inputs for "
+                         << "concurrent split-phase execution..." << std::endl;
+            for (unsigned int j = firstTagged; j <= lastTagged; ++j)
+            {
+                if (module_[p[j]].subgrid >= 0)
+                {
+                    ensureShadowed(module_[p[j]].input);
+                }
+            }
+            LOG(Message) << "Pre-scatter complete; sub-comms now execute "
+                         << "concurrently." << std::endl;
+        }
+
+        // ---- Per-step scope gate ----
+        if (splitConfigured_)
+        {
+            if (module_[p[i]].subgrid >= 0)
+            {
+                // scope ON for this tagged module's execution
+                env().setSubGridScope(true);
+                // ensureShadowed is now a no-op: all inputs were pre-scattered
+                // above and are in shadowedObjects_. The call is retained for
+                // safety (e.g. tagged modules that depend on outputs of other
+                // tagged modules — those are skipped anyway since the producer
+                // is tagged and self-rebuilds on its subgrid).
+                ensureShadowed(module_[p[i]].input);
+                if (module_[p[i]].subgrid >= 0 && module_[p[i]].subgrid != me_)
+                {
+                    env().setSubGridScope(false);
+                    continue;   // skip non-owning subcomm — no world barrier!
+                }
+            }
+            else
+            {
+                // global module: must execute on the world grid
+                env().setSubGridScope(false);
+            }
+        }
         // execute module
         LOG(Message) << SEP << " Measurement step " << i + 1 << "/"
                      << p.size() << " (module '" << module_[p[i]].name
@@ -1063,6 +1391,22 @@ void VirtualMachine::executeProgram(const Program &p)
         {
             LOG(Message) << "Nothing to free" << std::endl;
         }
+    }
+    // Join barrier: the pre-scatter eliminated per-step world barriers so the
+    // two sub-comms ran concurrently. Synchronize here before cleanup and any
+    // post-executeProgram MPI operations. Without this, the faster sub-comm
+    // could proceed to clearActiveSubGrid / shadow store teardown / result
+    // saving while the slower one is still mid-solve.
+    if (hasTagged)
+    {
+        env().setSubGridScope(false);
+        env().getGrid()->Barrier();
+    }
+    // C2 fix: clear scope whenever it was set (not position-based)
+    if (splitConfigured_ && env().isSubGridActive())
+    {
+        env().clearActiveSubGrid();
+        shadowedObjects_.clear();
     }
     // print total time profile
     LOG(Message) << SEP << " Measurement time profile" << SEP << std::endl;

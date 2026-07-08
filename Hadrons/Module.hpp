@@ -208,6 +208,10 @@ public:
     virtual void setup(void) {};
     // execution
     virtual void execute(void) = 0;
+    // Called before re-running setup()+execute() on a subgrid during
+    // split-grid shadow rebuild. Override to reset module-level caches that
+    // would otherwise skip work needed on the new grid (e.g. phase factors).
+    virtual void resetShadowState(void) {};
     void operator()(void);
 protected:
     // environment shortcut

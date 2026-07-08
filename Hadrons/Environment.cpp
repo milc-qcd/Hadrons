@@ -178,6 +178,123 @@ GridSerialRNG * Environment::getSerialRng(void)
     return rngSerial_.get();
 }
 
+// subgrid scope management ////////////////////////////////////////////////////////
+void Environment::setActiveSubGrid(GridCartesian *subGrid,
+                                   const int splitKey)
+{
+    if (splitKey != activeSplitKey_)
+    {
+        activeSplitKey_  = splitKey;
+        gridSub4d_.clear();
+        gridSubRb4d_.clear();
+    }
+    activeSubGrid_   = subGrid;
+    subGridScopeOn_  = true;
+    // (no RB grid to set — per-VType RB subgrids built lazily by createSubGrid)
+}
+
+void Environment::setSubGridScope(const bool on)
+{
+    subGridScopeOn_ = on;
+}
+
+void Environment::clearActiveSubGrid(void)
+{
+    if (activeSubGrid_ != nullptr)
+    {
+        activeSubGrid_   = nullptr;
+        subGridScopeOn_  = false;
+        // (no RB grid to clear)
+        activeSplitKey_  = -1;
+        shadowStore_.clear();
+        gridSub4d_.clear();
+        gridSubRb4d_.clear();
+    }
+}
+
+bool Environment::isSubGridActive(void) const
+{
+    return activeSubGrid_ != nullptr;
+}
+
+// subgrid shadow store ////////////////////////////////////////////////////////
+void Environment::addShadowObject(const unsigned int address, const int splitKey,
+                                  std::unique_ptr<Object> obj)
+{
+    shadowStore_[{address, splitKey}] = std::move(obj);
+}
+
+bool Environment::hasShadowObject(const unsigned int address) const
+{
+    if (!(activeSubGrid_ && subGridScopeOn_))
+        return false;
+    return shadowStore_.find({address, activeSplitKey_}) != shadowStore_.end();
+}
+
+// subgrid scatter ////////////////////////////////////////////////////////////
+// Calls the type-erased splitTo() (Holder<T>::splitTo for Lattice<Vobj>,
+// nullptr for non-lattice). On success, stores the scattered copy in the
+// shadow store so scope-aware getObject returns it transparently. Returns
+// true if scattered, false if the object is non-lattice (the VM then rebuilds
+// it on the subgrid via setup() in shadow-create mode).
+bool Environment::scatterObject(const unsigned int address, const int splitKey)
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return false;
+    }
+    auto scattered = object_[address].data->splitTo();
+    if (scattered)
+    {
+        addShadowObject(address, splitKey, std::move(scattered));
+        return true;
+    }
+    return false;
+}
+
+// Clones grid-independent non-lattice metadata (e.g. std::vector<Integer> such
+// as time-dilution source shifts) into the shadow store. This avoids an
+// expensive — and potentially dangerous — producer rebuild whose execute()
+// may have side effects (e.g. RNG draws). Returns false for types that are
+// NOT cloneable (solvers, actions, sink functions) so the VM falls through to
+// the rebuild path.
+bool Environment::cloneObject(const unsigned int address, const int splitKey)
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return false;
+    }
+    auto cloned = object_[address].data->clone();
+    if (cloned)
+    {
+        addShadowObject(address, splitKey, std::move(cloned));
+        return true;
+    }
+    return false;
+}
+
+// lightweight lattice test (non-mutating, no Grid_split) /////////////////////
+bool Environment::isLatticeObject(const unsigned int address) const
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return false;
+    }
+    return object_[address].data->isLattice();
+}
+
+// shadow-create mode ////////////////////////////////////////////////////////
+void Environment::enterShadowCreate(const int splitKey)
+{
+    shadowCreateMode_ = true;
+    shadowCreateKey_  = splitKey;
+}
+
+void Environment::exitShadowCreate(void)
+{
+    shadowCreateMode_ = false;
+}
+
 // general memory management ///////////////////////////////////////////////////
 void Environment::addObject(const std::string name, const int moduleAddress)
 {
