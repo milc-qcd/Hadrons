@@ -17,3 +17,7 @@ Makefile.in
 /Hadrons/modules.inc
 .DS_Store
 *~
+.pi*
+.rpiv
+CMakeLists.txt
+.tags*

@@ -828,18 +828,18 @@ T * Environment::getDerivedObject(const unsigned int address) const
                     }
                     else
                     {
-                        HADRONS_ERROR_REF(ObjectType, "object with address " +
-                            std::to_string(address) +
-                            " cannot be casted to '" + typeName(&typeid(T)) +
+                        HADRONS_ERROR_REF(ObjectType, "object '" + object_[address].name +
+                            "' (address " + std::to_string(address) +
+                            ") cannot be casted to '" + typeName(&typeid(T)) +
                             "' (has type '" + typeName(&typeid(h->get())) + "')", address);
                     }
                 }
             }
             else
             {
-                HADRONS_ERROR_REF(ObjectType, "object with address " +
-                            std::to_string(address) +
-                            " does not have type '" + typeName(&typeid(B)) +
+                HADRONS_ERROR_REF(ObjectType, "object '" + object_[address].name +
+                            "' (address " + std::to_string(address) +
+                            ") does not have type '" + typeName(&typeid(B)) +
                             "' (has type '" + getObjectType(address) + "')", address);
             }
         }
@@ -863,31 +863,31 @@ T * Environment::getDerivedObject(const unsigned int address) const
                     }
                     else
                     {
-                        HADRONS_ERROR_REF(ObjectType, "object with address " +
-                            std::to_string(address) +
-                            " cannot be casted to '" + typeName(&typeid(T)) +
+                        HADRONS_ERROR_REF(ObjectType, "object '" + object_[address].name +
+                            "' (address " + std::to_string(address) +
+                            ") cannot be casted to '" + typeName(&typeid(T)) +
                             "' (has type '" + typeName(&typeid(h->get())) + "')", address);
                     }
                 }
             }
             else
             {
-                HADRONS_ERROR_REF(ObjectType, "object with address " + 
+                HADRONS_ERROR_REF(ObjectType, "object '" + object_[address].name + "' (address " + 
                             std::to_string(address) +
-                            " does not have type '" + typeName(&typeid(B)) +
+                            ") does not have type '" + typeName(&typeid(B)) +
                             "' (has type '" + getObjectType(address) + "')", address);
             }
         }
         else
         {
-            HADRONS_ERROR_REF(ObjectDefinition, "object with address " + 
-                              std::to_string(address) + " is empty", address);
+            HADRONS_ERROR_REF(ObjectDefinition, "object '" + object_[address].name + "' (address " + 
+                              std::to_string(address) + ") is empty", address);
         }
     }
     else
     {
         HADRONS_ERROR_REF(ObjectDefinition, "no object with address " + 
-                          std::to_string(address), address);
+                          std::to_string(address) + " (out of range)", address);
     }
 }
 
@@ -925,8 +925,7 @@ bool Environment::isObjectOfType(const unsigned int address) const
     }
     else
     {
-        HADRONS_ERROR_REF(ObjectDefinition, "no initialised object with address " 
-                          + std::to_string(address), address);
+        HADRONS_ERROR_REF(ObjectDefinition, "no initialised object '" + (hasObject(address) ? object_[address].name : std::string("(unknown)")) + "' (address " + std::to_string(address) + ")", address);
     }
 }
 
