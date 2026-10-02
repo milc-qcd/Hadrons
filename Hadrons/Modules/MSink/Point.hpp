@@ -70,6 +70,8 @@ protected:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+    // reset phase cache for subgrid rebuild (see ensureShadowed)
+    virtual void resetShadowState(void) override { hasPhase_ = false; };
 private:
     bool        hasPhase_{false}; 
     std::string momphName_;

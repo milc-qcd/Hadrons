@@ -137,9 +137,9 @@ const Application::GlobalPar & Application::getPar(void)
 
 // module creation /////////////////////////////////////////////////////////////
 void Application::createModule(const std::string name, const std::string type, 
-                               XmlReader &reader)
+                               XmlReader &reader, const int subgrid)
 {
-    vm().createModule(name, type, reader);
+    vm().createModule(name, type, reader, "options", subgrid);
 }
 
 // test if module exists ///////////////////////////////////////////////////////
@@ -264,8 +264,19 @@ void Application::parseParameterFile(const std::string parameterFileName)
         }
         do
         {
+            int sg{-1};          // default: untagged module runs on world grid
             read(reader, "id", id);
-            createModule(id.name, id.type, reader);
+            // guarded push: existence test for <subgrid>. push() returns bool
+            // silently (no "Cannot open node" warning) — avoids a warning flood
+            // for the 100+ untagged modules. pop() ascends back to the module
+            // node so the cursor-neutral scalar read() resolves the bare leaf
+            // <subgrid>0</subgrid> as a child of the module node.
+            if (push(reader, "subgrid"))
+            {
+                pop(reader);
+                read(reader, "subgrid", sg);
+            }
+            createModule(id.name, id.type, reader, sg);
         } while (reader.nextElement("module"));
         pop(reader);
         pop(reader);
@@ -295,6 +306,10 @@ void Application::saveParameterFile(const std::string parameterFileName, unsigne
             id.name = vm().getModuleName(i);
             id.type = vm().getModule(i)->getRegisteredName();
             write(writer, "id", id);
+            if (vm().getModuleSubgrid(i) >= 0)
+            {
+                write(writer, "subgrid", vm().getModuleSubgrid(i));
+            }
             vm().getModule(i)->saveParameters(writer, "options");
             pop(writer);
         }
@@ -391,6 +406,7 @@ void Application::printSchedule(void)
 void Application::configLoop(void)
 {
     auto range = par_.trajCounter;
+    vm().buildSubGrids(strToVec<int>(par_.split.mpiSplit));   // "" -> {} -> no-op
     
     for (unsigned int t = range.start; t < range.end; t += range.step)
     {

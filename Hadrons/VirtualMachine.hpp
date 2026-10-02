@@ -33,6 +33,7 @@
 #include <Hadrons/Database.hpp>
 #include <Hadrons/Graph.hpp>
 #include <Hadrons/Environment.hpp>
+#include <set>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -132,6 +133,7 @@ private:
         ModPt                     data{nullptr};
         std::vector<unsigned int> input, output;
         size_t                    maxAllocated;
+        int                       subgrid{-1};   // subgrid index, -1 = global
     };
 public:
     // trajectory counter
@@ -146,7 +148,7 @@ public:
     void                dbRestoreModules(void);
     Program             dbRestoreSchedule(void);
     // module management
-    void                pushModule(ModPt &pt);
+    void                pushModule(ModPt &pt, const int subgrid = -1);
     template <typename M>
     void                createModule(const std::string name);
     template <typename M>
@@ -155,7 +157,8 @@ public:
     void                createModule(const std::string name,
                                      const std::string type,
                                      XmlReader &reader,
-                                     const std::string blockName = "options");
+                                     const std::string blockName = "options",
+                                     const int subgrid = -1);
     unsigned int        getNModule(void) const;
     ModuleBase *        getModule(const unsigned int address) const;
     ModuleBase *        getModule(const std::string name) const;
@@ -169,6 +172,10 @@ public:
     std::string         getModuleType(const std::string name) const;
     std::string         getModuleNamespace(const unsigned int address) const;
     std::string         getModuleNamespace(const std::string name) const;
+    int                 getModuleSubgrid(const unsigned int address) const;
+    void                buildSubGrids(const std::vector<int> &mpiSplit);
+    void                computeSplitPhase(void);
+    int                 getMe(void) const { return me_; }
     int                 getCurrentModule(void) const;
     bool                hasModule(const unsigned int address) const;
     bool                hasModule(const std::string name) const;
@@ -231,9 +238,29 @@ private:
     // memory profile
     bool                                memoryProfileOutdated_{true};
     MemoryProfile                       profile_;     
+    // cache of which objects are Lattice fields (scatter-leaves), populated
+    // during the memory-profile pre-pass when objects briefly exist. Used by
+    // makeGarbageSchedule to mirror ensureShadowed's lattice-leaf behaviour so
+    // the GC pins only lattice inputs actually scattered for the subgrid
+    // rebuild (e.g. gauge links) and not, e.g., eigenvector packs reachable
+    // only through a scattered lattice producer.
+    std::map<unsigned int, bool>        objectIsLattice_;
     // time profile
     GridTime                            totalTime_;
     std::map<std::string, GridTime>     moduleTimeProfile_, moduleTypeTimeProfile_;               
+    // subgrid split state
+    SubGrids                              subGrid_;            // this rank's subgrid
+    int                                   me_{-1};             // this rank's subcomm index
+    bool                                  splitConfigured_{false};
+    std::set<unsigned int>                splitPhaseModules_;  // modules tagged into a subgrid (subgrid >= 0)
+    // objects already scattered/rebuilt onto the subgrid during the current
+    // split phase (avoids re-scattering; rank-independent, like the schedule).
+    std::set<unsigned int>                shadowedObjects_;
+    // lazily scatter (lattices) or rebuild (non-lattice objects) the global
+    // inputs of a split-phase module onto the subgrid. Collective: the schedule,
+    // splitPhase set and module inputs are identical on every rank, so every
+    // rank performs the same scatter/rebuild at the same schedule step.
+    void                                  ensureShadowed(const std::vector<unsigned int> &inputs);
 };
 
 /******************************************************************************
