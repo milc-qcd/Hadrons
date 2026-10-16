@@ -668,7 +668,23 @@ void Environment::freeSet(const std::set<unsigned int> &objects)
     }
 
     // free object in topological order to avoid triggering dependency errors
-    std::vector<unsigned int> sorted = graph.topoSort();
+    std::vector<unsigned int> sorted;
+
+    try
+    {
+        sorted = graph.topoSort();
+    }
+    catch (Exceptions::Range &)
+    {
+        std::string names;
+
+        for (auto &a: objects)
+        {
+            names += "'" + object_[a].name + "' ";
+        }
+        HADRONS_ERROR(Logic, "cannot free objects " + names
+                      + ": their object dependencies form a cycle");
+    }
 
     for (auto &a: sorted)
     {

@@ -189,15 +189,19 @@ public:
     void                dumpModuleGraph(const std::string filename);
     // memory profile
     const MemoryProfile &getMemoryProfile(void);
+    const MemoryProfile &getMemoryProfile(const Program &p);
     void                printMemoryProfile(void) const;
     // garbage collection
-    GarbageSchedule     makeGarbageSchedule(const Program &p) const;
+    GarbageSchedule     makeGarbageSchedule(const Program &p,
+                                            const bool pin = true) const;
     // high-water memory function
     Size                memoryNeeded(const Program &p);
     // genetic scheduler
     Program             schedule(const GeneticPar &par);
     // naive scheduler
     Program             naiveSchedule(void);
+    // program validation (completeness, duplicates, dependency order)
+    void                validateProgram(const Program &p) const;
     // general execution
     void                executeProgram(const Program &p);
     void                executeProgram(const std::vector<std::string> &p);
@@ -208,14 +212,16 @@ private:
     DEFINE_ENV_ALIAS;
     // module graph
     void makeModuleGraph(void);
+    void findModuleCycle(const Graph<unsigned int> &graph) const;
     // memory profile
-    void makeMemoryProfile(void);
-    void resetProfile(void);
-    void resizeProfile(void);
-    void updateProfile(const unsigned int address);
-    void cleanEnvironment(void);
-    void memoryProfile(const std::string name);
-    void memoryProfile(const unsigned int address);
+    void                makeMemoryProfile(const Program &p);
+    Program             defaultProfileProgram(void);
+    [[noreturn]] void   rethrowWithContext(const unsigned int moduleAddress,
+                                           const Exceptions::ObjectDefinition &exc) const;
+    void                resetProfile(void);
+    void                resizeProfile(void);
+    void                updateProfile(const unsigned int address);
+    void                memoryProfile(const unsigned int address);
     // database handling
     bool         hasDatabase(void) const;
     void         initDatabase(void);

@@ -26,6 +26,7 @@
 /*  END LEGAL */
 
 #include <Hadrons/VirtualMachine.hpp>
+#include <functional>
 #include <Hadrons/GeneticScheduler.hpp>
 #include <Hadrons/StatLogger.hpp>
 #include <Hadrons/ModuleFactory.hpp>
@@ -396,7 +397,9 @@ void VirtualMachine::pushModule(VirtualMachine::ModPt &pt, const int subgrid)
                 and !VEC_HAS_ELEMENT(mInfo.output, d))
             {
                 HADRONS_ERROR(Definition, "Module '" + name + "' has a dependency with"
-                              + " an object which is neither an input or an output");
+                              + " an object which is neither an input or an output"
+                              + " (dependency between objects '" + dep.first
+                              + "' and '" + dep.second + "')");
             }
             env().addObjectDependency(o, d);
         }
@@ -653,7 +656,56 @@ void VirtualMachine::makeModuleGraph(void)
             }
         }
     }
+    // name the cycle (if any) before assignment — Graph::topoSort's generic
+    // error carries no module names
+    findModuleCycle(graph);
     graph_ = graph;
+}
+
+void VirtualMachine::findModuleCycle(const Graph<unsigned int> &graph) const
+{
+    // three-colour DFS with the current path: a back-edge to a grey vertex
+    // closes a cycle, reported as a module-name chain
+    std::map<unsigned int, bool> grey, done;
+    std::vector<unsigned int>    path;
+
+    std::function<void(const unsigned int)> visit = [&](const unsigned int v)
+    {
+        grey[v] = true;
+        path.push_back(v);
+        for (auto &c: graph.getChildren(v))
+        {
+            if (grey.count(c) and grey[c])
+            {
+                auto it      = std::find(path.begin(), path.end(), c);
+                auto cycle   = std::vector<unsigned int>(it, path.end());
+                std::string msg;
+
+                for (auto &m: cycle)
+                {
+                    msg += "module '" + getModuleName(m) + "' -> ";
+                }
+                msg += "module '" + getModuleName(c) + "'";
+                HADRONS_ERROR(Definition, "module graph has a dependency"
+                              " cycle: " + msg);
+            }
+            if (!done.count(c) or !done[c])
+            {
+                visit(c);
+            }
+        }
+        grey[v] = false;
+        done[v] = true;
+        path.pop_back();
+    };
+
+    for (auto &v: graph.getVertices())
+    {
+        if (!done.count(v) or !done[v])
+        {
+            visit(v);
+        }
+    }
 }
 
 // dump GraphViz graph /////////////////////////////////////////////////////////
@@ -699,37 +751,81 @@ const VirtualMachine::MemoryProfile & VirtualMachine::getMemoryProfile(void)
 {
     if (memoryProfileOutdated_)
     {
-        makeMemoryProfile();
+        makeMemoryProfile(defaultProfileProgram());
         memoryProfileOutdated_ = false;
     }
 
     return profile_;
 }
 
-void VirtualMachine::makeMemoryProfile(void)
+const VirtualMachine::MemoryProfile & VirtualMachine::getMemoryProfile(const Program &p)
+{
+    if (memoryProfileOutdated_)
+    {
+        makeMemoryProfile(p);
+        memoryProfileOutdated_ = false;
+    }
+
+    return profile_;
+}
+
+void VirtualMachine::makeMemoryProfile(const Program &p)
 {
     bool protect = env().objectsProtected();
     bool hmsg    = HadronsLogMessage.isActive();
     bool gmsg    = GridLogMessage.isActive();
-    bool err     = HadronsLogError.isActive();
-    auto program = getModuleGraph().topoSort();
 
     resetProfile();
     profile_.module.resize(getNModule());
     env().protectObjects(false);
     GridLogMessage.Active(false);
     HadronsLogMessage.Active(false);
-    for (auto it = program.rbegin(); it != program.rend(); ++it) 
+    // Single forward pass over the program, mirroring executeProgram's loop:
+    // each module's setup() runs exactly once, in a valid topological order,
+    // and objects are freed exactly as the real run would free them. The
+    // garbage schedule for the pass is built WITHOUT split-grid pinning:
+    // pinning only protects lattice inputs from early freeing while
+    // ensureShadowed scatters them at execution time, and a setup()-only
+    // world-grid pass never scatters. With the objectIsLattice_ cache still
+    // empty at this point, pinning would over-pin (walk through lattice
+    // scatter-leaves into unrelated heavy producers). executeProgram rebuilds
+    // its own schedule, pinned, after this pass fills the cache.
+    GarbageSchedule freeProg;
+    try
     {
-        auto a = *it;
-
-        if (profile_.module[a].empty())
+        freeProg = makeGarbageSchedule(p, /*pin=*/false);
+        for (unsigned int i = 0; i < p.size(); ++i)
         {
+            auto a = p[i];
+
             LOG(Debug) << "Profiling memory for module '" << module_[a].name
                        << "' (" << a << ")" << std::endl;
             memoryProfile(a);
-            env().freeAll();
+            env().freeSet(freeProg[i]);
+            // mirror executeProgram's temporary sweep: envTmp objects created by
+            // this module's setup() live only for this step
+            for (unsigned int o = 0; o < env().getMaxAddress(); ++o)
+            {
+                if (env().getObjectStorage(o) == Environment::Storage::temporary)
+                {
+                    env().freeObject(o);
+                }
+            }
         }
+        // objects invisible to the up-front schedule (undeclared outputs, caches)
+        // survive the pass and are released here
+        env().freeAll();
+    }
+    catch (...)
+    {
+        // restore log/protect state before the error propagates: every throw
+        // path now ends in Exceptions::abort, whose output must not be
+        // silenced (Step-5 triage; design follow-up:
+        // .rpiv/artifacts/designs/2026-10-15_18-30-55_single-pass-memory-profiler.md)
+        env().protectObjects(protect);
+        GridLogMessage.Active(gmsg);
+        HadronsLogMessage.Active(hmsg);
+        throw;
     }
     env().protectObjects(protect);
     GridLogMessage.Active(gmsg);
@@ -750,6 +846,72 @@ void VirtualMachine::makeMemoryProfile(void)
             db_->insert("objects", o);
         }
     }
+}
+
+VirtualMachine::Program VirtualMachine::defaultProfileProgram(void)
+{
+    Program p;
+
+    for (unsigned int m = 0; m < getNModule(); ++m)
+    {
+        p.push_back(m);
+    }
+    // declaration order is a valid profiling seed unless an input's producer
+    // is declared after its consumer (the naive scheduler's condition); fall
+    // back to the module graph's deterministic topological order otherwise
+    for (unsigned int m = 0; m < getNModule(); ++m)
+    {
+        for (auto &in: module_[m].input)
+        {
+            if (env().getObjectModule(in) > static_cast<int>(m))
+            {
+                return getModuleGraph().topoSort();
+            }
+        }
+    }
+
+    return p;
+}
+
+void VirtualMachine::rethrowWithContext(const unsigned int moduleAddress,
+                                        const Exceptions::ObjectDefinition &exc) const
+{
+    std::string msg = exc.what();
+
+    // keep the original message at the front (substring contracts, e.g.
+    // test/check_setup_error.py) and append dependency context: calling
+    // module, its outputs, failing object, that object's producer
+    msg += " [in module '" + getModuleName(moduleAddress)
+         + "' (address " + std::to_string(moduleAddress);
+    if (!module_[moduleAddress].output.empty())
+    {
+        msg += ", building:";
+        for (auto &o: module_[moduleAddress].output)
+        {
+            msg += " '" + env().getObjectName(o) + "'";
+        }
+    }
+    msg += ")";
+    auto address = exc.getAddress();
+    if (address < env().getMaxAddress())
+    {
+        int producer = env().getObjectModule(address);
+
+        msg += "; object '" + env().getObjectName(address)
+             + "' (address " + std::to_string(address)
+             + ") is produced by ";
+        if (producer >= 0)
+        {
+            msg += "module '" + getModuleName(producer)
+                 + "' (address " + std::to_string(producer) + ")";
+        }
+        else
+        {
+            msg += "no module";
+        }
+    }
+    msg += "]";
+    HADRONS_ERROR_REF(ObjectDefinition, msg, address);
 }
 
 void VirtualMachine::printMemoryProfile(void) const
@@ -816,53 +978,32 @@ void VirtualMachine::updateProfile(const unsigned int address)
     }
 }
 
-void VirtualMachine::cleanEnvironment(void)
-{
-    resizeProfile();
-    for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
-    {
-        if (env().hasCreatedObject(a) and (profile_.object[a].module == -1))
-        {
-            env().freeObject(a);
-        }
-    }
-}
-
 void VirtualMachine::memoryProfile(const unsigned int address)
 {
     auto m = getModule(address);
 
     LOG(Debug) << "Setting up module '" << m->getName() 
                << "' (" << address << ")" << std::endl;
+    currentModule_ = address;
     try
     {
-        currentModule_ = address;
         m->setup();
-        currentModule_ = -1;
-        updateProfile(address);
     }
     catch (Exceptions::ObjectDefinition &exc)
     {
-        cleanEnvironment();
-        if (!env().hasCreatedObject(exc.getAddress()))
-        {
-            LOG(Debug) << "Object '" << env().getObjectName(exc.getAddress())
-                       << "' missing for setup of '" << m->getName() 
-                       << "' (" << address << ")" << std::endl;
-            memoryProfile(env().getObjectModule(exc.getAddress()));
-        }
-        memoryProfile(address);
+        // In the forward pass every producer in p runs before its consumers,
+        // so an uncreated dependency can only mean the module uses memory it
+        // did not declare through getInput()/getObjectDependencies(): a
+        // declaration bug, reported with full context, no recursive retry.
+        rethrowWithContext(address, exc);
     }
-}
-
-void VirtualMachine::memoryProfile(const std::string name)
-{
-    memoryProfile(getModuleAddress(name));
+    currentModule_ = -1;
+    updateProfile(address);
 }
 
 // garbage collector ///////////////////////////////////////////////////////////
 VirtualMachine::GarbageSchedule 
-VirtualMachine::makeGarbageSchedule(const Program &p) const
+VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
 {
     GarbageSchedule freeProg;
     
@@ -881,7 +1022,17 @@ VirtualMachine::makeGarbageSchedule(const Program &p) const
             return (it != in.end()) or (b == env().getObjectModule(a));
         };
         auto it = std::find_if(p.rbegin(), p.rend(), pred);
-        assert(it != p.rend());
+        if (it == p.rend())
+        {
+            auto owner = env().getObjectModule(a);
+
+            HADRONS_ERROR(Logic, "object '" + env().getObjectName(a)
+                          + "' (address " + std::to_string(a) + ", owned by "
+                          + ((owner >= 0)
+                             ? ("module '" + getModuleName(owner) + "'")
+                             : std::string("no module"))
+                          + ") has neither a consumer nor an owner in the program");
+        }
 
         return std::distance(it, p.rend()) - 1;
     };
@@ -915,7 +1066,7 @@ VirtualMachine::makeGarbageSchedule(const Program &p) const
     // scatter a subgrid copy lives in the shadow store, so the global original is
     // dead and may be freed at the end of that step.
     std::map<unsigned int, unsigned int> shadowFirstNeed;
-    if (splitConfigured_ && !splitPhaseModules_.empty())
+    if (pin && splitConfigured_ && !splitPhaseModules_.empty())
     {
         for (unsigned int i = 0; i < p.size(); ++i)
         {
@@ -1003,6 +1154,16 @@ VirtualMachine::Size VirtualMachine::memoryNeeded(const Program &p)
         {
             current -= profile.object[o].size;
         }
+        // temporaries live only during their own module's step (the
+        // execution loop sweeps them at the end of each step), so they do
+        // not contribute to the running total of later steps
+        for (auto &o: profile.module[p[i]])
+        {
+            if (profile.object[o.first].storage == Environment::Storage::temporary)
+            {
+                current -= o.second;
+            }
+        }
     }
 
     return max;
@@ -1022,7 +1183,12 @@ VirtualMachine::Program VirtualMachine::schedule(const GeneticPar &par)
     LOG(Message) << "       max. generation= " << par.maxGen << std::endl;
     LOG(Message) << "  max. cst. generation= " << par.maxCstGen << std::endl;
     LOG(Message) << "         mutation rate= " << par.mutationRate << std::endl;
-    
+    // Build the memory profile once, up front, with a deterministic program
+    // (declaration order, topoSort fallback — see defaultProfileProgram), so
+    // the profiling pass never walks a random candidate from initPopulation
+    // and the first fitness evaluations only consult the cached profile.
+    getMemoryProfile();
+
     unsigned int          gen, prevPeak, nCstPeak = 0;
     std::random_device    rd;
     Scheduler::Parameters gpar;
@@ -1092,17 +1258,12 @@ VirtualMachine::Program VirtualMachine::naiveSchedule(void)
     for (unsigned int i = 0; i < graph.size(); ++i)
     {
         p.push_back(i);
-
-        for (auto &in : module_[i].input)
-        {
-            if (env().getObjectModule(in) > i)
-            {
-                HADRONS_ERROR_REF(ObjectDefinition, "Dependency '" + env().getObjectName(in)
-                                  + "' (address " + std::to_string(in) + ") is scheduled after "
-                                  + env().getObjectName(env().getObjectModule(i)), in);
-            }
-        }
     }
+    // declaration order must be a valid dependency order; validateProgram
+    // reports the dependency, consumer and producer with correct names
+    // (the former inline check passed a module index where an object
+    // address was expected)
+    validateProgram(p);
 
     if (hasDatabase() and makeScheduleDb_)
     {
@@ -1117,6 +1278,74 @@ VirtualMachine::Program VirtualMachine::naiveSchedule(void)
     }
 
     return p;
+}
+
+// program validation //////////////////////////////////////////////////////////
+void VirtualMachine::validateProgram(const Program &p) const
+{
+    std::vector<int> position(getNModule(), -1);
+
+    // every step must reference a valid module, exactly once
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        if (p[i] >= getNModule())
+        {
+            HADRONS_ERROR(Range, "program step " + std::to_string(i)
+                          + " refers to module address "
+                          + std::to_string(p[i])
+                          + ", but only " + std::to_string(getNModule())
+                          + " modules exist");
+        }
+        if (position[p[i]] >= 0)
+        {
+            HADRONS_ERROR(Definition, "module '" + getModuleName(p[i])
+                          + "' appears more than once in the program (steps "
+                          + std::to_string(position[p[i]] + 1) + " and "
+                          + std::to_string(i + 1) + ")");
+        }
+        position[p[i]] = static_cast<int>(i);
+    }
+    // every registered module must be scheduled
+    for (unsigned int m = 0; m < getNModule(); ++m)
+    {
+        if (position[m] < 0)
+        {
+            HADRONS_ERROR(Definition, "module '" + getModuleName(m)
+                          + "' is missing from the program");
+        }
+    }
+    // every input's producer must be scheduled before its consumer
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        for (auto &in: module_[p[i]].input)
+        {
+            int min = env().getObjectModule(in);
+
+            // deliberately similar to (but independent of) makeModuleGraph's
+            // unowned-input error: this copy covers DB-restored and loaded
+            // programs, which never re-run makeModuleGraph (Step-5 triage note)
+            if (min < 0)
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "dependency '"
+                              + env().getObjectName(in) + "' (address "
+                              + std::to_string(in) + ", of module '"
+                              + getModuleName(p[i]) + "') is not produced by"
+                              + " any module", in);
+            }
+            if (position[static_cast<unsigned int>(min)] >= static_cast<int>(i))
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "dependency '"
+                              + env().getObjectName(in) + "' (address "
+                              + std::to_string(in) + ", of module '"
+                              + getModuleName(p[i]) + "', step "
+                              + std::to_string(i + 1) + ") is produced by"
+                              + " module '" + getModuleName(min)
+                              + "' (step "
+                              + std::to_string(position[static_cast<unsigned int>(min)] + 1)
+                              + "), which is scheduled after its consumer", in);
+            }
+        }
+    }
 }
 
 // general execution ///////////////////////////////////////////////////////////
@@ -1190,13 +1419,26 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
             // during execute(), not setup(). Calling execute() here ensures
             // those objects are usable on the subgrid; for solver/action
             // modules execute() is a harmless no-op.
+            // attribute failures to the producer being rebuilt, not the
+            // consumer that triggered the shadowing — set before
+            // resetShadowState() so even its failures attribute correctly
+            // (Step-5 triage; design follow-up:
+            // .rpiv/artifacts/designs/2026-10-15_18-30-55_single-pass-memory-profiler.md)
+            currentModule_ = m;
             module_[static_cast<unsigned int>(m)].data->resetShadowState();
             module_[static_cast<unsigned int>(m)].data->setup();
             module_[static_cast<unsigned int>(m)].data->execute();
         }
+        catch (Exceptions::ObjectDefinition &exc)
+        {
+            env().exitShadowCreate();
+            currentModule_ = -1;
+            rethrowWithContext(static_cast<unsigned int>(m), exc);
+        }
         catch (...)
         {
             env().exitShadowCreate();
+            currentModule_ = -1;
             throw;
         }
         env().exitShadowCreate();
@@ -1208,13 +1450,21 @@ void VirtualMachine::executeProgram(const Program &p)
     Size            memPeak = 0, sizeBefore, sizeAfter;
     GarbageSchedule freeProg;
 
+    // Fail fast on invalid programs: loaded .sched files (and schedules
+    // restored from the application database) are otherwise never checked,
+    // and a mis-ordered or incomplete program would only surface as a
+    // mysterious mid-run object error — or silently skip modules.
+    validateProgram(p);
     // Ensure the memory profile (and the objectIsLattice_ cache it populates)
-    // is up to date. makeGarbageSchedule relies on objectIsLattice_ to avoid
-    // pinning unrelated heavy objects (e.g. eigenvector packs) reached through a
-    // scattered lattice. The genetic scheduler computes the profile via
-    // memoryNeeded; this guarantees it for naive scheduling too. No-op once
-    // computed (memoryProfileOutdated_ is false).
-    getMemoryProfile();
+    // is up to date. On the naive path this builds the profile by walking
+    // THIS program, so the profiling pass frees exactly as this run will; on
+    // the genetic and loaded-schedule paths the profile is already cached
+    // (schedule() pre-seed / printSchedule->memoryNeeded) and this call is a
+    // no-op — the profile content (per-module sizes, objectIsLattice_) is
+    // order-independent either way. makeGarbageSchedule relies on
+    // objectIsLattice_ to avoid pinning unrelated heavy objects (e.g.
+    // eigenvector packs) reached through a scattered lattice.
+    getMemoryProfile(p);
     // build garbage collection schedule
     LOG(Debug) << "Building garbage collection schedule..." << std::endl;
     freeProg = makeGarbageSchedule(p);
@@ -1329,7 +1579,16 @@ void VirtualMachine::executeProgram(const Program &p)
                      << "') " << SEP << std::endl;
         LOG(Message) << SMALL_SEP << " Module execution" << std::endl;
         currentModule_ = p[i];
-        (*module_[p[i]].data)();
+        try
+        {
+            (*module_[p[i]].data)();
+        }
+        catch (Exceptions::ObjectDefinition &exc)
+        {
+            // dependency failures during execution get the same context as
+            // during profiling: module, its outputs, failing object, producer
+            rethrowWithContext(p[i], exc);
+        }
         currentModule_ = -1;
         sizeBefore = env().getTotalSize();
         // print time profile after execution
