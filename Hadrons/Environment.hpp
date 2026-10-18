@@ -45,10 +45,37 @@ template <typename T>
 struct IsLatticeVector : std::false_type {};
 template <typename Vobj>
 struct IsLatticeVector<std::vector<Lattice<Vobj>>> : std::true_type {};
-// anything scatterable onto a subgrid (scalar lattice OR vector of lattices)
+// lattice element type of a scatterable leaf: Lattice<Vobj> itself, or the
+// element of a std::vector<Lattice<Vobj>> (lazy, unlike a conditional_t on
+// T::value_type, which Lattice does not define)
+template <typename T>
+struct LatticeElem { using type = T; };
+template <typename Vobj>
+struct LatticeElem<std::vector<Lattice<Vobj>>> { using type = Lattice<Vobj>; };
+// map-like containers whose MAPPED type is itself scatterable — e.g.
+// TGammaMap<PropagatorField> solver guesses or
+// TGammaMap<std::vector<PropagatorField>> (n_noise > 1). Detected through
+// the nested mapped_type (inherited by std::map subclasses such as
+// TGammaMap, so exact-type specializations cannot catch them); the mapped
+// type must pass the leaf test, so metadata maps (TGammaMap<StagGamma>)
+// correctly stay non-scatterable and keep their cheap rebuild path. Like
+// the vector case these are scatter-leaves: the container is
+// default-constructed on the subgrid and every mapped value Grid_split
+// into place, the producer is NOT rebuilt.
+template <typename T, typename = void>
+struct IsLatticeMap : std::false_type {};
+template <typename T>
+struct IsLatticeMap<T, std::void_t<typename T::mapped_type>>
+: std::integral_constant<bool,
+    IsLattice<typename T::mapped_type>::value
+    || IsLatticeVector<typename T::mapped_type>::value> {};
+// anything scatterable onto a subgrid (scalar lattice, vector of lattices,
+// or map-like container of lattices)
 template <typename T>
 struct IsScatterable
-: std::integral_constant<bool, IsLattice<T>::value || IsLatticeVector<T>::value> {};
+: std::integral_constant<bool, IsLattice<T>::value
+                             || IsLatticeVector<T>::value
+                             || IsLatticeMap<T>::value> {};
 
 // Grid-independent metadata that can be cheaply deep-copied into the shadow
 // store instead of triggering a full producer rebuild. E.g. std::vector<Integer>
@@ -73,11 +100,21 @@ public:
     {
         return nullptr;
     }
-    // lightweight (non-mutating) lattice test — true iff the held object is a
-    // scatterable Lattice field. Used by the GC scheduler to tell scatter-leaf
-    // objects (lattices) from rebuildable objects (solvers/actions) without
-    // performing a Grid_split.
+    // lightweight (non-mutating) lattice test — true iff the held object is
+    // a scatterable lattice value or a container of lattice values (vector
+    // or map-like). Used by the GC scheduler to tell scatter-leaf objects
+    // (lattices and lattice containers) from rebuildable objects
+    // (solvers/actions) without performing a Grid_split.
     virtual bool isLattice(void) const
+    {
+        return false;
+    }
+    // lightweight (non-mutating) cloneability test — true iff the held
+    // object is grid-independent metadata safe to deep-copy into the
+    // shadow store (IsCloneableMetadata). Mirrors isLattice(): lets the
+    // VM's consumer-set walk classify objects without performing the
+    // clone.
+    virtual bool isCloneable(void) const
     {
         return false;
     }
@@ -105,6 +142,10 @@ public:
     bool      isLattice(void) const override
     {
         return IsScatterable<T>::value;
+    }
+    bool      isCloneable(void) const override
+    {
+        return IsCloneableMetadata<T>::value;
     }
     std::unique_ptr<Object> clone(void) const override
     {
@@ -230,6 +271,13 @@ public:
     // ensureShadowed's lattice-leaf behaviour when computing which global
     // objects must survive for the subgrid rebuild.
     bool                    isLatticeObject(const unsigned int address) const;
+    // non-storing variant of scatterObject: perform the split and return
+    // the scattered copy WITHOUT adding it to the shadow store (the VM
+    // decides per-rank whether to store — consumer-gated shadow storage).
+    // Returns nullptr for non-scatterable objects.
+    std::unique_ptr<Object>  splitObject(const unsigned int address);
+    // lightweight cloneability probe (see Object::isCloneable)
+    bool                    isCloneableObject(const unsigned int address) const;
     // route subsequent createDerivedObject calls into the shadow store so a
     // non-lattice object can be rebuilt on the subgrid leaving the world-grid
     // global copy intact for global consumers.
@@ -403,6 +451,40 @@ std::unique_ptr<Object> Holder<T>::splitTo(void) const
         {
             split->emplace_back(sg);
             Grid_split(e, split->back());
+        }
+        return std::make_unique<Holder<T>>(split.release());
+    }
+    else if constexpr (IsLatticeMap<T>::value)
+    {
+        // map-like container of scatterable lattice values (e.g. a
+        // TGammaMap<PropagatorField> guess map): default-construct the
+        // container (TGammaMap is `= default`) and Grid_split every mapped
+        // value onto the subgrid, mirroring the element-wise vector branch.
+        // Both value shapes are covered: Lattice<Vobj> mapped values and
+        // std::vector<Lattice<Vobj>> mapped values (n_noise > 1 guesses).
+        using MappedT = typename T::mapped_type;
+        using ElemT   = typename LatticeElem<MappedT>::type;
+        using VType   = typename ElemT::vector_type;
+        auto  &env    = Environment::getInstance();
+        auto  *sg     = env.template getGrid<VType>();
+        auto   split  = std::make_unique<T>();
+        for (auto &p : *objPt_)
+        {
+            if constexpr (IsLattice<MappedT>::value)
+            {
+                auto ret = split->emplace(p.first, sg);
+                Grid_split(p.second, ret.first->second);
+            }
+            else
+            {
+                auto ret = split->try_emplace(p.first);
+                ret.first->second.reserve(p.second.size());
+                for (auto &e : p.second)
+                {
+                    ret.first->second.emplace_back(sg);
+                    Grid_split(e, ret.first->second.back());
+                }
+            }
         }
         return std::make_unique<Holder<T>>(split.release());
     }

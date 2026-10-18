@@ -283,6 +283,26 @@ bool Environment::isLatticeObject(const unsigned int address) const
     return object_[address].data->isLattice();
 }
 
+// non-storing split (consumer-gated shadow storage) /////////////////////////
+std::unique_ptr<Object> Environment::splitObject(const unsigned int address)
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return nullptr;
+    }
+    return object_[address].data->splitTo();
+}
+
+// cloneability probe ////////////////////////////////////////////////////////
+bool Environment::isCloneableObject(const unsigned int address) const
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return false;
+    }
+    return object_[address].data->isCloneable();
+}
+
 // shadow-create mode ////////////////////////////////////////////////////////
 void Environment::enterShadowCreate(const int splitKey)
 {

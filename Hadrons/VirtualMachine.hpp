@@ -262,11 +262,23 @@ private:
     // objects already scattered/rebuilt onto the subgrid during the current
     // split phase (avoids re-scattering; rank-independent, like the schedule).
     std::set<unsigned int>                shadowedObjects_;
+    // per-object set of subgrid indices whose tagged modules (transitively)
+    // consume the object -- computed by computeShadowConsumers before the
+    // pre-scatter pass so store decisions see the COMPLETE consumer set.
+    // Rank-independent. Empty/absent entry = store everywhere (per-step
+    // late path, or nrhs == 1).
+    std::map<unsigned int, std::set<int>> shadowConsumers_;
     // lazily scatter (lattices) or rebuild (non-lattice objects) the global
     // inputs of a split-phase module onto the subgrid. Collective: the schedule,
     // splitPhase set and module inputs are identical on every rank, so every
     // rank performs the same scatter/rebuild at the same schedule step.
     void                                  ensureShadowed(const std::vector<unsigned int> &inputs);
+    // phase 1 of consumer-gated shadow storage: fill shadowConsumers_ by
+    // walking every tagged module's input closure with ensureShadowed's
+    // classification rules (no side effects, no collectives).
+    void                                  computeShadowConsumers(const Program &p,
+                                                                const unsigned int firstTagged,
+                                                                const unsigned int lastTagged);
 };
 
 /******************************************************************************

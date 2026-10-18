@@ -1364,6 +1364,66 @@ void VirtualMachine::validateProgram(const Program &p) const
 // Recursion guarantees the producer's own inputs are shadowed first. This is
 // collective: the schedule, splitPhase set and module inputs are identical on
 // every rank, so all ranks issue the same Grid_split / setup() at the same step.
+// consumer-subgrid sets for gated shadow storage ///////////////////////////
+// Phase 1 of consumer-gated shadow storage: for every object transitively
+// needed by a TAGGED module, record the set of subgrids whose tagged
+// modules need it. Mirrors ensureShadowed's traversal rules exactly
+// (tagged-producer skip, no-module skip, created-ness check,
+// scatter-leaf non-descent, clone non-descent, rebuild descent) so the
+// sets cannot diverge from the stores phase 2 performs. A Grid_split
+// yields every rank its OWN sub-comm's piece of the full-lattice object,
+// so "consumed by subgrid s" means only ranks with me_ == s keep their
+// piece; empty set (never pre-computed) means store everywhere.
+void VirtualMachine::computeShadowConsumers(const Program &p,
+                                            const unsigned int firstTagged,
+                                            const unsigned int lastTagged)
+{
+    shadowConsumers_.clear();
+    for (unsigned int i = firstTagged; i <= lastTagged; ++i)
+    {
+        if (module_[p[i]].subgrid < 0)
+        {
+            continue;
+        }
+        const int s = module_[p[i]].subgrid;
+        // per-(object, subgrid) visited set: record once, descend once
+        std::set<std::pair<unsigned int, int>> visited;
+        std::vector<unsigned int> stack(module_[p[i]].input);
+        while (!stack.empty())
+        {
+            unsigned int a = stack.back();
+            stack.pop_back();
+            if (visited.count({a, s}))
+            {
+                continue;
+            }
+            visited.insert({a, s});
+            int m = env().getObjectModule(a);
+            if (m < 0)
+            {
+                continue;   // externally provided object
+            }
+            if (module_[static_cast<unsigned int>(m)].subgrid >= 0)
+            {
+                continue;   // tagged producer: self-rebuilds on its subgrid
+            }
+            if (!env().hasCreatedObject(a))
+            {
+                continue;   // not created yet: per-step path stores ungated
+            }
+            shadowConsumers_[a].insert(s);
+            if (env().isLatticeObject(a) || env().isCloneableObject(a))
+            {
+                continue;   // scatter-leaf / clone: no producer descent
+            }
+            for (auto &in : module_[static_cast<unsigned int>(m)].input)
+            {
+                stack.push_back(in);
+            }
+        }
+    }
+}
+
 void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
 {
     for (auto &a: inputs)
@@ -1394,21 +1454,56 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         {
             continue;   // not created yet — will be shadowed by a later consumer
         }
-        if (env().scatterObject(a, 0))
+        // ---- consumer-gated storage (scatter design D2) ----
+        // shadowConsumers_[a] holds the COMPLETE set of subgrids consuming
+        // a (computed by computeShadowConsumers before the pre-scatter
+        // pass); a rank keeps its shadow copy only if its own sub-comm is
+        // a consumer. A Grid_split yields each rank its OWN sub-comm's
+        // piece, so non-consumers simply drop theirs. Empty set = never
+        // pre-computed (per-step late path, nrhs == 1): store everywhere,
+        // exactly the pre-gating behaviour.
+        const bool keepShadow = shadowConsumers_[a].empty()
+                                || shadowConsumers_[a].count(me_);
+
+        // scatterable lattice value or container: the Grid_split inside
+        // splitTo() is world-collective and runs on EVERY rank in lockstep
+        // (the branch below is rank-independent); only the STORE is gated.
+        auto scattered = env().splitObject(a);
+        if (scattered)
         {
+            if (keepShadow)
+            {
+                env().addShadowObject(a, 0, std::move(scattered));
+            }
             shadowedObjects_.insert(a);
-            continue;   // lattice: scattered onto the subgrid
+            continue;   // lattice / lattice container: scattered (or dropped)
         }
-        if (env().cloneObject(a, 0))
+        if (env().isCloneableObject(a))
         {
+            // cloneable metadata (e.g. std::vector<Integer>): the deep copy
+            // is purely local (no collectives), so non-consumers skip it
+            if (keepShadow)
+            {
+                env().cloneObject(a, 0);
+            }
             shadowedObjects_.insert(a);
-            continue;   // grid-independent metadata (e.g. std::vector<Integer>):
-                        // deep-copied, no producer rebuild needed
+            continue;   // no producer rebuild needed
         }
         // non-lattice: rebuild the producer on the subgrid into the shadow
         // store. Mark before recursing to break dependency cycles.
         shadowedObjects_.insert(a);
         ensureShadowed(module_[static_cast<unsigned int>(m)].input);
+        if (!keepShadow)
+        {
+            // The recursion above (world-collective scatters) ran on every
+            // rank; the rebuild's own collectives are sub-comm-scoped
+            // (setup/execute run under the split-grid scope on this rank's
+            // sub-comm grids), so non-consuming ranks skip the work
+            // entirely. If a future module's setup() introduced a WORLD
+            // collective this skip would deadlock -- such a module would
+            // already break the split-grid scope contract.
+            continue;
+        }
         env().enterShadowCreate(0);
         try
         {
@@ -1537,6 +1632,10 @@ void VirtualMachine::executeProgram(const Program &p)
             env().setSubGridScope(true);
             LOG(Message) << "Pre-scattering subgrid inputs for "
                          << "concurrent split-phase execution..." << std::endl;
+            // consumer-gated shadow storage phase 1: which sub-comm
+            // consumes each tagged-closure object (must complete BEFORE
+            // any store decision -- phase 2's gate needs the full set)
+            computeShadowConsumers(p, firstTagged, lastTagged);
             for (unsigned int j = firstTagged; j <= lastTagged; ++j)
             {
                 if (module_[p[j]].subgrid >= 0)
@@ -1661,6 +1760,8 @@ void VirtualMachine::executeProgram(const Program &p)
         env().setSubGridScope(false);
         env().getGrid()->Barrier();
     }
+    shadowConsumers_.clear();   // consumer sets are per split phase; also
+                                // cleared on entry by computeShadowConsumers
     // C2 fix: clear scope whenever it was set (not position-based)
     if (splitConfigured_ && env().isSubGridActive())
     {
