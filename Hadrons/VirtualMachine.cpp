@@ -1683,12 +1683,19 @@ void VirtualMachine::verifyBatchSlotDelivery(void)
 {
     using Mark = Lattice<iScalar<vInteger>>;
     using Sobj = typename Mark::scalar_object;   // per-site iScalar<int>
-    auto *world = env().getGrid();               // 4d world grid
+    auto *world = env().getWorldGrid();          // 4d world grid (scope-free:
+                                                 // scope is ON here — pass 2
+                                                 // of the batched pre-scatter)
     auto *sub   = env().template getGrid<vInteger>();   // active split's
                                                         // sub-grid (cached)
     const auto  nrhs = static_cast<unsigned int>(subGrid_.nrhs);
     std::vector<Mark>         fulls;
     std::vector<const Mark *> ptrs;
+    fulls.reserve(nrhs);   // markers must never move: ptrs holds their
+                           // addresses across the fill loop (emplace_back on
+                           // an unreserved vector reallocates and dangles
+                           // every earlier pointer — the C4j/2x2 abort)
+    ptrs.reserve(nrhs);
     for (unsigned int k = 0; k < nrhs; ++k)
     {
         // marker k = the constant k, filled through the same lex-array

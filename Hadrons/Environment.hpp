@@ -451,6 +451,8 @@ public:
     template <typename VType = vComplex>
     GridCartesian *         getGrid(void);
     template <typename VType = vComplex>
+    GridCartesian *         getWorldGrid(void);
+    template <typename VType = vComplex>
     GridRedBlackCartesian * getRbGrid(void);
     template <typename VType = vComplex>
     GridCartesian *         getCoarseGrid(const std::vector<int> &blockSize);
@@ -1090,6 +1092,29 @@ GridCartesian * Environment::getGrid(void)
         createSubGrid<VType>();
         return gridSub4d_.at(key).get();
     }
+    FineGridKey key = {typeHash<VType>(), 1};
+
+    auto it = grid4d_.find(key);
+
+    if (it != grid4d_.end())
+    {
+        return it->second.get();
+    }
+    else
+    {
+        createGrid<VType>(1);
+
+        return grid4d_.at(key).get();
+    }
+}
+
+// world grid REGARDLESS of sub-grid scope: getGrid diverts to the sub-grid
+// cache when scope is on, but world-lattice builders (e.g. the batch
+// slot-delivery probe's markers, Phase 12 — built at pass 2 of the batched
+// pre-scatter where scope IS on) need the world layout.
+template <typename VType>
+GridCartesian * Environment::getWorldGrid(void)
+{
     FineGridKey key = {typeHash<VType>(), 1};
 
     auto it = grid4d_.find(key);
