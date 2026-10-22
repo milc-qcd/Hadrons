@@ -319,7 +319,8 @@ unsigned int VirtualMachine::dbInsertObjectType(const std::string type,
 }
 
 // module management ///////////////////////////////////////////////////////////
-void VirtualMachine::pushModule(VirtualMachine::ModPt &pt, const int subgrid)
+void VirtualMachine::pushModule(VirtualMachine::ModPt &pt, const int subgrid,
+                                const int splitPhase)
 {
     std::string name = pt->getName();
     
@@ -340,7 +341,8 @@ void VirtualMachine::pushModule(VirtualMachine::ModPt &pt, const int subgrid)
 
         // input & output scan -------------------------------------------------
         ModuleInfo &mInfo = module_[address];
-        mInfo.subgrid = subgrid;   // store subgrid tag (-1 = global)
+        mInfo.subgrid = subgrid;        // store subgrid tag (-1 = global)
+        mInfo.splitPhase = splitPhase;  // store split-phase tag (0 = first phase)
 
         // scan inputs and add objects to the environment if necessary
         for (auto &in: m->getInput())
@@ -432,13 +434,13 @@ unsigned int VirtualMachine::getNModule(void) const
 
 void VirtualMachine::createModule(const std::string name, const std::string type,
                                   XmlReader &reader, const std::string blockName,
-                                  const int subgrid)
+                                  const int subgrid, const int splitPhase)
 {
     auto &factory = ModuleFactory::getInstance();
     auto pt       = factory.create(type, name);
     
     pt->parseParameters(reader, blockName);
-    pushModule(pt, subgrid);
+    pushModule(pt, subgrid, splitPhase);
 }
 
 int VirtualMachine::getModuleSubgrid(const unsigned int address) const
@@ -448,6 +450,15 @@ int VirtualMachine::getModuleSubgrid(const unsigned int address) const
         return module_[address].subgrid;
     }
     return -1;
+}
+
+int VirtualMachine::getModuleSplitPhase(const unsigned int address) const
+{
+    if (hasModule(address))
+    {
+        return module_[address].splitPhase;
+    }
+    return 0;
 }
 
 void VirtualMachine::buildSubGrids(const std::vector<int> &mpiSplit)
@@ -1055,38 +1066,63 @@ VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
     // ---- split-grid: keep lattice inputs alive for the subgrid rebuild --------
     // Tagged modules run on a sub-comm. Their non-lattice inputs (solvers /
     // fermion actions) are rebuilt on the subgrid by ensureShadowed, which
-    // recursively Grid_split-scatters the producers' lattice inputs (e.g. gauge
-    // links) from the GLOBAL store. Those lattice inputs would otherwise be
-    // freed by normal GC right after their last standard consumer (e.g. gauge
-    // smear links freed once the world-grid action has copied them), long before
-    // the split phase scatters them — a use-after-free. Pin every object in the
-    // transitive input closure of the tagged modules (stopping at tagged
-    // producers, which self-rebuild on their subgrid) to survive until the first
-    // split-phase step at which ensureShadowed actually scatters it. After that
-    // scatter a subgrid copy lives in the shadow store, so the global original is
-    // dead and may be freed at the end of that step.
+    // recursively Grid_split-scatters the producers' lattice inputs (e.g.
+    // gauge links) from the GLOBAL store. Those lattice inputs would
+    // otherwise be freed by normal GC right after their last standard
+    // consumer — a use-after-free. Pin every object in the transitive input
+    // closure of the tagged modules (stopping at tagged producers, which
+    // self-rebuild, and lattice scatter-leaves) to the PRE-SCATTER STEP OF
+    // EVERY PHASE WHOSE CLOSURE NEEDS IT (the latest such phase): each
+    // phase's pre-scatter re-scatters from the WORLD original (earlier
+    // phases' shadow copies are keyed to their own phase and invisible), so
+    // the original must survive every needing phase's pre-scatter. After
+    // that scatter a subgrid copy lives in the shadow store, so the global
+    // original is dead and may be freed at the end of that step (R3: the
+    // pin ends at the pre-scatter, not at the first tagged consumer — this
+    // removes the double-hold window; untagged later readers keep normal GC
+    // via the earliestTime max below).
     std::map<unsigned int, unsigned int> shadowFirstNeed;
     if (pin && splitConfigured_ && !splitPhaseModules_.empty())
     {
+        const auto    phaseRanges = computePhaseRanges(p);
+        unsigned int  phaseIdx    = 0;
         for (unsigned int i = 0; i < p.size(); ++i)
         {
             if (!splitPhaseModules_.count(p[i]))
             {
                 continue;
             }
-            // BFS this tagged module's shadow closure; assign the earliest split
-            // step (i) to every object not yet seen by an earlier tagged module.
+            while (phaseIdx + 1 < phaseRanges.size()
+                   and i > phaseRanges[phaseIdx].last)
+            {
+                phaseIdx++;
+            }
+            const unsigned int pinStep = phaseRanges[phaseIdx].first;
+            // BFS this tagged module's shadow closure; pin every object to
+            // the latest phase pre-scatter needing it. The visited set is
+            // per tagged module (unlike the old global shadowFirstNeed.count
+            // dedup) so later phases can RAISE an object's pin to their own
+            // pre-scatter step.
+            std::set<unsigned int> visited;
             std::vector<unsigned int> stack(module_[p[i]].input);
-
             while (!stack.empty())
             {
                 unsigned int a = stack.back();
                 stack.pop_back();
-                if (shadowFirstNeed.count(a))
+                if (visited.count(a))
                 {
                     continue;
                 }
-                shadowFirstNeed[a] = i;
+                visited.insert(a);
+                auto it = shadowFirstNeed.find(a);
+                if (it == shadowFirstNeed.end())
+                {
+                    shadowFirstNeed[a] = pinStep;
+                }
+                else
+                {
+                    it->second = std::max(it->second, pinStep);
+                }
                 int m = env().getObjectModule(a);
                 if (m < 0)
                 {
@@ -1102,9 +1138,9 @@ VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
                 // Without this, the closure would walk through a scattered
                 // lattice (e.g. a guess propagator) into unrelated heavy
                 // producers (e.g. an eigenvector pack) and pin them, defeating
-                // the split's memory reclamation. Objects not seen during the
-                // profiling pass are descended to avoid under-pinning a genuine
-                // rebuild input.
+                // the split's memory reclamation. Objects not seen during
+                // the profiling pass are descended to avoid under-pinning a
+                // genuine rebuild input.
                 auto lat = objectIsLattice_.find(a);
                 if (lat != objectIsLattice_.end() && lat->second)
                 {
@@ -1332,20 +1368,70 @@ void VirtualMachine::validateProgram(const Program &p) const
                               + getModuleName(p[i]) + "') is not produced by"
                               + " any module", in);
             }
-            if (position[static_cast<unsigned int>(min)] >= static_cast<int>(i))
-            {
-                HADRONS_ERROR_REF(ObjectDefinition, "dependency '"
-                              + env().getObjectName(in) + "' (address "
-                              + std::to_string(in) + ", of module '"
-                              + getModuleName(p[i]) + "', step "
-                              + std::to_string(i + 1) + ") is produced by"
-                              + " module '" + getModuleName(min)
-                              + "' (step "
-                              + std::to_string(position[static_cast<unsigned int>(min)] + 1)
-                              + "), which is scheduled after its consumer", in);
-            }
         }
     }
+}
+
+// split-phase boundaries ///////////////////////////////////////////////////////
+void VirtualMachine::validateSplitPhases(const Program &p) const
+{
+    if (!splitConfigured_)
+    {
+        return;   // no split configured: <subgrid>/<splitPhase> tags are inert
+    }
+    int          prevPhase = -1;
+    unsigned int prevStep  = 0;
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        if (module_[p[i]].subgrid < 0)
+        {
+            continue;
+        }
+        const int phase = module_[p[i]].splitPhase;
+        if (phase < prevPhase)
+        {
+            HADRONS_ERROR(Definition, "split phase " + std::to_string(phase)
+                          + " of module '" + getModuleName(p[i]) + "' (step "
+                          + std::to_string(i + 1) + ") is lower than split"
+                          + " phase " + std::to_string(prevPhase)
+                          + " of module '" + getModuleName(p[prevStep])
+                          + "' (step " + std::to_string(prevStep + 1) + "):"
+                          + " each phase's tagged modules must form a"
+                          + " contiguous ordered range of the schedule"
+                          + " (untagged modules may interleave)");
+        }
+        prevPhase = phase;
+        prevStep  = i;
+    }
+}
+
+std::vector<VirtualMachine::PhaseRange>
+VirtualMachine::computePhaseRanges(const Program &p) const
+{
+    std::vector<PhaseRange> ranges;
+
+    if (!splitConfigured_)
+    {
+        return ranges;   // no split configured: one implicit phase (legacy)
+    }
+    validateSplitPhases(p);
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        if (module_[p[i]].subgrid < 0)
+        {
+            continue;
+        }
+        const auto phase = static_cast<unsigned int>(module_[p[i]].splitPhase);
+        if (!ranges.empty() and ranges.back().phase == phase)
+        {
+            ranges.back().last = i;   // same phase extends; untagged interleave
+        }
+        else
+        {
+            ranges.push_back(PhaseRange{phase, i, i});
+        }
+    }
+    return ranges;
 }
 
 // general execution ///////////////////////////////////////////////////////////
@@ -1365,21 +1451,24 @@ void VirtualMachine::validateProgram(const Program &p) const
 // collective: the schedule, splitPhase set and module inputs are identical on
 // every rank, so all ranks issue the same Grid_split / setup() at the same step.
 // consumer-subgrid sets for gated shadow storage ///////////////////////////
-// Phase 1 of consumer-gated shadow storage: for every object transitively
-// needed by a TAGGED module, record the set of subgrids whose tagged
-// modules need it. Mirrors ensureShadowed's traversal rules exactly
-// (tagged-producer skip, no-module skip, created-ness check,
-// scatter-leaf non-descent, clone non-descent, rebuild descent) so the
-// sets cannot diverge from the stores phase 2 performs. A Grid_split
-// yields every rank its OWN sub-comm's piece of the full-lattice object,
-// so "consumed by subgrid s" means only ranks with me_ == s keep their
-// piece; empty set (never pre-computed) means store everywhere.
+// Per split phase (computeShadowConsumers(p, range) at phase entry): for
+// every object transitively needed by a TAGGED module of the phase, record
+// the set of subgrids whose tagged modules need it. Mirrors ensureShadowed's
+// traversal rules exactly (tagged-producer skip, no-module skip,
+// created-ness check, scatter-leaf non-descent, clone non-descent, rebuild
+// descent) so the sets cannot diverge from the stores phase 2 performs. A
+// Grid_split yields every rank its OWN sub-comm's piece of the full-lattice
+// object, so "consumed by subgrid s" means only ranks with me_ == s keep
+// their piece; empty set (never pre-computed) means store everywhere.
+// The created-ness check is the pre-scatter contract (Q7): every
+// untagged-produced closure object must exist at its phase's pre-scatter —
+// the per-step late path is the memory trap being removed.
 void VirtualMachine::computeShadowConsumers(const Program &p,
-                                            const unsigned int firstTagged,
-                                            const unsigned int lastTagged)
+                                            const PhaseRange &range)
 {
     shadowConsumers_.clear();
-    for (unsigned int i = firstTagged; i <= lastTagged; ++i)
+    shadowLastUse_.clear();
+    for (unsigned int i = range.first; i <= range.last; ++i)
     {
         if (module_[p[i]].subgrid < 0)
         {
@@ -1409,9 +1498,24 @@ void VirtualMachine::computeShadowConsumers(const Program &p,
             }
             if (!env().hasCreatedObject(a))
             {
-                continue;   // not created yet: per-step path stores ungated
+                // pre-scatter contract (Q7): the per-step late shadow path is
+                // the memory trap being removed. Every untagged-produced
+                // closure object must exist at its phase's pre-scatter; the
+                // producer must be scheduled ahead of the phase's first
+                // tagged step (pyfm hoists per phase).
+                HADRONS_ERROR_REF(ObjectDefinition, "object '"
+                              + env().getObjectName(a) + "' (address "
+                              + std::to_string(a) + "), needed by tagged"
+                              + " module '" + getModuleName(p[i])
+                              + "' (step " + std::to_string(i + 1)
+                              + ") and produced by module '" + getModuleName(m)
+                              + "', does not exist at its split phase's"
+                              + " pre-scatter: schedule the producer ahead of"
+                              + " the phase's tagged block (or check that the"
+                              + " producer creates its output)", a);
             }
             shadowConsumers_[a].insert(s);
+            shadowLastUse_[{a, s}] = i;
             if (env().isLatticeObject(a) || env().isCloneableObject(a))
             {
                 continue;   // scatter-leaf / clone: no producer descent
@@ -1428,7 +1532,8 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
 {
     for (auto &a: inputs)
     {
-        if (shadowedObjects_.count(a))
+        if (shadowedObjects_.count(a) or batchQueued_.count(a)
+            or rebuildQueued_.count(a))
         {
             continue;
         }
@@ -1465,6 +1570,21 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         const bool keepShadow = shadowConsumers_[a].empty()
                                 || shadowConsumers_[a].count(me_);
 
+        // ---- batched sole-consumer scatter (R4, Slice 6) ----
+        // sole-consumer scatterables are deferred: one vector Grid_split
+        // per type/shape group delivers slot k to subgrid k without the
+        // scalar wrapper's nrhs world-grid copies. Deferred rebuilds run
+        // after the batches (their setup() reads lattice inputs through the
+        // scope-aware fetch).
+        if (collectingBatches_ and subGrid_.nrhs > 1
+            and shadowConsumers_[a].size() == 1
+            and env().isLatticeObject(a))
+        {
+            batchQueued_.insert(a);
+            batchQueue_.push_back(a);
+            continue;
+        }
+
         // scatterable lattice value or container: the Grid_split inside
         // splitTo() is world-collective and runs on EVERY rank in lockstep
         // (the branch below is rank-independent); only the STORE is gated.
@@ -1473,7 +1593,8 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         {
             if (keepShadow)
             {
-                env().addShadowObject(a, 0, std::move(scattered));
+                env().addShadowObject(a, env().getActiveSplitKey(),
+                                      std::move(scattered));
             }
             shadowedObjects_.insert(a);
             continue;   // lattice / lattice container: scattered (or dropped)
@@ -1484,13 +1605,25 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
             // is purely local (no collectives), so non-consumers skip it
             if (keepShadow)
             {
-                env().cloneObject(a, 0);
+                env().cloneObject(a, env().getActiveSplitKey());
             }
             shadowedObjects_.insert(a);
             continue;   // no producer rebuild needed
         }
         // non-lattice: rebuild the producer on the subgrid into the shadow
-        // store. Mark before recursing to break dependency cycles.
+        // store. In collection mode defer the rebuild until after the
+        // batches: its setup() reads lattice inputs through the scope-aware
+        // fetch, and a deferred sole-consumer input must be stored first.
+        // Recurse into the producer's inputs NOW (immediate scatters and
+        // further deferrals); rebuildQueued_ breaks dependency cycles.
+        if (collectingBatches_)
+        {
+            rebuildQueued_.insert(a);
+            rebuildQueue_.push_back(a);
+            ensureShadowed(module_[static_cast<unsigned int>(m)].input);
+            continue;
+        }
+        // Mark before recursing to break dependency cycles.
         shadowedObjects_.insert(a);
         ensureShadowed(module_[static_cast<unsigned int>(m)].input);
         if (!keepShadow)
@@ -1504,7 +1637,7 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
             // already break the split-grid scope contract.
             continue;
         }
-        env().enterShadowCreate(0);
+        env().enterShadowCreate(env().getActiveSplitKey());
         try
         {
             // Call both setup() and execute(). setup() alone fully constructs
@@ -1538,6 +1671,199 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         }
         env().exitShadowCreate();
     }
+}
+
+// three-pass pre-scatter (R4) //////////////////////////////////////////////////
+void VirtualMachine::executeBatchedPreScatter(const Program &p,
+                                              const PhaseRange &range)
+{
+    // ---- pass 1: collect --------------------------------------------------
+    // multi-consumer scatterables scatter immediately (the scalar wrapper's
+    // nrhs-fold replication is load-bearing for multi-consumer delivery);
+    // cloneables clone immediately (local); sole-consumer scatterables and
+    // rebuild-path objects are queued.
+    collectingBatches_ = true;
+    for (unsigned int j = range.first; j <= range.last; ++j)
+    {
+        if (module_[p[j]].subgrid >= 0)
+        {
+            ensureShadowed(module_[p[j]].input);
+        }
+    }
+    collectingBatches_ = false;
+
+    // ---- pass 2: batch sole-consumer scatterables by concrete type --------
+    if (!batchQueue_.empty())
+    {
+        // group by concrete derived type: same type name <=> same Holder<T>
+        // <=> batchable together (shape compatibility checked by
+        // splitBatchTo; nullptr -> per-object fallback for that batch)
+        std::map<std::string, std::vector<unsigned int>> groups;
+        for (auto a : batchQueue_)
+        {
+            groups[env().getObjectDerivedType(a)].push_back(a);
+        }
+        for (auto &kv : groups)
+        {
+            auto                  &members = kv.second;   // deduped, walk order
+            std::set<unsigned int> placed;
+            while (placed.size() < members.size())
+            {
+                // greedy slot fill: slot k <- an unplaced member whose sole
+                // consumer is subgrid k. Slots are FRESH each iteration
+                // (constructed here), so the first unplaced member always
+                // fits and every member rides some batch. Pad short batches
+                // with an in-batch pointer (R8) — the receiving subgrid
+                // drops the duplicate.
+                std::vector<unsigned int> slots(
+                    subGrid_.nrhs, std::numeric_limits<unsigned int>::max());
+                unsigned int anchor = std::numeric_limits<unsigned int>::max();
+                bool progress = false;
+                for (auto a : members)
+                {
+                    if (placed.count(a))
+                    {
+                        continue;
+                    }
+                    const int s = *shadowConsumers_.at(a).begin();
+                    if (slots[s] == std::numeric_limits<unsigned int>::max())
+                    {
+                        slots[s] = a;
+                        placed.insert(a);
+                        if (anchor == std::numeric_limits<unsigned int>::max())
+                        {
+                            anchor = a;
+                        }
+                        progress = true;
+                    }
+                }
+                if (!progress)
+                {
+                    // defensive (unreachable per the fresh-slots argument):
+                    // scatter any unplaced member per-object so a queued
+                    // object can NEVER be stranded — the memo guard in
+                    // ensureShadowed would otherwise skip it forever
+                    for (auto a : members)
+                    {
+                        if (placed.count(a))
+                        {
+                            continue;
+                        }
+                        const bool keep = shadowConsumers_.at(a).empty()
+                                          || shadowConsumers_.at(a).count(me_);
+                        auto scattered = env().splitObject(a);
+                        if (scattered and keep)
+                        {
+                            env().addShadowObject(
+                                a, env().getActiveSplitKey(),
+                                std::move(scattered));
+                        }
+                        shadowedObjects_.insert(a);
+                    }
+                    break;
+                }
+                for (auto &s : slots)
+                {
+                    if (s == std::numeric_limits<unsigned int>::max())
+                    {
+                        s = anchor;   // R8 padding: receiver drops it
+                    }
+                }
+                std::set<unsigned int> batchMembers(slots.begin(), slots.end());
+                LOG(Debug) << "Split phase batch: " << batchMembers.size()
+                           << " sole-consumer object(s) of type '" << kv.first
+                           << "' into " << subGrid_.nrhs << " slots" << std::endl;
+                // one collective per element/key; every rank derives the
+                // same groups/slots/padding (rank-invariant inputs)
+                auto piece = env().splitObjectBatch(slots);
+                if (piece)
+                {
+                    const auto me = static_cast<unsigned int>(me_);
+                    if (shadowConsumers_.at(slots[me]).count(me_))
+                    {
+                        env().addShadowObject(slots[me],
+                                              env().getActiveSplitKey(),
+                                              std::move(piece));
+                    }
+                }
+                else
+                {
+                    // shape mismatch: per-object scalar fallback for THIS
+                    // batch's members (replicate semantics per object)
+                    for (auto a : batchMembers)
+                    {
+                        const bool keep = shadowConsumers_.at(a).empty()
+                                          || shadowConsumers_.at(a).count(me_);
+                        auto scattered = env().splitObject(a);
+                        if (scattered and keep)
+                        {
+                            env().addShadowObject(
+                                a, env().getActiveSplitKey(),
+                                std::move(scattered));
+                        }
+                    }
+                }
+                // memo on EVERY rank for every member (incl. padded
+                // duplicates): the memo must not diverge across ranks
+                for (auto a : slots)
+                {
+                    shadowedObjects_.insert(a);
+                }
+            }
+        }
+    }
+
+    // ---- pass 3: deferred rebuilds (reverse collection order) -------------
+    // rebuildQueue_ is filled in pre-order DFS (object pushed before its
+    // producer-inputs' rebuilds); reversed, every rebuild's dependencies
+    // have been processed first (valid topological order for the closure
+    // DAG). Sub-comm-scoped work; non-consuming ranks skip (existing
+    // contract).
+    for (auto it = rebuildQueue_.rbegin(); it != rebuildQueue_.rend(); ++it)
+    {
+        const unsigned int a = *it;
+        const int          m = env().getObjectModule(a);
+        if (m < 0 or module_[static_cast<unsigned int>(m)].subgrid >= 0)
+        {
+            continue;   // defensive: classification happened at collection
+        }
+        const bool keepShadow = shadowConsumers_.at(a).empty()
+                                || shadowConsumers_.at(a).count(me_);
+        if (!keepShadow)
+        {
+            continue;
+        }
+        env().enterShadowCreate(env().getActiveSplitKey());
+        try
+        {
+            // attribute failures to the producer being rebuilt (same
+            // contract as the inline path)
+            currentModule_ = m;
+            module_[static_cast<unsigned int>(m)].data->resetShadowState();
+            module_[static_cast<unsigned int>(m)].data->setup();
+            module_[static_cast<unsigned int>(m)].data->execute();
+        }
+        catch (Exceptions::ObjectDefinition &exc)
+        {
+            env().exitShadowCreate();
+            currentModule_ = -1;
+            rethrowWithContext(static_cast<unsigned int>(m), exc);
+        }
+        catch (...)
+        {
+            env().exitShadowCreate();
+            currentModule_ = -1;
+            throw;
+        }
+        env().exitShadowCreate();
+        shadowedObjects_.insert(a);
+    }
+
+    // per-phase transient state outlives its use only until here
+    batchQueue_.clear();
+    batchQueued_.clear();
+    rebuildQueue_.clear();
+    rebuildQueued_.clear();
 }
 
 void VirtualMachine::executeProgram(const Program &p)
@@ -1581,68 +1907,75 @@ void VirtualMachine::executeProgram(const Program &p)
     moduleTimeProfile_.clear();
     moduleTypeTimeProfile_.clear();
 
-    // Determine the split-phase boundaries (contiguous range of tagged steps).
-    // All world-collective Grid_split calls are front-loaded into a pre-scatter
-    // pass at the start of this range so that per-step ensureShadowed becomes a
-    // no-op, eliminating world-collective barriers from the tagged-step loop.
-    // Without this, every tagged step calls ensureShadowed (which does
-    // Grid_split → full_grid->AllToAll, a WORLD-collective) BEFORE the
-    // per-subcomm skip, forcing all ranks to synchronize at each tagged step
-    // and serializing the two sub-comms' work.
-    unsigned int firstTagged = p.size(), lastTagged = 0;
-    bool         hasTagged   = false;
-    if (splitConfigured_)
-    {
-        for (unsigned int i = 0; i < p.size(); ++i)
-        {
-            if (module_[p[i]].subgrid >= 0)
-            {
-                if (!hasTagged) { firstTagged = i; }
-                lastTagged = i;
-                hasTagged  = true;
-            }
-        }
-    }
+    // Split-phase boundaries: ordered per-phase step ranges (empty when no
+    // tagged modules or split unconfigured — the legacy single-window case
+    // is then simply one range). All world-collective Grid_split calls are
+    // front-loaded into a pre-scatter pass at each phase's entry so per-step
+    // ensureShadowed becomes a no-op within the phase, eliminating
+    // world-collective barriers from the tagged-step loop. Phase indices are
+    // validated non-decreasing over tagged modules (untagged modules may
+    // interleave freely within and between phases).
+    const auto phaseRanges = computePhaseRanges(p);
+    unsigned int phaseIdx    = 0;   // active index into phaseRanges
+    // per-phase shadow free schedule (R2, Slice 5): shadowFreeSteps_[k] lists
+    // {address, subgrid} entries whose LAST consumer is step range.first + k;
+    // rebuilt (assign -- no stale per-phase content) at each phase entry.
+    std::vector<std::vector<std::pair<unsigned int, int>>> shadowFreeSteps_;
 
     for (unsigned int i = 0; i < p.size(); ++i)
     {
-        // ---- Split-phase exit: join barrier before post-split global steps ----
-        // Synchronize all sub-comms before processing any global step that
-        // follows the split phase. During the split phase the sub-comms ran
+        // ---- Split-phase exit: join barrier + per-phase VM state reset ----
+        // Synchronize all sub-comms before any following global step or the
+        // next phase's pre-scatter. During the phase the sub-comms ran
         // concurrently (no per-step world barriers); this is the "join".
-        if (hasTagged && i == lastTagged + 1)
+        // Per-phase VM state (shadow memo, consumer sets) is reset HERE so
+        // the next phase's pre-scatter cannot short-circuit on stale marks
+        // (which would silently fall through to grid-mismatched world
+        // objects). shadowStore_ entries of this phase's key are swept by
+        // the shadow GC extension (Slice 5); entries of old keys are
+        // invisible to lookups (keyed by the active phase).
+        if (!phaseRanges.empty() and phaseIdx < phaseRanges.size()
+            and i == phaseRanges[phaseIdx].last + 1)
         {
             env().setSubGridScope(false);
             env().getGrid()->Barrier();
+            shadowedObjects_.clear();
+            shadowConsumers_.clear();
+            // safety net for shadows whose last-use free never fired (B1)
+            env().sweepShadows(static_cast<int>(phaseRanges[phaseIdx].phase));
+            // stale prior-phase entries would otherwise survive into the
+            // next phase's shadowFreeSteps_ build (K1)
+            shadowLastUse_.clear();
+            phaseIdx++;
         }
 
-        // ---- Split-phase entry: pre-scatter ALL tagged modules' inputs ----
-        // Front-load every world-collective Grid_split / rebuild here, while
-        // all ranks are still synchronized. After this pass, shadowedObjects_
-        // contains every input any tagged module will need, so the per-step
-        // ensureShadowed below is a no-op — no world-collective barrier.
-        // This is what lets the two sub-comms execute their tagged modules
-        // concurrently instead of serializing at each step.
-        if (hasTagged && i == firstTagged)
+        // ---- Split-phase entry: pre-scatter THIS phase's tagged inputs ----
+        if (!phaseRanges.empty() and phaseIdx < phaseRanges.size()
+            and i == phaseRanges[phaseIdx].first)
         {
-            if (!env().isSubGridActive())
-            {
-                env().setActiveSubGrid(subGrid_.grid.get(), 0);
-            }
+            const auto &range = phaseRanges[phaseIdx];
+            const auto  key   = static_cast<int>(range.phase);
+            // switch the shadow split key to this phase (flushes subgrid grid
+            // caches on key change; does NOT wipe the shadow store)
+            env().setActiveSubGrid(subGrid_.grid.get(), key);
             env().setSubGridScope(true);
-            LOG(Message) << "Pre-scattering subgrid inputs for "
-                         << "concurrent split-phase execution..." << std::endl;
-            // consumer-gated shadow storage phase 1: which sub-comm
-            // consumes each tagged-closure object (must complete BEFORE
-            // any store decision -- phase 2's gate needs the full set)
-            computeShadowConsumers(p, firstTagged, lastTagged);
-            for (unsigned int j = firstTagged; j <= lastTagged; ++j)
+            LOG(Message) << "Pre-scattering subgrid inputs for split phase "
+                         << key << " (steps " << range.first + 1 << "-"
+                         << range.last + 1 << ")..." << std::endl;
+            // consumer-gated shadow storage phase 1: which sub-comm consumes
+            // each tagged-closure object of THIS phase (must complete before
+            // any store decision), enforcing the pre-scatter contract (Q7)
+            computeShadowConsumers(p, range);
+            // rebuild the per-step shadow free schedule for this phase (R2):
+            // shadowFreeSteps_[i - range.first] lists {address, subgrid}
+            // entries whose last consumer is step i.
+            shadowFreeSteps_.assign(range.last - range.first + 1, {});
+            for (auto &as : shadowLastUse_)
             {
-                if (module_[p[j]].subgrid >= 0)
-                {
-                    ensureShadowed(module_[p[j]].input);
-                }
+                shadowFreeSteps_[as.second - range.first].push_back(as.first);
             }
+            // three-pass pre-scatter (R4): collect -> batch -> rebuild
+            executeBatchedPreScatter(p, range);
             LOG(Message) << "Pre-scatter complete; sub-comms now execute "
                          << "concurrently." << std::endl;
         }
@@ -1730,6 +2063,25 @@ void VirtualMachine::executeProgram(const Program &p)
         LOG(Message) << "Garbage collection..." << std::endl;
         env().freeSet(freeProg[i]);
 
+        // ---- Shadow GC (R2, Slice 5): free shadows after last consumer ----
+        // Local to the owning sub-comm: consumer sets are rank-independent,
+        // so every rank derives the same free step; only ranks with
+        // me_ == s hold a {address, key} entry. No collectives.
+        if (!phaseRanges.empty() and phaseIdx < phaseRanges.size()
+            and i >= phaseRanges[phaseIdx].first
+            and i <= phaseRanges[phaseIdx].last)
+        {
+            const auto key = static_cast<int>(phaseRanges[phaseIdx].phase);
+            for (auto &as : shadowFreeSteps_[i - phaseRanges[phaseIdx].first])
+            {
+                if (me_ == as.second)
+                {
+                    env().freeShadowObject(as.first, key);
+                    shadowedObjects_.erase(as.first);
+                }
+            }
+        }
+
         // Clean up remaining temporary objects
         for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
         {
@@ -1750,18 +2102,16 @@ void VirtualMachine::executeProgram(const Program &p)
             LOG(Message) << "Nothing to free" << std::endl;
         }
     }
-    // Join barrier: the pre-scatter eliminated per-step world barriers so the
-    // two sub-comms ran concurrently. Synchronize here before cleanup and any
-    // post-executeProgram MPI operations. Without this, the faster sub-comm
-    // could proceed to clearActiveSubGrid / shadow store teardown / result
-    // saving while the slower one is still mid-solve.
-    if (hasTagged)
+    // Join barrier (final phase): synchronize before cleanup and any
+    // post-executeProgram MPI operations, exactly as HEAD did, plus the
+    // final wholesale teardown (scope, shadow store, subgrid state).
+    if (!phaseRanges.empty())
     {
         env().setSubGridScope(false);
         env().getGrid()->Barrier();
     }
-    shadowConsumers_.clear();   // consumer sets are per split phase; also
-                                // cleared on entry by computeShadowConsumers
+    shadowConsumers_.clear();   // (already per-phase; final safety)
+    shadowLastUse_.clear();     // (already per-phase; final safety)
     // C2 fix: clear scope whenever it was set (not position-based)
     if (splitConfigured_ && env().isSubGridActive())
     {

@@ -207,6 +207,7 @@ void Environment::clearActiveSubGrid(void)
         // (no RB grid to clear)
         activeSplitKey_  = -1;
         shadowStore_.clear();
+        shadowSize_.clear();   // R9 (Slice 7)
         gridSub4d_.clear();
         gridSubRb4d_.clear();
     }
@@ -221,6 +222,7 @@ bool Environment::isSubGridActive(void) const
 void Environment::addShadowObject(const unsigned int address, const int splitKey,
                                   std::unique_ptr<Object> obj)
 {
+    shadowSize_[{address, splitKey}] = obj->footprint();   // R9 (Slice 7)
     shadowStore_[{address, splitKey}] = std::move(obj);
 }
 
@@ -229,6 +231,48 @@ bool Environment::hasShadowObject(const unsigned int address) const
     if (!(activeSubGrid_ && subGridScopeOn_))
         return false;
     return shadowStore_.find({address, activeSplitKey_}) != shadowStore_.end();
+}
+
+bool Environment::freeShadowObject(const unsigned int address,
+                                   const int splitKey)
+{
+    auto it = shadowStore_.find({address, splitKey});
+    if (it == shadowStore_.end())
+    {
+        return false;
+    }
+    shadowStore_.erase(it);
+    shadowSize_.erase({address, splitKey});   // R9 (Slice 7)
+    return true;
+}
+
+unsigned int Environment::sweepShadows(const int splitKey)
+{
+    unsigned int n = 0;
+    for (auto it = shadowStore_.begin(); it != shadowStore_.end();)
+    {
+        if (it->first.second == splitKey)
+        {
+            it = shadowStore_.erase(it);
+            n++;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    for (auto it = shadowSize_.begin(); it != shadowSize_.end();)
+    {
+        if (it->first.second == splitKey)
+        {
+            it = shadowSize_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return n;
 }
 
 // subgrid scatter ////////////////////////////////////////////////////////////
@@ -291,6 +335,27 @@ std::unique_ptr<Object> Environment::splitObject(const unsigned int address)
         return nullptr;
     }
     return object_[address].data->splitTo();
+}
+
+// batched sole-consumer scatter (R4) ////////////////////////////////////////
+std::unique_ptr<Object> Environment::splitObjectBatch(
+    const std::vector<unsigned int> &addresses)
+{
+    if (addresses.empty())
+    {
+        return nullptr;
+    }
+    std::vector<const Object *> fulls;
+    fulls.reserve(addresses.size());
+    for (auto a : addresses)
+    {
+        if (a >= object_.size() || !object_[a].data)
+        {
+            return nullptr;
+        }
+        fulls.push_back(object_[a].data.get());
+    }
+    return object_[addresses[0]].data->splitBatchTo(fulls);
 }
 
 // cloneability probe ////////////////////////////////////////////////////////
@@ -630,7 +695,14 @@ Environment::Size Environment::getTotalSize(void) const
     {
         size += o.size;
     }
-    
+    // R9 (Slice 7): shadow-store memory is live memory on this rank
+    // (scattered pieces and rebuilt copies); include it so memPeak and
+    // MemoryUtils::printMemory see the split-phase footprint
+    for (auto &s: shadowSize_)
+    {
+        size += s.second;
+    }
+
     return size;
 }
 

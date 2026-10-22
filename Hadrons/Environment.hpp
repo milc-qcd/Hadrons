@@ -86,6 +86,140 @@ struct IsCloneableMetadata : std::false_type {};
 template <typename T>
 struct IsCloneableMetadata<std::vector<T>> : std::is_arithmetic<T> {};
 
+// batched subgrid scatter (R4) //////////////////////////////////////////////
+// Pointer-taking reimplementation of Grid's vector Grid_split
+// (Grid/Grid/lattice/Lattice_transfer.h:1598-1711): slot k of `fulls` lands
+// on sub-comm k (address arithmetic lex_c = c+chunk*m+chunk*M*s pairs
+// vector index with sub-comm index), but unlike the scalar wrapper
+// (:1713-1725, which builds full_v from nrhs world-grid COPIES of the same
+// field) the slots here hold DISTINCT objects and no world-grid copies are
+// made. All building blocks (unvectorizeToLexOrdArray, AllToAll,
+// vectorizeFromLexOrdArray, Lexicographic) are public Grid APIs.
+template <typename Vobj>
+void gridSplitBatch(const std::vector<const Lattice<Vobj> *> &fulls,
+                    Lattice<Vobj>                             &split)
+{
+    typedef typename Vobj::scalar_object Sobj;
+
+    int full_vecs   = fulls.size();
+
+    GRID_ASSERT(full_vecs >= 1);
+
+    GridBase * full_grid = fulls[0]->Grid();
+    GridBase *split_grid = split.Grid();
+
+    int       ndim  = full_grid->_ndimension;
+    int  full_nproc = full_grid->_Nprocessors;
+    int split_nproc =split_grid->_Nprocessors;
+
+    // checkerboard management
+    int cb = fulls[0]->Checkerboard();
+    split.Checkerboard() = cb;
+
+    // checks (mirror Grid's vector overload)
+    GRID_ASSERT(full_grid->_ndimension == split_grid->_ndimension);
+    for (int n = 0; n < full_vecs; n++)
+    {
+        GRID_ASSERT(fulls[n]->Checkerboard() == cb);
+        for (int d = 0; d < ndim; d++)
+        {
+            GRID_ASSERT(fulls[n]->Grid()->_gdimensions[d]
+                        == split.Grid()->_gdimensions[d]);
+            GRID_ASSERT(fulls[n]->Grid()->_fdimensions[d]
+                        == split.Grid()->_fdimensions[d]);
+        }
+    }
+
+    int   nvector = full_nproc / split_nproc;
+    GRID_ASSERT(nvector * split_nproc == full_nproc);
+    GRID_ASSERT(nvector == full_vecs);
+
+    Coordinate ratio(ndim);
+    for (int d = 0; d < ndim; d++)
+    {
+        ratio[d] = full_grid->_processors[d] / split_grid->_processors[d];
+    }
+
+    uint64_t lsites = full_grid->lSites();
+    uint64_t     sz = lsites * nvector;
+    std::vector<Sobj> tmpdata(sz);
+    std::vector<Sobj> alldata(sz);
+    std::vector<Sobj> scalardata(lsites);
+
+    for (int v = 0; v < nvector; v++)
+    {
+        unvectorizeToLexOrdArray(scalardata, *fulls[v]);
+        thread_for(site, lsites, {
+            alldata[v * lsites + site] = scalardata[site];
+        });
+    }
+
+    int      nvec  = nvector;   // counts down to 1 as we collapse dims
+    Coordinate ldims = full_grid->_ldimensions;
+
+    for (int d = ndim - 1; d >= 0; d--)
+    {
+        if (ratio[d] != 1)
+        {
+            full_grid->AllToAll(d, alldata, tmpdata);
+            if (split_grid->_processors[d] > 1)
+            {
+                alldata = tmpdata;
+                split_grid->AllToAll(d, alldata, tmpdata);
+            }
+
+            auto  rdims = ldims;
+            auto      M = ratio[d];
+            auto rsites = lsites * M;   // increases rsites by M
+            nvec       /= M;            // reduce nvec by subdivision factor
+            rdims[d]   *= M;            // increase local dim by same factor
+
+            int sP = split_grid->_processors[d];
+            int fP =  full_grid->_processors[d];
+
+            int fvol  = lsites;
+            int chunk = (nvec * fvol) / sP;
+            GRID_ASSERT(chunk * sP == nvec * fvol);
+
+            thread_for(c, chunk, {
+                Coordinate coor(ndim);
+                for (int m = 0; m < M; m++)
+                {
+                    for (int s = 0; s < sP; s++)
+                    {
+                        int lex_r;
+                        uint64_t lex_c        = c + chunk * m + chunk * M * s;
+                        uint64_t lex_fvol_vec = c + chunk * s;
+                        uint64_t lex_fvol     = lex_fvol_vec % fvol;
+                        uint64_t lex_vec      = lex_fvol_vec / fvol;
+
+                        Lexicographic::CoorFromIndex(coor, lex_fvol, ldims);
+                        coor[d] += m * ldims[d];
+                        Lexicographic::IndexFromCoor(coor, lex_r, rdims);
+                        lex_r += lex_vec * rsites;
+
+                        alldata[lex_r] = tmpdata[lex_c];
+                    }
+                }
+            });
+            ldims[d] *= ratio[d];
+            lsites   *= ratio[d];
+        }
+    }
+    vectorizeFromLexOrdArray(alldata, split);
+}
+
+// local byte footprint of one subgrid lattice on this rank: oSites * sizeof
+// (vobj) is exactly what the aligned allocator reserved (mirrors the
+// profiler-delta accounting of world objects closely enough for runtime
+// visibility; rebuilt non-lattice shadows record their exact profiler
+// delta at creation instead — see createDerivedObject)
+template <typename Vobj>
+SITE_SIZE_TYPE latticeFootprint(const Lattice<Vobj> &lat)
+{
+    return static_cast<SITE_SIZE_TYPE>(lat.Grid()->oSites()) * sizeof(Vobj);
+}
+
 /******************************************************************************
  *                         Global environment                                 *
  ******************************************************************************/
@@ -126,6 +260,27 @@ public:
     {
         return nullptr;
     }
+    // Batched variant of splitTo for sole-consumer objects (R4): `fulls`
+    // holds nrhs type-erased objects of the SAME concrete scatterable type
+    // (the dispatcher guarantees this); slot k must land on sub-comm k.
+    // Returns this rank's piece (of the slot matching its sub-comm) as a
+    // new Object, or nullptr when shapes are incompatible (the caller falls
+    // back to per-object scatters). Default: not supported.
+    virtual std::unique_ptr<Object> splitBatchTo(
+        const std::vector<const Object *> &fulls) const
+    {
+        return nullptr;
+    }
+    // approximate local byte footprint of the held object on this rank
+    // (lattices: oSites*sizeof(vobj); summed element/key-wise for vector
+    // and map containers; 0 for non-lattice holders — rebuilt shadows
+    // record their exact profiler-measured size at creation instead).
+    // Used by addShadowObject so getTotalSize/memPeak/printMemory see
+    // shadow memory (R9, runtime-only visibility).
+    virtual SITE_SIZE_TYPE footprint(void) const
+    {
+        return 0;
+    }
 };
 
 template <typename T>
@@ -139,6 +294,9 @@ public:
     T *       getPt(void) const;
     void      reset(T *pt);
     std::unique_ptr<Object> splitTo(void) const override;
+    std::unique_ptr<Object> splitBatchTo(
+        const std::vector<const Object *> &fulls) const override;
+    SITE_SIZE_TYPE footprint(void) const override;
     bool      isLattice(void) const override
     {
         return IsScatterable<T>::value;
@@ -255,6 +413,14 @@ public:
                                             const int splitKey,
                                             std::unique_ptr<Object> obj);
     bool                    hasShadowObject(const unsigned int address) const;
+    // free ONE shadow-store entry (local to the owning sub-comm; no
+    // collectives -- consumer sets are rank-independent, so every owning
+    // rank derives the same free step). Returns true if an entry existed.
+    bool                    freeShadowObject(const unsigned int address,
+                                             const int splitKey);
+    // erase every shadow-store entry with the given split key (end-of-phase
+    // sweep / safety net). Local; returns the number of entries erased.
+    unsigned int            sweepShadows(const int splitKey);
     // scatter a lattice global object onto the active subgrid; returns true if
     // the object was scattered (it is a Lattice), false otherwise (non-lattice
     // objects must be rebuilt by the VM via setup() in shadow-create mode).
@@ -276,6 +442,13 @@ public:
     // decides per-rank whether to store — consumer-gated shadow storage).
     // Returns nullptr for non-scatterable objects.
     std::unique_ptr<Object>  splitObject(const unsigned int address);
+    // batched sole-consumer scatter (R4): `addresses` holds nrhs objects of
+    // the same concrete scatterable type, slot k consumed only by sub-comm
+    // k. Dispatches on the first element's concrete type; returns this
+    // rank's piece WITHOUT storing (the VM gates the store per consumer),
+    // or nullptr when the batch is shape-incompatible.
+    std::unique_ptr<Object> splitObjectBatch(
+        const std::vector<unsigned int> &addresses);
     // lightweight cloneability probe (see Object::isCloneable)
     bool                    isCloneableObject(const unsigned int address) const;
     // route subsequent createDerivedObject calls into the shadow store so a
@@ -381,6 +554,12 @@ private:
     std::map<FineGridKey, GridPt>           gridSub4d_;
     std::map<FineGridKey, GridRbPt>         gridSubRb4d_;
     std::map<std::pair<unsigned int, int>, std::unique_ptr<Object>> shadowStore_;
+    // shadow memory accounting (R9, runtime-only): local byte size of each
+    // shadow entry — recorded at store time (container footprint for
+    // scattered pieces; profiler-measured delta for rebuilt objects in the
+    // shadow-create branch of createDerivedObject), erased on free/sweep
+    // and at clearActiveSubGrid. Per-rank local, like object_[].size.
+    std::map<std::pair<unsigned int, int>, Size> shadowSize_;
     // shadow-create mode: when true, createDerivedObject routes the newly built
     // object into shadowStore_ (keyed by shadowCreateKey_) instead of object_.
     // Used by the VM to rebuild non-lattice global objects (e.g. fermion
@@ -487,6 +666,186 @@ std::unique_ptr<Object> Holder<T>::splitTo(void) const
             }
         }
         return std::make_unique<Holder<T>>(split.release());
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+// approximate local byte footprint (R9): lattice element/key-wise
+// oSites*sizeof(vobj); 0 for non-lattice holders
+template <typename T>
+SITE_SIZE_TYPE Holder<T>::footprint(void) const
+{
+    if constexpr (IsLattice<T>::value)
+    {
+        return latticeFootprint(*objPt_);
+    }
+    else if constexpr (IsLatticeVector<T>::value)
+    {
+        SITE_SIZE_TYPE sz = 0;
+        for (auto &e : *objPt_)
+        {
+            sz += latticeFootprint(e);
+        }
+        return sz;
+    }
+    else if constexpr (IsLatticeMap<T>::value)
+    {
+        SITE_SIZE_TYPE sz = 0;
+        for (auto &p : *objPt_)
+        {
+            if constexpr (IsLattice<typename T::mapped_type>::value)
+            {
+                sz += latticeFootprint(p.second);
+            }
+            else
+            {
+                for (auto &e : p.second)
+                {
+                    sz += latticeFootprint(e);
+                }
+            }
+        }
+        return sz;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+// batched subgrid scatter (R4) //////////////////////////////////////////////
+template <typename T>
+std::unique_ptr<Object> Holder<T>::splitBatchTo(
+    const std::vector<const Object *> &fulls) const
+{
+    if constexpr (IsScatterable<T>::value)
+    {
+        auto &env = Environment::getInstance();
+        // every slot must hold the same concrete Holder<T>; any mismatch
+        // (or shape incompatibility below) aborts the whole batch and the
+        // caller falls back to per-object scatters
+        std::vector<const Holder<T> *> slots;
+        slots.reserve(fulls.size());
+        for (auto *o : fulls)
+        {
+            auto *h = dynamic_cast<const Holder<T> *>(o);
+            if (h == nullptr)
+            {
+                return nullptr;
+            }
+            slots.push_back(h);
+        }
+        if constexpr (IsLattice<T>::value)
+        {
+            using VType = typename T::vector_type;
+            auto  *sg   = env.template getGrid<VType>();
+            auto   split = std::make_unique<T>(sg);
+            std::vector<const T *> ptrs;
+            for (auto *h : slots)
+            {
+                ptrs.push_back(h->getPt());
+            }
+            gridSplitBatch(ptrs, *split);
+            return std::make_unique<Holder<T>>(split.release());
+        }
+        else if constexpr (IsLatticeVector<T>::value)
+        {
+            using ElemT  = typename T::value_type;         // Lattice<Vobj>
+            using VType  = typename ElemT::vector_type;
+            const auto   n = slots[0]->getPt()->size();
+            for (auto *h : slots)
+            {
+                if (h->getPt()->size() != n)
+                {
+                    return nullptr;   // unequal vector sizes: no batch
+                }
+            }
+            auto  *sg    = env.template getGrid<VType>();
+            auto   split = std::make_unique<T>();
+            split->reserve(n);
+            std::vector<const ElemT *> ptrs(slots.size(), nullptr);
+            for (typename T::size_type e = 0; e < n; ++e)
+            {
+                for (std::size_t k = 0; k < slots.size(); ++k)
+                {
+                    ptrs[k] = &(*slots[k]->getPt())[e];
+                }
+                split->emplace_back(sg);
+                gridSplitBatch(ptrs, split->back());
+            }
+            return std::make_unique<Holder<T>>(split.release());
+        }
+        else if constexpr (IsLatticeMap<T>::value)
+        {
+            // identical key sequences required (std::map subclasses
+            // iterate in key order; compare slot 0 against every slot)
+            using MappedT = typename T::mapped_type;
+            using ElemT   = typename LatticeElem<MappedT>::type;
+            using VType   = typename ElemT::vector_type;
+            auto &m0      = *slots[0]->getPt();
+            for (auto *h : slots)
+            {
+                auto &m = *h->getPt();
+                if (m.size() != m0.size())
+                {
+                    return nullptr;
+                }
+                auto it0 = m0.begin();
+                auto it  = m.begin();
+                for (; it0 != m0.end(); ++it0, ++it)
+                {
+                    if (it->first != it0->first)
+                    {
+                        return nullptr;
+                    }
+                }
+            }
+            auto *sg    = env.template getGrid<VType>();
+            auto  split = std::make_unique<T>();
+            std::vector<const ElemT *> ptrs(slots.size(), nullptr);
+            for (auto &p0 : m0)
+            {
+                if constexpr (IsLattice<MappedT>::value)
+                {
+                    auto ret = split->emplace(p0.first, sg);
+                    for (std::size_t k = 0; k < slots.size(); ++k)
+                    {
+                        ptrs[k] = &slots[k]->getPt()->at(p0.first);
+                    }
+                    gridSplitBatch(ptrs, ret.first->second);
+                }
+                else
+                {
+                    auto ret = split->try_emplace(p0.first);
+                    const auto n = p0.second.size();
+                    for (auto *h : slots)
+                    {
+                        if (h->getPt()->at(p0.first).size() != n)
+                        {
+                            return nullptr;   // mapped vector sizes differ
+                        }
+                    }
+                    ret.first->second.reserve(n);
+                    for (typename MappedT::size_type e = 0; e < n; ++e)
+                    {
+                        for (std::size_t k = 0; k < slots.size(); ++k)
+                        {
+                            ptrs[k] = &slots[k]->getPt()->at(p0.first)[e];
+                        }
+                        ret.first->second.emplace_back(sg);
+                        gridSplitBatch(ptrs, ret.first->second.back());
+                    }
+                }
+            }
+            return std::make_unique<Holder<T>>(split.release());
+        }
+        else
+        {
+            return nullptr;
+        }
     }
     else
     {
@@ -836,8 +1195,14 @@ void Environment::createDerivedObject(const std::string name,
         {
             MemoryProfiler::stats = &memStats;
         }
+        const size_t initMem = MemoryProfiler::stats->currentlyAllocated;
         shadowStore_[{address, shadowCreateKey_}].reset(
             new Holder<B>(new T(std::forward<Ts>(args)...)));
+        // R9 (Slice 7): record the newly computed allocation delta —
+        // `initMem` is NEW content (HEAD's branch computes no baseline) —
+        // the natural exact size hook for rebuilt (non-lattice) shadows
+        shadowSize_[{address, shadowCreateKey_}]
+            = MemoryProfiler::stats->currentlyAllocated - initMem;
         if (MemoryProfiler::stats == &memStats)
         {
             MemoryProfiler::stats = nullptr;

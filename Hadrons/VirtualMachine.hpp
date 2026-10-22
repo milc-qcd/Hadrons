@@ -33,6 +33,7 @@
 #include <Hadrons/Database.hpp>
 #include <Hadrons/Graph.hpp>
 #include <Hadrons/Environment.hpp>
+#include <limits>
 #include <set>
 
 BEGIN_HADRONS_NAMESPACE
@@ -57,6 +58,14 @@ public:
     typedef std::unique_ptr<ModuleBase>         ModPt;
     typedef std::vector<std::set<unsigned int>> GarbageSchedule;
     typedef std::vector<unsigned int>           Program;
+    // inclusive step range of one split phase within a program; `phase` is the
+    // raw <splitPhase> value (sparse indices allowed; sequence must be
+    // non-decreasing over tagged modules — see validateSplitPhases)
+    struct PhaseRange
+    {
+        unsigned int phase{0};
+        unsigned int first{0}, last{0};
+    };
     struct MemoryPrint
     {
         Size                 size;
@@ -134,6 +143,9 @@ private:
         std::vector<unsigned int> input, output;
         size_t                    maxAllocated;
         int                       subgrid{-1};   // subgrid index, -1 = global
+        int                       splitPhase{0}; // split phase index, 0 = first
+                                                 // phase (meaningful only when
+                                                 // subgrid >= 0)
     };
 public:
     // trajectory counter
@@ -148,7 +160,8 @@ public:
     void                dbRestoreModules(void);
     Program             dbRestoreSchedule(void);
     // module management
-    void                pushModule(ModPt &pt, const int subgrid = -1);
+    void                pushModule(ModPt &pt, const int subgrid = -1,
+                                   const int splitPhase = 0);
     template <typename M>
     void                createModule(const std::string name);
     template <typename M>
@@ -158,7 +171,8 @@ public:
                                      const std::string type,
                                      XmlReader &reader,
                                      const std::string blockName = "options",
-                                     const int subgrid = -1);
+                                     const int subgrid = -1,
+                                     const int splitPhase = 0);
     unsigned int        getNModule(void) const;
     ModuleBase *        getModule(const unsigned int address) const;
     ModuleBase *        getModule(const std::string name) const;
@@ -173,6 +187,7 @@ public:
     std::string         getModuleNamespace(const unsigned int address) const;
     std::string         getModuleNamespace(const std::string name) const;
     int                 getModuleSubgrid(const unsigned int address) const;
+    int                 getModuleSplitPhase(const unsigned int address) const;
     void                buildSubGrids(const std::vector<int> &mpiSplit);
     void                computeSplitPhase(void);
     int                 getMe(void) const { return me_; }
@@ -202,6 +217,13 @@ public:
     Program             naiveSchedule(void);
     // program validation (completeness, duplicates, dependency order)
     void                validateProgram(const Program &p) const;
+    // split-phase boundary computation + validation: each phase's tagged
+    // modules must form a contiguous ordered range of the schedule (phase
+    // index non-decreasing over tagged modules in schedule order; untagged
+    // modules may interleave). computePhaseRanges validates then returns the
+    // ordered per-phase ranges; empty when split is unconfigured.
+    void                validateSplitPhases(const Program &p) const;
+    std::vector<PhaseRange> computePhaseRanges(const Program &p) const;
     // general execution
     void                executeProgram(const Program &p);
     void                executeProgram(const std::vector<std::string> &p);
@@ -268,6 +290,11 @@ private:
     // Rank-independent. Empty/absent entry = store everywhere (per-step
     // late path, or nrhs == 1).
     std::map<unsigned int, std::set<int>> shadowConsumers_;
+    // last step (within the active phase) whose tagged closure consumes
+    // {object, subgrid} -- filled by computeShadowConsumers alongside
+    // shadowConsumers_; drives the local per-step shadow frees (R2).
+    // Rank-independent, like shadowConsumers_.
+    std::map<std::pair<unsigned int, int>, unsigned int> shadowLastUse_;
     // lazily scatter (lattices) or rebuild (non-lattice objects) the global
     // inputs of a split-phase module onto the subgrid. Collective: the schedule,
     // splitPhase set and module inputs are identical on every rank, so every
@@ -277,8 +304,28 @@ private:
     // walking every tagged module's input closure with ensureShadowed's
     // classification rules (no side effects, no collectives).
     void                                  computeShadowConsumers(const Program &p,
-                                                                const unsigned int firstTagged,
-                                                                const unsigned int lastTagged);
+                                                                const PhaseRange &range);
+    // ---- batched sole-consumer scatter state (R4, Slice 6) ----
+    // collection mode: when true, ensureShadowed defers sole-consumer
+    // scatterable objects to batchQueue_ and rebuild-path objects to
+    // rebuildQueue_ instead of scattering/rebuilding inline; the driver
+    // then runs batches and deferred rebuilds (collect -> batch -> rebuild).
+    // All four members are per-phase (cleared by the driver at its end —
+    // which runs at each phase entry before any use) and rank-independent
+    // (derived from the schedule + consumer sets), so batch group/slot
+    // assignment is identical on every rank.
+    bool                                  collectingBatches_{false};
+    std::vector<unsigned int>             batchQueue_;
+    std::set<unsigned int>                batchQueued_;
+    std::vector<unsigned int>             rebuildQueue_;
+    std::set<unsigned int>                rebuildQueued_;
+    // three-pass pre-scatter (R4, D-pre-scatter-three-pass): collect
+    // (defer sole-consumer scatterables + rebuilds), batch (one vector
+    // split per type/shape group; slot k -> subgrid k), rebuild (deferred
+    // producers in reverse collection order = valid topological order).
+    void                                  executeBatchedPreScatter(
+                                            const Program &p,
+                                            const PhaseRange &range);
 };
 
 /******************************************************************************
