@@ -2070,6 +2070,12 @@ void VirtualMachine::executeProgram(const Program &p)
                 if (module_[p[i]].subgrid >= 0 && module_[p[i]].subgrid != me_)
                 {
                     env().setSubGridScope(false);
+                    // world-object GC is rank-uniform (Phase 13, the C4h
+                    // fix): freeProg is schedule-derived and freeSet is
+                    // local — a non-owning rank that skips this free keeps
+                    // its piece of these world fields until program end.
+                    // Shadow frees below are owner-local no-ops here.
+                    env().freeSet(freeProg[i]);
                     continue;   // skip non-owning subcomm — no world barrier!
                 }
             }
