@@ -1673,6 +1673,62 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
     }
 }
 
+// one-time slot-delivery self-check (Phase 11) ///////////////////////////////////
+// Scatters nrhs constant-filled marker lattices (slot k <- k) through the
+// SAME gridSplitBatch the batches use; after the Phase 11 fix every rank's
+// piece must carry its own sub-comm index. Guards the analytic permutation
+// against layouts not hand-traced (3+ split dims, multi-rank subgrids on
+// split dims) at the cost of one small-type scatter per program.
+void VirtualMachine::verifyBatchSlotDelivery(void)
+{
+    using Mark = Lattice<iScalar<vInteger>>;
+    using Sobj = typename Mark::scalar_object;   // per-site iScalar<int>
+    auto *world = env().getGrid();               // 4d world grid
+    auto *sub   = env().template getGrid<vInteger>();   // active split's
+                                                        // sub-grid (cached)
+    const auto  nrhs = static_cast<unsigned int>(subGrid_.nrhs);
+    std::vector<Mark>         fulls;
+    std::vector<const Mark *> ptrs;
+    for (unsigned int k = 0; k < nrhs; ++k)
+    {
+        // marker k = the constant k, filled through the same lex-array
+        // plumbing gridSplitBatch uses (no reliance on broadcast assignment)
+        std::vector<Sobj> data(world->lSites());
+        for (auto &s : data)
+        {
+            s() = static_cast<int>(k);
+        }
+        fulls.emplace_back(world);
+        vectorizeFromLexOrdArray(data, fulls.back());
+        ptrs.push_back(&fulls.back());
+    }
+    Mark piece(sub);
+    gridSplitBatch(ptrs, piece);
+    std::vector<Sobj> data;
+    unvectorizeToLexOrdArray(data, piece);
+    int got = (data.empty() ? -1 : static_cast<int>(data[0]()));
+    for (auto &s : data)
+    {
+        if (static_cast<int>(s()) != got)
+        {
+            got = -1;   // not a constant: report as mis-delivery below
+            break;
+        }
+    }
+    if (got != me_)
+    {
+        HADRONS_ERROR(Definition, "batched split slot mis-delivery: subcomm "
+                      + std::to_string(me_) + " received slot "
+                      + std::to_string(got) + " (expected "
+                      + std::to_string(me_) + "); gridSplitBatchSlotToSub"
+                      + " disagrees with the delivered pairing on this grid"
+                      + " pair — re-derive the collapse-arithmetic trace for"
+                      + " this layout");
+    }
+    LOG(Message) << "Split-phase batch slot delivery verified (subcomm "
+                 << me_ << " received slot " << me_ << ")." << std::endl;
+}
+
 // three-pass pre-scatter (R4) //////////////////////////////////////////////////
 void VirtualMachine::executeBatchedPreScatter(const Program &p,
                                               const PhaseRange &range)
@@ -1695,6 +1751,15 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
     // ---- pass 2: batch sole-consumer scatterables by concrete type --------
     if (!batchQueue_.empty())
     {
+        if (!batchSlotDeliveryVerified_)
+        {
+            // once per program, prove slot k lands on sub-comm k on this grid
+            // pair before trusting any batch. Rank-uniform site (pass-2 state
+            // is rank-independent; every rank reaches it in lockstep at phase
+            // entry), so the world-collective marker scatter is safe here.
+            verifyBatchSlotDelivery();
+            batchSlotDeliveryVerified_ = true;
+        }
         // group by concrete derived type: same type name <=> same Holder<T>
         // <=> batchable together (shape compatibility checked by
         // splitBatchTo; nullptr -> per-object fallback for that batch)
@@ -1987,12 +2052,14 @@ void VirtualMachine::executeProgram(const Program &p)
             {
                 // scope ON for this tagged module's execution
                 env().setSubGridScope(true);
-                // ensureShadowed is now a no-op: all inputs were pre-scattered
-                // above and are in shadowedObjects_. The call is retained for
-                // safety (e.g. tagged modules that depend on outputs of other
-                // tagged modules — those are skipped anyway since the producer
-                // is tagged and self-rebuilds on its subgrid).
-                ensureShadowed(module_[p[i]].input);
+                // NO per-step ensureShadowed: all shadowing happened at this
+                // phase's entry pre-scatter (executeBatchedPreScatter), where
+                // every rank joins the world-collective Grid_split calls in
+                // lockstep. Once the shadow GC starts freeing spent shadows
+                // (owner-local memo erases), a per-step call would scatter on
+                // SOME ranks only — ranks already waiting in the phase-exit
+                // Barrier never match the collective: deadlock. Mid-phase
+                // shadowing is forbidden; the pre-scatter is authoritative.
                 if (module_[p[i]].subgrid >= 0 && module_[p[i]].subgrid != me_)
                 {
                     env().setSubGridScope(false);

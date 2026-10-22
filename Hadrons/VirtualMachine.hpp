@@ -319,6 +319,11 @@ private:
     std::set<unsigned int>                batchQueued_;
     std::vector<unsigned int>             rebuildQueue_;
     std::set<unsigned int>                rebuildQueued_;
+    // one-time per-program self-check that gridSplitBatch really delivers
+    // slot k to sub-comm k on this rank's grid pair (Phase 11): guards the
+    // analytic permutation against layouts not hand-verified
+    bool                                  batchSlotDeliveryVerified_{false};
+    void                                  verifyBatchSlotDelivery(void);
     // three-pass pre-scatter (R4, D-pre-scatter-three-pass): collect
     // (defer sole-consumer scatterables + rebuilds), batch (one vector
     // split per type/shape group; slot k -> subgrid k), rebuild (deferred

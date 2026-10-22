@@ -86,15 +86,75 @@ struct IsCloneableMetadata : std::false_type {};
 template <typename T>
 struct IsCloneableMetadata<std::vector<T>> : std::is_arithmetic<T> {};
 
+// internal-slot -> sub-comm permutation of the batched split /////////////////
+// The collapse loop below (mirroring Grid's vector Grid_split) digit-encodes
+// the INTERNAL slot index over the SPLIT dimensions with the first-collapsed
+// (largest-d) dimension MOST significant; the sub-comm index (splitRank,
+// CartesianCommunicator(processors, parent, srank)) digit-encodes the same
+// coordinates with the SMALLEST-d dimension most significant
+// (IndexFromCoorReversed). One split dimension: the orders coincide and
+// slotToSub[p] == p. Two or more: a digit-reversal permutation — e.g. a
+// (1,1,2,2) world split into four (1,1,1,1) subgrids delivers slot 2t+z to
+// the sub-comm indexed 2z+t (slots 1 and 2 swapped). Rank-independent
+// (computed from the two processor layouts alone): every rank derives the
+// same map, so permuting the fill cannot itself diverge across ranks.
+inline std::vector<unsigned int> gridSplitBatchSlotToSub(
+    const GridBase &fullGrid, const GridBase &splitGrid)
+{
+    const int                 ndim = fullGrid._ndimension;
+    std::vector<unsigned int> subExt(ndim), slotStride(ndim), subStride(ndim);
+    for (int d = 0; d < ndim; ++d)
+    {
+        subExt[d] = static_cast<unsigned int>(fullGrid._processors[d])
+                    / static_cast<unsigned int>(splitGrid._processors[d]);
+    }
+    unsigned int acc = 1;
+    for (int d = 0; d < ndim; ++d)       // slot digits: larger d MORE
+    {                                    // significant (collapse order)
+        slotStride[d] = acc;
+        acc           *= subExt[d];
+    }
+    acc = 1;
+    for (int d = ndim - 1; d >= 0; --d)  // sub-comm digits: smaller d MORE
+    {                                    // significant (reversed lex)
+        subStride[d] = acc;
+        acc          *= subExt[d];
+    }
+    std::vector<unsigned int> slotToSub(acc);   // acc == nvector
+    for (unsigned int p = 0; p < slotToSub.size(); ++p)
+    {
+        // decode the internal slot index into per-dim digits (most
+        // significant first), then re-encode with the sub-comm significance
+        unsigned int              rem = p;
+        std::vector<unsigned int> digit(ndim);
+        for (int d = ndim - 1; d >= 0; --d)
+        {
+            digit[d] = rem / slotStride[d];
+            rem     %= slotStride[d];
+        }
+        unsigned int k = 0;
+        for (int d = 0; d < ndim; ++d)
+        {
+            k += digit[d] * subStride[d];
+        }
+        slotToSub[p] = k;
+    }
+    return slotToSub;
+}
+
 // batched subgrid scatter (R4) //////////////////////////////////////////////
 // Pointer-taking reimplementation of Grid's vector Grid_split
-// (Grid/Grid/lattice/Lattice_transfer.h:1598-1711): slot k of `fulls` lands
-// on sub-comm k (address arithmetic lex_c = c+chunk*m+chunk*M*s pairs
-// vector index with sub-comm index), but unlike the scalar wrapper
-// (:1713-1725, which builds full_v from nrhs world-grid COPIES of the same
-// field) the slots here hold DISTINCT objects and no world-grid copies are
-// made. All building blocks (unvectorizeToLexOrdArray, AllToAll,
-// vectorizeFromLexOrdArray, Lexicographic) are public Grid APIs.
+// (Grid/Grid/lattice/Lattice_transfer.h:1598-1711). The raw collapse
+// address arithmetic (lex_c = c+chunk*m+chunk*M*s) pairs the internal slot
+// position with the sub-comm index ONLY for single-dim splits (the two
+// digit orders coincide); for multi-dim splits the initial fill below
+// permutes the source objects through gridSplitBatchSlotToSub so the
+// documented contract — slot k of `fulls` lands on sub-comm k — holds for
+// every layout. Unlike the scalar wrapper (:1713-1725, which builds full_v
+// from nrhs world-grid COPIES of the same field) the slots here hold
+// DISTINCT objects and no world-grid copies are made. All building blocks
+// (unvectorizeToLexOrdArray, AllToAll, vectorizeFromLexOrdArray,
+// Lexicographic) are public Grid APIs.
 template <typename Vobj>
 void gridSplitBatch(const std::vector<const Lattice<Vobj> *> &fulls,
                     Lattice<Vobj>                             &split)
@@ -146,11 +206,23 @@ void gridSplitBatch(const std::vector<const Lattice<Vobj> *> &fulls,
     std::vector<Sobj> alldata(sz);
     std::vector<Sobj> scalardata(lsites);
 
-    for (int v = 0; v < nvector; v++)
+    // slot k of `fulls` must land on sub-comm k (the documented contract
+    // the driver relies on). The collapse arithmetic routes internal slot
+    // position p to sub-comm slotToSub[p], so object k rides position
+    // subToSlot[k]. One split dimension: slotToSub is the identity and this
+    // loop is byte-for-byte the old fill (single-dim runs stay
+    // bitwise-identical).
+    const auto slotToSub = gridSplitBatchSlotToSub(*full_grid, *split_grid);
+    std::vector<unsigned int> subToSlot(slotToSub.size());
+    for (unsigned int p = 0; p < slotToSub.size(); ++p)
     {
-        unvectorizeToLexOrdArray(scalardata, *fulls[v]);
+        subToSlot[slotToSub[p]] = p;
+    }
+    for (unsigned int k = 0; k < static_cast<unsigned int>(nvector); ++k)
+    {
+        unvectorizeToLexOrdArray(scalardata, *fulls[k]);
         thread_for(site, lsites, {
-            alldata[v * lsites + site] = scalardata[site];
+            alldata[subToSlot[k] * lsites + site] = scalardata[site];
         });
     }
 
