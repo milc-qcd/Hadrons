@@ -1614,13 +1614,20 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         // store. In collection mode defer the rebuild until after the
         // batches: its setup() reads lattice inputs through the scope-aware
         // fetch, and a deferred sole-consumer input must be stored first.
-        // Recurse into the producer's inputs NOW (immediate scatters and
-        // further deferrals); rebuildQueued_ breaks dependency cycles.
         if (collectingBatches_)
         {
+            // visit mark BEFORE the recursion (cycle break / memo guard —
+            // unchanged); queue AFTER it: rebuildQueue_ must end up in
+            // POST-order (every dependency queued ahead of every dependent
+            // across all walk roots) so pass 3 can rebuild forward in
+            // dependency order (Phase 14, the G/g-s4eps-e1000 fix — a
+            // pre-order fill iterated in reverse rebuilds shared
+            // dependencies AFTER their later dependents: six of seven
+            // solvers before the shared actions, each binding the
+            // world-grid original at setup() time).
             rebuildQueued_.insert(a);
-            rebuildQueue_.push_back(a);
             ensureShadowed(module_[static_cast<unsigned int>(m)].input);
+            rebuildQueue_.push_back(a);
             continue;
         }
         // Mark before recursing to break dependency cycles.
@@ -1885,13 +1892,20 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
         }
     }
 
-    // ---- pass 3: deferred rebuilds (reverse collection order) -------------
-    // rebuildQueue_ is filled in pre-order DFS (object pushed before its
-    // producer-inputs' rebuilds); reversed, every rebuild's dependencies
-    // have been processed first (valid topological order for the closure
-    // DAG). Sub-comm-scoped work; non-consuming ranks skip (existing
-    // contract).
-    for (auto it = rebuildQueue_.rbegin(); it != rebuildQueue_.rend(); ++it)
+    // ---- pass 3: deferred rebuilds (dependency order) ---------------------
+    // rebuildQueue_ is filled in POST-order DFS (visit mark before the
+    // producer-input recursion, push after it), so every dependency of an
+    // object is queued ahead of it across ALL walk roots — shared
+    // dependencies included (queued at first discovery, before any later
+    // dependent that reaches them). Forward iteration is therefore a valid
+    // topological order of the closure DAG, mirroring the inline path's
+    // recurse-then-rebuild ordering. (Phase 14: the pre-order fill +
+    // reverse iteration this replaced rebuilt shared dependencies AFTER
+    // their later dependents — with N solvers sharing one action, N-1
+    // rebuilt before the action and bound the world-grid original at
+    // setup() time.) Sub-comm-scoped work; non-consuming ranks skip
+    // (existing contract).
+    for (auto it = rebuildQueue_.begin(); it != rebuildQueue_.end(); ++it)
     {
         const unsigned int a = *it;
         const int          m = env().getObjectModule(a);
