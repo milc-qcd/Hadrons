@@ -30,7 +30,7 @@
 // the same field produced by an untagged world module: the gather is pure
 // data movement and the plane-wave source content is deterministic and
 // site-local. Run with the production multi-dim split layout: world
-// --mpi 1 1 2 2 with mpiSplit 1 1 1 1 -> 4 sub-comms of one rank each,
+// --mpi 1,1,2,2 with mpiSplit 1 1 1 1 -> 4 sub-comms of one rank each,
 // ratio (1,1,2,2), for which the unsplit slots 1<->2 are permuted
 // (non-trivial subToSlot inverse, exercised exactly as load-bearing in
 // production).
@@ -72,6 +72,15 @@ int main(int argc, char *argv[])
     globalPar.runId             = "test_subgrid_gather";
     // production multi-dim split layout (see file header comment)
     globalPar.split.mpiSplit    = "1 1 1 1";
+
+    // deterministic program order: the genetic scheduler (the default) is
+    // seeded from std::random_device and may interleave untagged modules
+    // between phase 0's tagged modules; the early-free eligibility needs
+    // the untagged producer of "mom_src" before the phase-0 span and the
+    // untagged "save_gathered" after it. Naive scheduling = declaration
+    // order, which this file controls.
+    globalPar.scheduler.schedulerType = "naive";
+
     application.setPar(globalPar);
 
     // untagged world reference: the same deterministic plane-wave source,
@@ -84,6 +93,26 @@ int main(int argc, char *argv[])
     saveRefPar.fileStem = "subgrid_gather_world_reference";
     application.createModule<MIO::SavePropagator>("save_ref", saveRefPar);
 
+    // early-free candidate: an untagged-produced world lattice whose only
+    // consumers are TAGGED modules of split phase 0. Declared before the
+    // phase-0 tagged modules (naive scheduler = declaration order) so its
+    // producer runs before the span. The tagged saves read the
+    // pre-scattered shadow of this field on subgrid 0; the garbage schedule
+    // must free the world original at the phase's first step, right after
+    // the pre-scatter scattered it (log: "Freed 1 world object ...").
+    // mom_ref above must NOT be early-freed (untagged consumer save_ref).
+    MSource::Momentum::Par momSrcPar;
+    momSrcPar.mom = "0 0 1 0";
+    application.createModule<MSource::Momentum>("mom_src", momSrcPar);
+    const std::string saveShadowXml
+        = "<module><options><name>mom_src</name>"
+          "<fileStem>subgrid_gather_src_shadow</fileStem></options></module>";
+    XmlReader saveShadowReader(saveShadowXml, true, "module");
+    application.createModule("save_src_shadow", "MIO::SavePropagator",
+                             saveShadowReader,
+                             /* subgrid    */ 0,
+                             /* splitPhase */ 0);
+
     // tagged producer: the same source on subgrid 0, split phase 0. Created
     // through the string/XML overload because only it carries the
     // <subgrid>/<splitPhase> tags (the template createModule has no such
@@ -92,6 +121,20 @@ int main(int argc, char *argv[])
         = "<module><options><mom>0 0 0 1</mom></options></module>";
     XmlReader         momTagReader(momTagXml, true, "module");
     application.createModule("mom_tag", "MSource::Momentum", momTagReader,
+                             /* subgrid    */ 0,
+                             /* splitPhase */ 0);
+
+    // second tagged consumer of "mom_src", declared after "mom_tag": its
+    // step is the last inside the phase-0 span, so "mom_src"'s pre-move
+    // free step (last consumer) sits strictly inside the span and the
+    // early free genuinely MOVES it back to the span's first step
+    const std::string saveShadow2Xml
+        = "<module><options><name>mom_src</name>"
+          "<fileStem>subgrid_gather_src_shadow2</fileStem></options>"
+          "</module>";
+    XmlReader saveShadow2Reader(saveShadow2Xml, true, "module");
+    application.createModule("save_src_shadow2", "MIO::SavePropagator",
+                             saveShadow2Reader,
                              /* subgrid    */ 0,
                              /* splitPhase */ 0);
 
@@ -146,6 +189,23 @@ int main(int argc, char *argv[])
     bool ok = (diff == 0.);
     ok = ok and (mdGathered.moduleName == "mom_tag");
     ok = ok and (mdReference.moduleName == "mom_ref");
+
+    // freed-metadata-query class (Phase 1 §3): mom_src's world original was
+    // early-freed at phase 0's first step; its creation-set metadata must
+    // still answer — the exact query path production tagged modules
+    // (HadronsMILC GaugeProp/Meson/GammaMapElement) take on their
+    // early-freed inputs
+    const auto momSrcAddress = env.getObjectAddress("mom_src");
+    const bool mdOk =     env.isObjectOfType<LatticePropagator>(momSrcAddress)
+                     and not env.isObjectOfType<Lattice<iScalar<vComplex>>>(
+                                                     momSrcAddress)
+                     and (env.getObjectLs(momSrcAddress) == 1);
+    LOG(Message) << "Freed-object metadata (mom_src): type query"
+                 << " LatticePropagator = "
+                 << env.isObjectOfType<LatticePropagator>(momSrcAddress)
+                 << ", Ls = " << env.getObjectLs(momSrcAddress)
+                 << " (expected 1)" << std::endl;
+    ok = ok and mdOk;
     if (!ok)
     {
         LOG(Error) << "Subgrid gather regression test FAILED" << std::endl;

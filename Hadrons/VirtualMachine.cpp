@@ -1043,6 +1043,10 @@ VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
     
     freeProg.resize(p.size());
 
+    // per-phase early-free bookkeeping for the phase-entry free + report
+    // (clear: memoryNeeded probes between schedules must not accumulate)
+    earlyFreedByPhase_.clear();
+
     // earliest time to destroy object ignoring dependencies
     std::function<unsigned int(const unsigned int)> earliestTimeNoDep = 
     [&](const unsigned int a)
@@ -1177,6 +1181,60 @@ VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
         }
     }
 
+    // ---- pre-scatter early free pre-pass (2026-10-26 handoff) -------------
+    // Rank-independent eligibility inputs, mirroring computeGatherSchedule's
+    // module-walk pattern:
+    //   stepOf            module -> schedule step (validateProgram
+    //                     guarantees one occurrence per module);
+    //   lastUntaggedStep  address -> last step of any UNTAGGED module
+    //                     touching it as consumer OR producer (-1 none):
+    //                     untagged modules may interleave inside a phase
+    //                     span, and an untagged producer inside the span
+    //                     creates the object only after the early free
+    //                     would fire — both must disqualify;
+    //   firstStepToPhase  phase first step -> raw phase id (inverts the
+    //                     shadowFirstNeed pinStep for the rewrite below).
+    // The pin block above computed its own phaseRanges copy scoped inside
+    // its if; recompute here (cheap, pure schedule walk).
+    const auto                          earlyRanges = computePhaseRanges(p);
+    std::vector<unsigned int>           stepOf(getNModule(), 0);
+    std::vector<int>                    lastUntaggedStep(env().getMaxAddress(),
+                                                         -1);
+    std::map<unsigned int, unsigned int> firstStepToPhase;
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        stepOf[p[i]] = i;
+        if (module_[p[i]].subgrid >= 0)
+        {
+            continue;
+        }
+        for (auto &a: module_[p[i]].input)
+        {
+            lastUntaggedStep[a] = static_cast<int>(i);
+        }
+    }
+    for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
+    {
+        const int m = env().getObjectModule(a);
+        if (m >= 0 and module_[static_cast<unsigned int>(m)].subgrid < 0)
+        {
+            lastUntaggedStep[a] = std::max(lastUntaggedStep[a],
+                                           static_cast<int>(stepOf[m]));
+        }
+    }
+    for (const auto &range: earlyRanges)
+    {
+        firstStepToPhase[range.first] = range.phase;
+    }
+
+    // ---- final pass: free step per standard object --------------------------
+    // [REVISED 2026-10-26T17:31 addendum: three stages, not two passes —
+    // the free now fires BEFORE the phase's first step (see executeProgram),
+    // so rule 5 must see the WHOLE candidate set, not the prefix an
+    // ascending walk has filled so far.]
+    // stage (i): preMoveStep for every standard object — the dependency
+    // checks in stage (iii) need every object's PRE-move free step.
+    std::vector<unsigned int> preMoveStep(env().getMaxAddress(), 0);
     for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
     {
         if (env().getObjectStorage(a) == Environment::Storage::standard)
@@ -1188,8 +1246,128 @@ VirtualMachine::makeGarbageSchedule(const Program &p, const bool pin) const
             {
                 t = std::max(t, it->second);
             }
-            freeProg[t].insert(a);
+            preMoveStep[a] = t;
         }
+    }
+
+    // stage (ii): rules 1-4 eligibility — a world object whose only
+    // remaining readers are ONE phase's tagged modules frees at that
+    // phase's entry, once the pre-scatter has scattered its shadow —
+    // not at its last consumer inside the span. All checks per-object
+    // and rank-independent, so every rank frees the same set at the
+    // same point with no collective:
+    //   (1) lattice scatter leaf per objectIsLattice_ (an absent
+    //       profile entry = cannot prove lattice = no move; NOT
+    //       fatal here, unlike the gather pre-pass);
+    //   (2) shadowFirstNeed[a] == this phase's first step:
+    //       scattered by THIS phase's pre-scatter/rebuild closure,
+    //       needed by no later phase (a shared guess or an
+    //       every-phase link raises the pin to that later phase's
+    //       first step);
+    //   (3) no untagged module touches a at or after the phase's
+    //       first step, as consumer or producer — covers post-phase
+    //       untagged consumers (incl. gathered-consumer reads of
+    //       the world copy) and mid-span interleavers;
+    //   (4) producer untagged or external: tagged-produced objects
+    //       (same-phase tagged outputs, gathered twins) may not
+    //       exist at the phase's entry — keep today's schedule.
+    std::set<unsigned int> earlySet;
+    for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
+    {
+        auto pinIt = shadowFirstNeed.find(a);
+        if (pinIt == shadowFirstNeed.end())
+        {
+            continue;
+        }
+        auto ph  = firstStepToPhase.find(pinIt->second);
+        auto lat = objectIsLattice_.find(a);
+        const int m = env().getObjectModule(a);
+        if (ph != firstStepToPhase.end()
+            and (lat != objectIsLattice_.end() and lat->second)
+            and (m < 0 or module_[static_cast<unsigned int>(m)].subgrid < 0)
+            and (lastUntaggedStep[a] < static_cast<int>(pinIt->second)))
+        {
+            earlySet.insert(a);
+        }
+    }
+
+    // stage (iii): rule 5 — REVISED for the moved free. freeObject
+    // hard-errors while a live dependent remains ("cannot be destroyed
+    // because ... depends on it"), and the early free now fires BEFORE
+    // the phase's first step, so every STANDARD dependent d of an
+    // early-freed a must already be dead at the phase entry: freed
+    // strictly before the phase's first step (preMoveStep[d] < first),
+    // or freed in the SAME phase's early set (freeSet topologically
+    // frees dependents before dependencies). A dependent that itself
+    // early-frees at a LATER phase's entry is still live here, and a
+    // dependent whose old-schedule free sits AT the first step
+    // (preMoveStep[d] == first — admitted by the first cut's `>` check)
+    // frees only at that step's END — both disqualify. Removing a
+    // candidate can strand another candidate that relied on it (its
+    // dependent left the set), so iterate to a fixpoint; the set only
+    // shrinks, production programs' one sweep removes nothing, and the
+    // fixpoint never MOVES another object's free — it only drops
+    // candidates. Non-standard dependents are per-step temporaries, dead
+    // before any phase entry once (3) holds, so they impose no floor.
+    bool removed = true;
+    while (removed)
+    {
+        removed = false;
+        for (auto it = earlySet.begin(); it != earlySet.end(); )
+        {
+            const unsigned int a   = *it;
+            const unsigned int fst = shadowFirstNeed.at(a);
+            bool ok = true;
+            for (auto &d: env().getObjectDependencies(a))
+            {
+                if (env().getObjectStorage(d)
+                        != Environment::Storage::standard)
+                {
+                    continue;
+                }
+                const auto dit   = earlySet.find(d);
+                const auto dStep = (dit != earlySet.end())
+                                   ? shadowFirstNeed.at(d)
+                                   : preMoveStep[d];
+                if (dStep >= fst
+                    and (dit == earlySet.end()
+                         or firstStepToPhase.at(dStep)
+                            != firstStepToPhase.at(fst)))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            if (not ok)
+            {
+                it = earlySet.erase(it);
+                removed = true;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    // fill: earlySet members free at their phase's first step — a
+    // harmless RE-free there once executeProgram's phase-entry freeSet
+    // has run (freeObject on an already-freed object only zeroes its
+    // size), keeping memoryNeeded's step-end accounting; everything else
+    // keeps its pre-move step
+    for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
+    {
+        if (env().getObjectStorage(a) != Environment::Storage::standard)
+        {
+            continue;
+        }
+        unsigned int t = preMoveStep[a];
+        if (earlySet.count(a))
+        {
+            t = shadowFirstNeed.at(a);
+            earlyFreedByPhase_[firstStepToPhase.at(t)].insert(a);
+        }
+        freeProg[t].insert(a);
     }
 
     return freeProg;
@@ -2419,6 +2597,37 @@ void VirtualMachine::executeProgram(const Program &p)
             executeBatchedPreScatter(p, range);
             LOG(Message) << "Pre-scatter complete; sub-comms now execute "
                          << "concurrently." << std::endl;
+            // pre-scatter early free (2026-10-26 handoff + landed-build
+            // addendum): free this phase's dead world originals RIGHT
+            // HERE — as soon as executeBatchedPreScatter returns and
+            // BEFORE the phase's first step's module runs — not at that
+            // step's end (the first cut's freeProg[first] placement had
+            // rank 0 run the phase's first solve with every world copy
+            // still resident). Every rank executes this block (the
+            // pre-scatter above is world-collective), so the free stays
+            // rank-uniform with no collective; the shadows scattered
+            // above are what the tagged modules read from here on, and
+            // any rebuild input among the freed is finished with (the
+            // pre-scatter has returned). The same addresses re-free at
+            // this step's end via freeProg[first] (both the owning and
+            // non-owning paths) — harmless: freeObject on an
+            // already-freed object only zeroes its size.
+            auto ef = earlyFreedByPhase_.find(
+                static_cast<unsigned int>(key));
+            if (ef != earlyFreedByPhase_.end() and !ef->second.empty())
+            {
+                Size bytes = 0;
+                for (auto &a: ef->second)
+                {
+                    bytes += env().getObjectSize(a);
+                }
+                LOG(Message) << "Freed " << ef->second.size()
+                             << " world object"
+                             << (ef->second.size() > 1 ? "s" : "")
+                             << " after the pre-scatter ("
+                             << sizeString(bytes) << ")" << std::endl;
+                env().freeSet(ef->second);
+            }
         }
 
         // ---- Per-step scope gate ----

@@ -273,6 +273,20 @@ private:
     // rebuild (e.g. gauge links) and not, e.g., eigenvector packs reachable
     // only through a scattered lattice producer.
     std::map<unsigned int, bool>        objectIsLattice_;
+
+    // per-phase addresses whose world-grid originals free at the phase's
+    // FIRST step, once the pre-scatter has scattered their shadows (the
+    // tagged modules read only the shadows from then on, so the world
+    // original is dead). Filled by the pinned makeGarbageSchedule pass and
+    // read at each phase entry for the free itself (freeSet) and its
+    // report; mutable because
+    // makeGarbageSchedule is const. Cleared at the top of every
+    // makeGarbageSchedule call, so genetic-scheduler memoryNeeded probes
+    // cannot leak stale content into executeProgram (which always rebuilds
+    // its schedule first).
+    mutable std::map<unsigned int, std::set<unsigned int>>
+                                      earlyFreedByPhase_;
+
     // time profile
     GridTime                            totalTime_;
     std::map<std::string, GridTime>     moduleTimeProfile_, moduleTypeTimeProfile_;               

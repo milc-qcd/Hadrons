@@ -1787,20 +1787,38 @@ T * Environment::getObject(const std::string name) const
 template <typename T>
 bool Environment::isObjectOfType(const unsigned int address) const
 {
-    if (hasCreatedObject(address))
+    // envHasType routes here, and tagged modules dispatch on their INPUTS'
+    // types at setup/execute (HadronsMILC GaugeProp.hpp:155,200 on
+    // par().source; Meson.hpp:171,195,225-240; GammaMapElement.hpp:160-196
+    // on par().map). Under the pre-scatter early free the world data is
+    // null mid-phase; answer from object_[address].type — recorded at
+    // creation, survives frees exactly like derivedType, and gives the
+    // same verdict the live holder (or its pre-scattered shadow: split
+    // from that same creation, identical typeid) would. Never-created
+    // (type == nullptr) keeps today's error.
+    if (hasObject(address))
     {
-        if (auto h = dynamic_cast<Holder<T> *>(object_[address].data.get()))
+        if (hasCreatedObject(address))
         {
-            return true;
+            return (dynamic_cast<Holder<T> *>(object_[address].data.get())
+                    != nullptr);
+        }
+        else if (object_[address].type != nullptr)
+        {
+            return (typeHash(object_[address].type) == typeHash<T>());
         }
         else
         {
-            return false;
+            HADRONS_ERROR_REF(ObjectDefinition, "no initialised object '"
+                              + object_[address].name + "' (address "
+                              + std::to_string(address) + ")", address);
         }
     }
     else
     {
-        HADRONS_ERROR_REF(ObjectDefinition, "no initialised object '" + (hasObject(address) ? object_[address].name : std::string("(unknown)")) + "' (address " + std::to_string(address) + ")", address);
+        HADRONS_ERROR_REF(ObjectDefinition, "no object with address "
+                          + std::to_string(address)
+                          + " (out of range)", address);
     }
 }
 
@@ -1813,6 +1831,24 @@ bool Environment::isObjectOfType(const std::string name) const
 template <typename B, typename T>
 bool Environment::isObjectOfDerivedType(const unsigned int address) const
 {
+    // Today this try/catches getDerivedObject and lets the freed-object
+    // ObjectDefinition ("is empty") PROPAGATE (only ObjectType is caught)
+    // — the third member of the freed-metadata class. Answer from the
+    // persisted type/derivedType pair when freed; a mismatch answers
+    // false (today's ObjectType -> false semantics); never-created keeps
+    // the error.
+    if (hasObject(address) and !hasCreatedObject(address))
+    {
+        if (object_[address].type == nullptr)
+        {
+            HADRONS_ERROR_REF(ObjectDefinition, "no initialised object '"
+                              + object_[address].name + "' (address "
+                              + std::to_string(address) + ")", address);
+        }
+        return (typeHash(object_[address].type) == typeHash<B>()
+                and typeHash(object_[address].derivedType)
+                    == typeHash<T>());
+    }
     try
     {
         auto o = getDerivedObject<B,T>(address);

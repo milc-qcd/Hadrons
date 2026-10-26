@@ -654,9 +654,17 @@ int Environment::getObjectModule(const std::string name) const
     return getObjectModule(getObjectAddress(name));
 }
 
+// getObjectLs reads creation-set metadata: Ls is written once in
+// createDerivedObject (Environment.hpp) and never cleared by
+// freeObject (which resets only size/data — the same free-survival
+// invariant type/derivedType/gather already rely on). Guard on hasObject
+// like every sibling metadata getter: the pre-scatter early free nulls
+// data while tagged consumers' setups still query input Ls (TSaveField's
+// setup, SaveField.hpp:126); the data itself is fetched through the
+// shadow store.
 unsigned int Environment::getObjectLs(const unsigned int address) const
 {
-    if (hasCreatedObject(address))
+    if (hasObject(address))
     {
         return object_[address].Ls;
     }
