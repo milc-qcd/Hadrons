@@ -499,6 +499,29 @@ void VirtualMachine::buildSubGrids(const std::vector<int> &mpiSplit)
     subGrid_.me       = splitRank;
     me_               = splitRank;
     splitConfigured_  = true;
+
+// ============================================================================
+// INSERT A: buildSubGrids — after `splitConfigured_  = true;`
+// (VirtualMachine.cpp:501), before computeSplitPhase()
+// ============================================================================
+
+    // gather descriptor broadcast roots: the FIRST world rank of each
+    // sub-comm. One allgather of every rank's sub-comm index over the world
+    // grid's communicator (rank-uniform); the first occurrence of each
+    // index is its boss. The phase-exit gather broadcasts each object's
+    // shape/checkerboard descriptor from there (GatherCtx::bossRank).
+    std::vector<int> allMe(nproc);
+    world->AllGather(&me_, allMe.data(), 1, sizeof(int));
+    subCommFirstRank_.assign(nrhs, -1);
+    for (int r = 0; r < nproc; ++r)
+    {
+        if (allMe[r] >= 0 and allMe[r] < nrhs
+            and subCommFirstRank_[allMe[r]] < 0)
+        {
+            subCommFirstRank_[allMe[r]] = r;
+        }
+    }
+
     computeSplitPhase();
     LOG(Message) << "Split grid: " << nrhs << " sub-comms, this rank is subcomm "
                  << me_ << std::endl;
@@ -1434,6 +1457,297 @@ VirtualMachine::computePhaseRanges(const Program &p) const
     return ranges;
 }
 
+// ============================================================================
+// INSERT B: after the computePhaseRanges implementation, before the
+// `// general execution` banner (VirtualMachine.cpp:1437)
+// — pre-pass + driver; the verifyGatherSlotDelivery implementation that
+// follows them in the design's INSERT B lands in Phase 3
+// ============================================================================
+
+// subgrid gather schedule pre-pass ////////////////////////////////////////////
+// Derives, from the schedule alone (rank-independent), the per-phase gather
+// set: every tagged-produced object with a POST-PHASE untagged consumer is
+// gathered back to the world grid at its PRODUCING phase's exit
+// (D-trigger-untagged: tagged-only cross-phase consumers never trigger a
+// gather and keep today's behaviour). Hard-errors the two illegal shapes
+// before any step executes (the mirror of the Q7 pre-scatter contract):
+//   (1) untagged consumer INSIDE the producing phase's [first,last] span —
+//       the object exists only on the producing sub-comm's ranks there, and
+//       serving it would need a world collective inside the tagged block
+//       (the forbidden deadlock class);
+//   (2) post-phase untagged consumer of a NON-scatterable tagged output —
+//       unsplitTo supports the scatterable lattice family only (first cut).
+void VirtualMachine::computeGatherSchedule(
+    const Program &p, const std::vector<PhaseRange> &phaseRanges)
+{
+    gatherSchedule_.clear();
+    producerPhaseOf_.clear();
+    gatherAddresses_.clear();
+    if (phaseRanges.empty())
+    {
+        return;   // no tagged phases: nothing to gather, nothing to validate
+    }
+    // module -> the phase range its step falls in (-1 outside all ranges;
+    // also set for untagged interleaved modules, but only ever read for
+    // TAGGED producers). validateProgram (which ran at the top of
+    // executeProgram) guarantees exactly one occurrence of each module.
+    std::vector<int> rangeOf(getNModule(), -1);
+    for (unsigned int k = 0; k < phaseRanges.size(); ++k)
+    {
+        for (unsigned int i = phaseRanges[k].first;
+             i <= phaseRanges[k].last; ++i)
+        {
+            rangeOf[p[i]] = static_cast<int>(k);
+        }
+    }
+    // walk every UNTAGGED module's inputs: only untagged post-phase
+    // consumers trigger a gather (D-trigger-untagged)
+    std::set<unsigned int> gathered;
+    for (unsigned int i = 0; i < p.size(); ++i)
+    {
+        if (module_[p[i]].subgrid >= 0)
+        {
+            continue;
+        }
+        for (auto &a: module_[p[i]].input)
+        {
+            int m = env().getObjectModule(a);
+            if (m < 0 or module_[static_cast<unsigned int>(m)].subgrid < 0)
+            {
+                continue;   // external or untagged producer: no gather
+            }
+            const auto k = static_cast<unsigned int>(
+                rangeOf[static_cast<unsigned int>(m)]);
+            if (k >= phaseRanges.size())
+            {
+                continue;   // defensive: tagged producer outside all ranges
+                            // is unreachable post-computePhaseRanges
+            }
+            const auto &range = phaseRanges[k];
+            if (i >= range.first and i <= range.last)
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "object '"
+                              + env().getObjectName(a) + "' (address "
+                              + std::to_string(a) + "), needed by untagged"
+                              + " module '" + getModuleName(p[i])
+                              + "' (step " + std::to_string(i + 1)
+                              + ", inside split phase "
+                              + std::to_string(range.phase)
+                              + "'s tagged span steps "
+                              + std::to_string(range.first + 1) + "-"
+                              + std::to_string(range.last + 1)
+                              + ") and produced by tagged module '"
+                              + getModuleName(m) + "': schedule the consumer"
+                              + " after the phase's tagged block", a);
+            }
+            if (i < range.first)
+            {
+                continue;   // consumer BEFORE the producer: pre-existing
+                            // schedule-ordering error, caught by the
+                            // consumer's own fetch — not gather-specific
+            }
+            // post-phase untagged consumer: gather at the producing phase's
+            // exit — unless the type cannot be gathered (first cut:
+            // scatterable lattice family only). Scatterability comes from
+            // the profiling-populated objectIsLattice_ cache; an ABSENT
+            // entry is a missing-profile bug and errors as such (named,
+            // diagnosable), not a silent non-scatterable verdict.
+            auto lat = objectIsLattice_.find(a);
+            if (lat == objectIsLattice_.end())
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "object '"
+                              + env().getObjectName(a) + "' (address "
+                              + std::to_string(a) + "), needed after its"
+                              + " split phase by untagged module '"
+                              + getModuleName(p[i]) + "' (step "
+                              + std::to_string(i + 1) + ") and produced by"
+                              + " tagged module '" + getModuleName(m)
+                              + "': no scatterability entry in the"
+                              + " memory-profile cache (type '"
+                              + env().getObjectDerivedType(a) + "' was"
+                              + " never recorded by the profiling pass)"
+                              + " — report as a subgrid gather bug", a);
+            }
+            if (!lat->second)
+            {
+                HADRONS_ERROR_REF(ObjectDefinition, "object '"
+                              + env().getObjectName(a) + "' (address "
+                              + std::to_string(a) + "), needed after its"
+                              + " split phase by untagged module '"
+                              + getModuleName(p[i]) + "' (step "
+                              + std::to_string(i + 1) + ") and produced by"
+                              + " tagged module '" + getModuleName(m)
+                              + "' of non-scatterable type '"
+                              + env().getObjectDerivedType(a)
+                              + "': first cut of the subgrid gather"
+                              + " supports lattice objects only", a);
+            }
+            gathered.insert(a);
+            producerPhaseOf_[a] = range.phase;
+        }
+    }
+    // ascending order on every rank (std::set traversal): the phase-exit
+    // driver must issue the identical collective sequence on all ranks
+    // (the a023d0db lesson)
+    for (auto &a: gathered)
+    {
+        gatherSchedule_[producerPhaseOf_[a]].push_back(a);
+        gatherAddresses_.insert(a);
+    }
+}
+
+// phase-exit gather driver //////////////////////////////////////////////////////
+// Gathers the exiting phase's set back to the world grid: called from the
+// phase-exit block immediately after the world Barrier and before the
+// per-phase state clears, with phaseIdx still naming the EXITING phase.
+// subGridScopeOn_ is false here, but activeSubGrid_/activeSplitKey_ and the
+// per-VType gridSub4d_ cache survive (cleared only on the next key change /
+// clearActiveSubGrid — both strictly later), so Environment's scope-free
+// getSubGrid<VType> can reach the pieces and getWorldGrid<VType> the twin
+// grid. The gather replaces the piece with the world twin IN PLACE (same
+// address); on non-owning ranks this is the first world binding at the
+// address, restoring hasCreatedObject rank-uniformity.
+// [Phase 3 note: the once-per-program probe guard (if
+// (!gatherSlotDeliveryVerified_) {...}) is spliced immediately after the
+// empty-set early return by Phase 3, per the slice contract.]
+void VirtualMachine::executePhaseGather(const unsigned int phase)
+{
+    auto it = gatherSchedule_.find(phase);
+    if (it == gatherSchedule_.end() or it->second.empty())
+    {
+        return;   // empty set: no collective, zero cost (the common case)
+    }
+    if (!gatherSlotDeliveryVerified_)
+    {
+        // once per program, before trusting any subToSlot extraction: prove
+        // unsplit slot p carries sub-comm slotToSub[p]'s piece on this grid
+        // pair. Rank-uniform site (every rank passed the exit Barrier in
+        // lockstep), so the world-collective marker gather is safe here.
+        verifyGatherSlotDelivery();
+        gatherSlotDeliveryVerified_ = true;
+    }
+    for (auto &a: it->second)
+    {
+        const int m = env().getObjectModule(a);
+        if (m < 0 or module_[static_cast<unsigned int>(m)].subgrid < 0)
+        {
+            // unreachable post-pre-pass (every gathered object's producer
+            // is tagged); guard against state mutation between the passes
+            HADRONS_ERROR(Logic, "gather schedule inconsistency: object '"
+                          + env().getObjectName(a) + "' (address "
+                          + std::to_string(a) + ") has no tagged producer");
+        }
+        const int sourceSub = module_[static_cast<unsigned int>(m)].subgrid;
+        if (sourceSub >= static_cast<int>(subCommFirstRank_.size())
+            or subCommFirstRank_[sourceSub] < 0)
+        {
+            HADRONS_ERROR(Logic, "gather schedule inconsistency: no boss"
+                          " rank for sub-comm "
+                          + std::to_string(sourceSub) + " (object '"
+                          + env().getObjectName(a) + "', address "
+                          + std::to_string(a) + ")");
+        }
+        GatherCtx ctx;
+        ctx.me        = me_;
+        ctx.sourceSub = sourceSub;
+        ctx.bossRank  = subCommFirstRank_[sourceSub];
+        LOG(Message) << "Gathering subgrid object '"
+                     << env().getObjectName(a) << "' back to the world grid"
+                     << " (split phase " << phase << ")..." << std::endl;
+        if (!env().gatherObject(a, ctx))
+        {
+            HADRONS_ERROR_REF(ObjectDefinition, "object '"
+                          + env().getObjectName(a) + "' (address "
+                          + std::to_string(a) + "), produced by tagged"
+                          + " module '" + getModuleName(m)
+                          + "', cannot be gathered back to the world grid"
+                          + " (type '" + env().getObjectDerivedType(a)
+                          + "' does not support the gather)", a);
+        }
+    }
+}
+
+// gather-side slot-delivery self-check (the mirror of Phase 11's scatter
+// probe) /////////////////////////////////////////////////////////////////////
+// Fills this rank's marker piece with the constant me_ (its sub-comm
+// index, encoded as the real part of a complex marker), Grid_unsplits it
+// to nrhs world-grid markers, and checks every slot p carries the constant
+// slotToSub[p]. This directly proves what gridGatherLeaf's extraction
+// relies on — fulls[subToSlot[sourceSub]] holds sourceSub's assembly —
+// guarding the explicit inverse against layouts not hand-traced
+// (gridSplitBatchSlotToSub is NOT an involution for non-palindromic mixed
+// radixes). Costs one small-type gather per program.
+// COLLECTIVE: every rank holds a piece, so the unsplit runs in lockstep
+// right after the phase-exit Barrier.
+// [2026-10-26 validation follow-up: the marker is vComplex-typed, NOT the
+// scatter probe's vInteger. A vInteger marker forced getSubGrid<vInteger>
+// create-on-miss to build a vInteger RB twin whose Nsimd-16 SIMD layout
+// {2,2,2,2} collapsed checker dim 0 of the acceptance lattice 4^4 to
+// 4/2/2 = 1 (odd) — GridRedBlackCartesian::Init SIGABRT before any gather
+// fired (validation artifact 2026-10-26_06-57-52). vComplex's half-width
+// SIMD ({1,2,2,2} — dim 0 untouched, per Environment::simdDecomposition's
+// last-dim-first packing, Environment.cpp:89) keeps the RB twin buildable
+// on small lattices, and every gather of this first cut runs on vComplex
+// lattices — so the probe validates the exact production grid pair, not a
+// type-adjacent one.]
+void VirtualMachine::verifyGatherSlotDelivery(void)
+{
+    using Mark = Lattice<iScalar<vComplex>>;
+    using Sobj = typename Mark::scalar_object;   // per-site iScalar<complex>
+    auto *world = env().getWorldGrid();          // 4d world grid (scope-free:
+                                                 // scope is OFF here — the
+                                                 // phase-exit gather point)
+    auto *sub   = env().template getSubGrid<vComplex>();   // active split's
+                                                           // vComplex sub-grid
+                                                           // (scope-free cache)
+    const auto  slotToSub = gridSplitBatchSlotToSub(*world, *sub);
+    const auto  nrhs      = slotToSub.size();
+    // every rank fills ITS OWN piece with its sub-comm index (real part;
+    // imaginary pinned to 0), through the same lex-array plumbing the
+    // scatter probe uses (no reliance on broadcast assignment)
+    Mark              piece(sub);
+    std::vector<Sobj> pdata(sub->lSites());
+    for (auto &s : pdata)
+    {
+        s() = ComplexD(me_, 0.);
+    }
+    vectorizeFromLexOrdArray(pdata, piece);
+    // world scratch: every slot assembled on every rank by the unsplit
+    std::vector<Mark> fulls(nrhs, Mark(world));
+    Grid_unsplit(fulls, piece);
+    // check every slot: slot p must carry the constant complex
+    // (slotToSub[p], 0)
+    std::vector<Sobj> data;
+    for (unsigned int p = 0; p < nrhs; ++p)
+    {
+        unvectorizeToLexOrdArray(data, fulls[p]);
+        int got = (data.empty() ? -1
+                                : static_cast<int>(data[0]().real()));
+        for (auto &s : data)
+        {
+            if (s() != ComplexD(got, 0.))
+            {
+                got = -1;   // not a constant: report as mis-delivery below
+                break;
+            }
+        }
+        const int expected = static_cast<int>(slotToSub[p]);
+        if (got != expected)
+        {
+            HADRONS_ERROR(Definition, "subgrid gather slot mis-delivery:"
+                          " unsplit slot " + std::to_string(p) + " carries "
+                          + std::to_string(got) + " (expected "
+                          + std::to_string(expected)
+                          + "); gridSplitBatchSlotToSub's inverse disagrees"
+                          + " with the delivered pairing on this grid pair"
+                          + " — re-derive the collapse-arithmetic trace for"
+                          + " this layout");
+        }
+    }
+    LOG(Message) << "Subgrid gather slot delivery verified (every unsplit"
+                 << " slot p carries sub-comm slotToSub[p])." << std::endl;
+}
+
 // general execution ///////////////////////////////////////////////////////////
 #define BIG_SEP   "================"
 #define SEP       "----------------"
@@ -1494,7 +1808,20 @@ void VirtualMachine::computeShadowConsumers(const Program &p,
             }
             if (module_[static_cast<unsigned int>(m)].subgrid >= 0)
             {
-                continue;   // tagged producer: self-rebuilds on its subgrid
+                // scatter-refinement (D-scatter-refine): a tagged-produced
+                // object gathered back to the world grid at an EARLIER
+                // phase's exit (a post-phase untagged consumer triggered
+                // the gather) now lives as a world twin on every rank —
+                // classify it as the world object it now is (created-ness
+                // check + consumer recording + scatter-leaf non-descent
+                // below). Skip only same-or-later-phase production (the
+                // piece still lives on its owning sub-comm) and objects
+                // never gathered (pre-existing tagged-to-tagged semantics).
+                auto g = producerPhaseOf_.find(a);
+                if (g == producerPhaseOf_.end() or g->second >= range.phase)
+                {
+                    continue;   // tagged producer: self-rebuilds on its subgrid
+                }
             }
             if (!env().hasCreatedObject(a))
             {
@@ -1553,7 +1880,20 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         // in shadow-create mode — so do NOT skip them (fall through below).
         if (module_[static_cast<unsigned int>(m)].subgrid >= 0)
         {
-            continue;   // tagged producer: self-rebuilds on its subgrid
+            // scatter-refinement (D-scatter-refine), mirroring
+            // computeShadowConsumers: an earlier-phase gathered twin is a
+            // world object on every rank — scatter it below like any world
+            // lattice (splitObject/batch path, consumer-gated store). Skip
+            // same-or-later-phase production and never-gathered objects.
+            // The current phase is the active split key (set at this
+            // phase's entry, before any pre-scatter call gets here).
+            auto g = producerPhaseOf_.find(a);
+            if (g == producerPhaseOf_.end()
+                or g->second
+                   >= static_cast<unsigned int>(env().getActiveSplitKey()))
+            {
+                continue;   // tagged producer: self-rebuilds on its subgrid
+            }
         }
         if (!env().hasCreatedObject(a))
         {
@@ -2002,6 +2342,18 @@ void VirtualMachine::executeProgram(const Program &p)
     // validated non-decreasing over tagged modules (untagged modules may
     // interleave freely within and between phases).
     const auto phaseRanges = computePhaseRanges(p);
+
+// ============================================================================
+// INSERT C: executeProgram — after
+// `const auto phaseRanges = computePhaseRanges(p);` (VirtualMachine.cpp:2004)
+// ============================================================================
+
+    // subgrid gather pre-pass: derive the per-phase gather set and
+    // hard-error the illegal schedule shapes BEFORE any step executes.
+    // Rank-independent; scatterability read from the objectIsLattice_ cache
+    // (populated by the profiling pass above).
+    computeGatherSchedule(p, phaseRanges);
+
     unsigned int phaseIdx    = 0;   // active index into phaseRanges
     // per-phase shadow free schedule (R2, Slice 5): shadowFreeSteps_[k] lists
     // {address, subgrid} entries whose LAST consumer is step range.first + k;
@@ -2025,6 +2377,9 @@ void VirtualMachine::executeProgram(const Program &p)
         {
             env().setSubGridScope(false);
             env().getGrid()->Barrier();
+            // subgrid gather: after the exit Barrier, before the clears;
+            // no-op (no collective) when this phase's gather set is empty
+            executePhaseGather(phaseRanges[phaseIdx].phase);
             shadowedObjects_.clear();
             shadowConsumers_.clear();
             // safety net for shadows whose last-use free never fired (B1)

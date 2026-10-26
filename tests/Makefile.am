@@ -19,6 +19,7 @@ EXTRA_PROGRAMS = \
   Test_result_bundling      \
   Test_sigma_to_nucleon     \
   Test_stoch_distil         \
+  Test_subgrid_gather       \
   Test_xi_to_sigma
 
 CLEANFILES = $(EXTRA_PROGRAMS)
@@ -75,6 +76,9 @@ Test_sigma_to_nucleon_LDADD=-lHadrons -lGrid
 
 Test_stoch_distil_SOURCES=Test_stoch_distil.cpp
 Test_stoch_distil_LDADD=-lHadrons -lGrid
+
+Test_subgrid_gather_SOURCES=Test_subgrid_gather.cpp
+Test_subgrid_gather_LDADD=-lHadrons -lGrid
 
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cpp
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid

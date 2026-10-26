@@ -358,6 +358,36 @@ std::unique_ptr<Object> Environment::splitObjectBatch(
     return object_[addresses[0]].data->splitBatchTo(fulls);
 }
 
+// subgrid gather (the reverse of scatterObject) ////////////////////////////
+// Type-erased gather of a tagged-phase-produced object back to the world
+// grid: EVERY rank must call this collectively (Grid_unsplit is
+// world-collective; the descriptor broadcast inside is too). The per-object
+// dispatch (registered at createDerivedObject time; the memory-profile pass
+// registers it on every rank) supplies the static type even where
+// object_[address].data is null (non-owning ranks). On success the
+// world-grid twin REPLACES the subgrid piece at the same address on every
+// rank (owning ranks' piece is destroyed by the replacement — freed inside
+// the gather, never via freeSet), the size accounting moves to the twin
+// footprint, and hasCreatedObject becomes rank-uniform again. Returns false
+// when the address has no dispatch or the type cannot be gathered — the VM
+// caller turns that into a hard error.
+bool Environment::gatherObject(const unsigned int address,
+                               const GatherCtx   &ctx)
+{
+    if (address >= object_.size() || !object_[address].gather)
+    {
+        return false;
+    }
+    auto twin = object_[address].gather(object_[address].data.get(), ctx);
+    if (!twin)
+    {
+        return false;
+    }
+    object_[address].data = std::move(twin);
+    object_[address].size = object_[address].data->footprint();
+    return true;
+}
+
 // cloneability probe ////////////////////////////////////////////////////////
 bool Environment::isCloneableObject(const unsigned int address) const
 {

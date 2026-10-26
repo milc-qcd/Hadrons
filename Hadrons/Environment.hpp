@@ -281,6 +281,77 @@ void gridSplitBatch(const std::vector<const Lattice<Vobj> *> &fulls,
     vectorizeFromLexOrdArray(alldata, split);
 }
 
+// gather context: this rank's sub-comm index, the producing sub-comm index,
+// and the WORLD rank of the producing sub-comm's first rank (root for the
+// shape/checkerboard descriptor broadcast — non-owning ranks hold no data
+// at the address yet must join Grid_unsplit with rank-uniform leaf counts,
+// keys and checkerboard).
+struct GatherCtx
+{
+    int me{-1};        // this rank's sub-comm index
+    int sourceSub{-1}; // sub-comm whose piece is the gather source
+    int bossRank{-1};  // world rank of sourceSub's first rank
+};
+
+// broadcast the variable-size gather descriptor (int32 payload) from the
+// producing sub-comm's boss rank to every world rank. The boss passes a
+// packed buffer; all other ranks pass an empty one and receive. Collective
+// — every rank must call it (the phase-exit gather driver calls it in
+// lockstep, like every world collective in the split machinery).
+inline void broadcastGatherDescriptor(std::vector<int32_t> &desc,
+                                      const GatherCtx      &ctx)
+{
+    if (ctx.bossRank < 0)
+    {
+        HADRONS_ERROR(Logic, "broadcastGatherDescriptor: invalid boss rank");
+    }
+    uint64_t n = desc.size();
+    CartesianCommunicator::BroadcastWorld(ctx.bossRank, &n, sizeof(n));
+    desc.resize(n);
+    if (n > 0)
+    {
+        CartesianCommunicator::BroadcastWorld(ctx.bossRank, desc.data(),
+                                              n * sizeof(int32_t));
+    }
+}
+
+// leaf-level gather: assemble the world-grid twin of ONE lattice leaf from
+// this rank's subgrid piece via Grid_unsplit (the exact inverse of the
+// Grid_split behind splitTo). `fulls` is the caller-owned scratch buffer of
+// nrhs world-grid lattices, REUSED across the leaves of one object; slot
+// subToSlot[sourceSub] receives the producing sub-comm's assembly, is moved
+// out into `twin`, and is re-constructed for the next leaf. `piece` is the
+// real leaf on ranks of the producing sub-comm and a zero-filled dummy
+// elsewhere: Grid_unsplit never reads destination contents, so non-owning
+// contributions only ever land in discarded slots.
+template <typename LeafT>
+void gridGatherLeaf(std::vector<LeafT>              &fulls,
+                    LeafT                           *piece,
+                    LeafT                           &twin,
+                    GridCartesian                   *world,
+                    GridCartesian                   *sub,
+                    const std::vector<unsigned int> &subToSlot,
+                    const unsigned int               sourceSub,
+                    const int                        cb)
+{
+    LeafT dummy(sub);
+    dummy = Zero();   // discarded slots only; zeroed for determinism
+    LeafT &src = (piece != nullptr) ? *piece : dummy;
+    if (piece != nullptr && static_cast<int>(piece->Checkerboard()) != cb)
+    {
+        HADRONS_ERROR(Definition, "subgrid gather: piece checkerboard "
+                      "mismatch against the broadcast descriptor");
+    }
+    for (auto &f : fulls)
+    {
+        f.Checkerboard() = cb;   // Grid_unsplit propagates full[0]'s cb
+    }
+    Grid_unsplit(fulls, src);
+    const unsigned int slot = subToSlot[sourceSub];
+    twin = std::move(fulls[slot]);
+    fulls[slot] = LeafT(world);   // re-arm the moved-from scratch slot
+}
+
 // local byte footprint of one subgrid lattice on this rank: oSites * sizeof
 // (vobj) is exactly what the aligned allocator reserved (mirrors the
 // profiler-delta accounting of world objects closely enough for runtime
@@ -343,6 +414,17 @@ public:
     {
         return nullptr;
     }
+    // type-erased gather back to the world grid (the reverse of splitTo):
+    // assembles this rank's subgrid piece of the held object into a
+    // world-grid twin via Grid_unsplit. Called on the REAL holder where this
+    // rank holds data, and on a default-constructed ghost Holder otherwise
+    // (non-owning ranks hold no data but must join the collective) — see
+    // gatherDispatch<B> and Environment::gatherObject. Returns nullptr for
+    // non-scatterable types.
+    virtual std::unique_ptr<Object> unsplitTo(const GatherCtx &ctx) const
+    {
+        return nullptr;
+    }
     // approximate local byte footprint of the held object on this rank
     // (lattices: oSites*sizeof(vobj); summed element/key-wise for vector
     // and map containers; 0 for non-lattice holders — rebuilt shadows
@@ -368,6 +450,7 @@ public:
     std::unique_ptr<Object> splitTo(void) const override;
     std::unique_ptr<Object> splitBatchTo(
         const std::vector<const Object *> &fulls) const override;
+    std::unique_ptr<Object> unsplitTo(const GatherCtx &ctx) const override;
     SITE_SIZE_TYPE footprint(void) const override;
     bool      isLattice(void) const override
     {
@@ -391,6 +474,24 @@ public:
 private:
     std::unique_ptr<T> objPt_{nullptr};
 };
+
+// type-erased gather dispatch: routes through the holder's virtual unsplitTo
+// when this rank holds the object; otherwise a default-constructed ghost
+// Holder<B> carries the static type for the dummy-piece path. Registered per
+// object at createDerivedObject time (see below) — the memory-profile pass
+// creates every program object world-scope on every rank, so registration
+// is rank-uniform and survives frees exactly like type/derivedType do.
+template <typename B>
+std::unique_ptr<Object> gatherDispatch(Object *piece, const GatherCtx &ctx)
+{
+    if (piece != nullptr)
+    {
+        return piece->unsplitTo(ctx);
+    }
+    Holder<B> ghost;
+
+    return ghost.unsplitTo(ctx);
+}
 
 // Handle carrying the split sub-communicator grid built by the VirtualMachine
 // and consumed by the scope-aware grid/object fetch. The owned GridCartesian
@@ -417,6 +518,8 @@ class Environment
     SINGLETON(Environment);
 public:
     typedef SITE_SIZE_TYPE                         Size;
+    typedef std::unique_ptr<Object> (*GatherDispatch)(Object *,
+                                                      const GatherCtx &);
     typedef std::unique_ptr<GridCartesian>         GridPt;
     typedef std::unique_ptr<GridRedBlackCartesian> GridRbPt;
     typedef std::unique_ptr<GridParallelRNG>       RngPt;
@@ -433,6 +536,11 @@ private:
         int                       module{-1};
         std::unique_ptr<Object>   data{nullptr};
         std::set<unsigned int>    dependency;
+        // type-erased gather dispatch (subgrid gather, the reverse of
+        // splitTo): registered at createDerivedObject time on every rank
+        // that ever created the object. Survives frees exactly like
+        // type/derivedType above. Null when never registered.
+        GatherDispatch gather{nullptr};
     };
     typedef std::pair<size_t, unsigned int>     FineGridKey;
     typedef std::pair<size_t, std::vector<int>> CoarseGridKey;
@@ -452,6 +560,8 @@ public:
     GridCartesian *         getGrid(void);
     template <typename VType = vComplex>
     GridCartesian *         getWorldGrid(void);
+    template <typename VType = vComplex>
+    GridCartesian *         getSubGrid(void);
     template <typename VType = vComplex>
     GridRedBlackCartesian * getRbGrid(void);
     template <typename VType = vComplex>
@@ -523,6 +633,15 @@ public:
     // or nullptr when the batch is shape-incompatible.
     std::unique_ptr<Object> splitObjectBatch(
         const std::vector<unsigned int> &addresses);
+    // subgrid gather (the reverse of scatterObject): assemble a
+    // tagged-phase-produced object back into a world-grid twin at the SAME
+    // address, on every rank, via the registered gather dispatch and
+    // Grid_unsplit. COLLECTIVE — every world rank must call it in lockstep
+    // (the VM does, at phase exit). Returns true when the twin was
+    // installed; false when the address has no registered dispatch (the
+    // caller hard-errors: the object's type cannot be gathered).
+    bool                    gatherObject(const unsigned int address,
+                                         const GatherCtx   &ctx);
     // lightweight cloneability probe (see Object::isCloneable)
     bool                    isCloneableObject(const unsigned int address) const;
     // route subsequent createDerivedObject calls into the shadow store so a
@@ -740,6 +859,187 @@ std::unique_ptr<Object> Holder<T>::splitTo(void) const
             }
         }
         return std::make_unique<Holder<T>>(split.release());
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+// subgrid gather (the reverse of splitTo) /////////////////////////////////////
+template <typename T>
+std::unique_ptr<Object> Holder<T>::unsplitTo(const GatherCtx &ctx) const
+{
+    if constexpr (IsLattice<T>::value)
+    {
+        using VType = typename T::vector_type;
+        auto  &env   = Environment::getInstance();
+        auto  *world = env.template getWorldGrid<VType>();
+        auto  *sub   = env.template getSubGrid<VType>();
+        const auto  slotToSub = gridSplitBatchSlotToSub(*world, *sub);
+        std::vector<unsigned int> subToSlot(slotToSub.size());
+        for (unsigned int p = 0; p < slotToSub.size(); ++p)
+        {
+            subToSlot[slotToSub[p]] = p;
+        }
+        // shape/checkerboard descriptor: [cb] (a default-constructed
+        // lattice's cb is 0)
+        std::vector<int32_t> desc;
+        if (CartesianCommunicator::RankWorld() == ctx.bossRank)
+        {
+            desc.push_back(static_cast<int32_t>((*objPt_).Checkerboard()));
+        }
+        broadcastGatherDescriptor(desc, ctx);
+        auto twin = std::make_unique<T>(world);
+        std::vector<T> fulls(slotToSub.size(), T(world));
+        gridGatherLeaf(fulls, objPt_.get(), *twin, world, sub, subToSlot,
+                       static_cast<unsigned int>(ctx.sourceSub),
+                       static_cast<int>(desc[0]));
+        return std::make_unique<Holder<T>>(twin.release());
+    }
+    else if constexpr (IsLatticeVector<T>::value)
+    {
+        using ElemT  = typename T::value_type;
+        using VType  = typename ElemT::vector_type;
+        auto  &env   = Environment::getInstance();
+        auto  *world = env.template getWorldGrid<VType>();
+        auto  *sub   = env.template getSubGrid<VType>();
+        const auto  slotToSub = gridSplitBatchSlotToSub(*world, *sub);
+        std::vector<unsigned int> subToSlot(slotToSub.size());
+        for (unsigned int p = 0; p < slotToSub.size(); ++p)
+        {
+            subToSlot[slotToSub[p]] = p;
+        }
+        // descriptor: [cb, element count] (empty vectors: cb 0, count 0)
+        std::vector<int32_t> desc;
+        if (CartesianCommunicator::RankWorld() == ctx.bossRank)
+        {
+            desc.push_back(objPt_->empty()
+                           ? 0
+                           : static_cast<int32_t>((*objPt_)[0].Checkerboard()));
+            desc.push_back(static_cast<int32_t>(objPt_->size()));
+        }
+        broadcastGatherDescriptor(desc, ctx);
+        const auto n = static_cast<typename T::size_type>(desc[1]);
+        if (objPt_ && objPt_->size() != n)
+        {
+            HADRONS_ERROR(Definition, "subgrid gather: vector length "
+                          "divergence between producing ranks");
+        }
+        auto twin = std::make_unique<T>();
+        twin->reserve(n);
+        std::vector<ElemT> fulls(slotToSub.size(), ElemT(world));
+        for (typename T::size_type e = 0; e < n; ++e)
+        {
+            twin->emplace_back(world);
+            gridGatherLeaf(fulls, objPt_ ? &(*objPt_)[e] : nullptr,
+                           twin->back(), world, sub, subToSlot,
+                           static_cast<unsigned int>(ctx.sourceSub),
+                           static_cast<int>(desc[0]));
+        }
+        return std::make_unique<Holder<T>>(twin.release());
+    }
+    else if constexpr (IsLatticeMap<T>::value)
+    {
+        using MappedT = typename T::mapped_type;
+        using KeyT    = typename T::key_type;
+        if constexpr (!(std::is_enum<KeyT>::value
+                        || std::is_integral<KeyT>::value))
+        {
+            return nullptr;   // map keys not wire-broadcastable: unsupported
+        }
+        else
+        {
+            using ElemT  = typename LatticeElem<MappedT>::type;
+            using VType  = typename ElemT::vector_type;
+            auto  &env   = Environment::getInstance();
+            auto  *world = env.template getWorldGrid<VType>();
+            auto  *sub   = env.template getSubGrid<VType>();
+            const auto  slotToSub = gridSplitBatchSlotToSub(*world, *sub);
+            std::vector<unsigned int> subToSlot(slotToSub.size());
+            for (unsigned int p = 0; p < slotToSub.size(); ++p)
+            {
+                subToSlot[slotToSub[p]] = p;
+            }
+            // descriptor: [cb, key count, (key, per-key vector length)*]
+            // (length 0/unused for lattice-valued mapped types; std::map
+            // iterates keys in sorted order, identical on every producing
+            // rank because the object was produced by one module run)
+            std::vector<int32_t> desc;
+            if (CartesianCommunicator::RankWorld() == ctx.bossRank)
+            {
+                if constexpr (IsLattice<MappedT>::value)
+                {
+                    desc.push_back(objPt_->empty() ? 0
+                        : static_cast<int32_t>(
+                            objPt_->begin()->second.Checkerboard()));
+                }
+                else
+                {
+                    desc.push_back(objPt_->empty() ? 0
+                        : static_cast<int32_t>(
+                            objPt_->begin()->second[0].Checkerboard()));
+                }
+                desc.push_back(static_cast<int32_t>(objPt_->size()));
+                for (auto &p : *objPt_)
+                {
+                    desc.push_back(static_cast<int32_t>(p.first));
+                    if constexpr (IsLattice<MappedT>::value)
+                    {
+                        desc.push_back(0);
+                    }
+                    else
+                    {
+                        desc.push_back(static_cast<int32_t>(p.second.size()));
+                    }
+                }
+            }
+            broadcastGatherDescriptor(desc, ctx);
+            const int      cb = static_cast<int>(desc[0]);
+            const auto     nk = static_cast<std::size_t>(desc[1]);
+            if (objPt_ && objPt_->size() != nk)
+            {
+                HADRONS_ERROR(Definition, "subgrid gather: map key set "
+                              "divergence between producing ranks");
+            }
+            auto twin = std::make_unique<T>();
+            std::vector<ElemT> fulls(slotToSub.size(), ElemT(world));
+            for (std::size_t i = 0; i < nk; ++i)
+            {
+                const auto key = static_cast<KeyT>(desc[2 + 2*i]);
+                const auto len = static_cast<std::size_t>(desc[3 + 2*i]);
+                if constexpr (IsLattice<MappedT>::value)
+                {
+                    auto ret = twin->emplace(key, world);
+                    gridGatherLeaf(fulls, objPt_ ? &(objPt_->at(key)) : nullptr,
+                                   ret.first->second, world, sub, subToSlot,
+                                   static_cast<unsigned int>(ctx.sourceSub),
+                                   cb);
+                }
+                else
+                {
+                    auto ret = twin->try_emplace(key);
+                    if (objPt_ && objPt_->at(key).size() != len)
+                    {
+                        HADRONS_ERROR(Definition, "subgrid gather: mapped "
+                                      "vector length divergence between "
+                                      "producing ranks");
+                    }
+                    ret.first->second.reserve(len);
+                    for (std::size_t e = 0; e < len; ++e)
+                    {
+                        ret.first->second.emplace_back(world);
+                        gridGatherLeaf(fulls,
+                                       objPt_ ? &(objPt_->at(key)[e]) : nullptr,
+                                       ret.first->second.back(), world, sub,
+                                       subToSlot,
+                                       static_cast<unsigned int>(ctx.sourceSub),
+                                       cb);
+                    }
+                }
+            }
+            return std::make_unique<Holder<T>>(twin.release());
+        }
     }
     else
     {
@@ -1131,6 +1431,32 @@ GridCartesian * Environment::getWorldGrid(void)
     }
 }
 
+// per-VType subgrid cache REGARDLESS of scope: the gather runs at phase
+// exit with scope OFF, but the pieces live on gridSub4d_ keyed by VType
+// (the cache survives until the split key changes / clearActiveSubGrid —
+// both are strictly after the gather). Create-on-miss requires an active
+// subgrid, which spans the whole phase. Mirrors getWorldGrid's
+// scope-freeness (the dcbe257a lesson: never build world/subgrid lattices
+// through the scope-aware accessor at transitional points).
+template <typename VType>
+GridCartesian * Environment::getSubGrid(void)
+{
+    FineGridKey key = {typeHash<VType>(), 1};
+
+    auto it = gridSub4d_.find(key);
+    if (it != gridSub4d_.end())
+    {
+        return it->second.get();
+    }
+    if (activeSubGrid_ == nullptr)
+    {
+        HADRONS_ERROR(Logic, "getSubGrid: no active subgrid (gather "
+                      "outside a split phase?)");
+    }
+    createSubGrid<VType>();
+    return gridSub4d_.at(key).get();
+}
+
 template <typename VType>
 GridRedBlackCartesian * Environment::getRbGrid(void)
 {
@@ -1322,6 +1648,11 @@ void Environment::createDerivedObject(const std::string name,
         object_[address].size        = MemoryProfiler::stats->currentlyAllocated - initMem;
         object_[address].type        = typeIdPt<B>();
         object_[address].derivedType = typeIdPt<T>();
+        // subgrid gather dispatch: records how to gather this object type back
+        // to the world grid even on ranks where the object is later absent
+        // (tagged-phase outputs exist only on their owning sub-comm's ranks;
+        // the profiling pass registers this on every rank)
+        object_[address].gather = &gatherDispatch<B>;
         if (MemoryProfiler::stats == &memStats)
         {
             MemoryProfiler::stats = nullptr;

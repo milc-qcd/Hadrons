@@ -295,7 +295,36 @@ private:
     // shadowConsumers_; drives the local per-step shadow frees (R2).
     // Rank-independent, like shadowConsumers_.
     std::map<std::pair<unsigned int, int>, unsigned int> shadowLastUse_;
-    // lazily scatter (lattices) or rebuild (non-lattice objects) the global
+
+// ============================================================================
+// INSERT A: private state, after the shadowLastUse_ map declaration
+// (VirtualMachine.hpp:297) — subgrid gather (reverse split) state
+// ============================================================================
+
+    // ---- subgrid gather (reverse split) state ----
+    // per-phase gather set: raw <splitPhase> value -> ADDRESSES (ascending)
+    // of that phase's tagged-produced objects with post-phase untagged
+    // consumers. The phase-exit driver gathers them back to the world grid
+    // right after the exit Barrier. Rank-independent (schedule-derived), so
+    // every rank issues the identical collective sequence.
+    std::map<unsigned int, std::vector<unsigned int>> gatherSchedule_;
+    // producing phase (raw <splitPhase> value) of every gathered object;
+    // consumed by the scatter-refinement (computeShadowConsumers /
+    // ensureShadowed) so earlier-phase gathered twins are treated as world
+    // objects
+    std::map<unsigned int, unsigned int> producerPhaseOf_;
+    // every address in any phase's gather set (fast membership for the
+    // scatter-refinement)
+    std::set<unsigned int> gatherAddresses_;
+    // first world rank of each sub-comm (the gather shape/checkerboard
+    // descriptor broadcast root, GatherCtx::bossRank), tabulated once in
+    // buildSubGrids via one world allgather of me_
+    std::vector<int> subCommFirstRank_;
+    // once-per-program gather-side slot-delivery self-check flag (the mirror
+    // of batchSlotDeliveryVerified_): before trusting any subToSlot
+    // extraction, every rank proves unsplit slot p carries sub-comm
+    // slotToSub[p]'s marker piece on this grid pair
+    bool                                  gatherSlotDeliveryVerified_{false};    // lazily scatter (lattices) or rebuild (non-lattice objects) the global
     // inputs of a split-phase module onto the subgrid. Collective: the schedule,
     // splitPhase set and module inputs are identical on every rank, so every
     // rank performs the same scatter/rebuild at the same schedule step.
@@ -331,6 +360,45 @@ private:
     void                                  executeBatchedPreScatter(
                                             const Program &p,
                                             const PhaseRange &range);
+
+// ============================================================================
+// INSERT B: private methods, after the executeBatchedPreScatter declaration
+// (VirtualMachine.hpp:331-333) — first two declarations; the third
+// (verifyGatherSlotDelivery) is authored in Phase 3 per the slice contract
+// ============================================================================
+
+    // schedule pre-pass (inside executeProgram, after computePhaseRanges,
+    // before any step executes): fill gatherSchedule_/producerPhaseOf_/
+    // gatherAddresses_ and hard-error the two illegal shapes — (1) an
+    // untagged consumer INSIDE the producing phase's [first,last] span
+    // (would need a mid-phase world collective: the forbidden deadlock
+    // class), (2) a post-phase untagged consumer of a non-scatterable
+    // tagged output. Scatterability comes from the objectIsLattice_ cache
+    // (populated by the profiling pass, which always precedes execution).
+    // Rank-independent.
+    void                                  computeGatherSchedule(
+                                            const Program &p,
+                                            const std::vector<PhaseRange>
+                                                &phaseRanges);
+    // phase-exit driver: gather the exiting phase's set back to the world
+    // grid — called from the phase-exit block right after the world
+    // Barrier, before the per-phase state clears, with phaseIdx still
+    // naming the EXITING phase. COLLECTIVE: every rank calls it in
+    // lockstep; ascending-address order keeps the collective sequence
+    // rank-uniform. Empty set: returns immediately, no collective.
+    void                                  executePhaseGather(
+                                            const unsigned int phase);
+    // gather-side slot-delivery probe (the mirror of the Phase 11 scatter
+    // probe): fill this rank's marker piece with its sub-comm index,
+    // Grid_unsplit nrhs world-grid markers, and check every slot p carries
+    // the constant slotToSub[p] — exactly what gridGatherLeaf's subToSlot
+    // extraction relies on (gridSplitBatchSlotToSub is NOT an involution for
+    // non-palindromic mixed radixes). Markers are vComplex-typed through
+    // the same vComplex grid pair the production gather runs on (NOT the
+    // scatter probe's vInteger — see the implementation's marker-type
+    // rationale). COLLECTIVE: called by every rank in lockstep, once per
+    // program, at the first non-empty phase gather.
+    void                                  verifyGatherSlotDelivery(void);
 };
 
 /******************************************************************************
