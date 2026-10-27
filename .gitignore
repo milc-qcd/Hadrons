@@ -21,3 +21,4 @@ Makefile.in
 .rpiv
 CMakeLists.txt
 .tags*
+tests/*.bin

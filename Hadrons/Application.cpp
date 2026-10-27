@@ -137,9 +137,10 @@ const Application::GlobalPar & Application::getPar(void)
 
 // module creation /////////////////////////////////////////////////////////////
 void Application::createModule(const std::string name, const std::string type, 
-                               XmlReader &reader, const int subgrid)
+                               XmlReader &reader, const int subgrid,
+                               const int splitPhase)
 {
-    vm().createModule(name, type, reader, "options", subgrid);
+    vm().createModule(name, type, reader, "options", subgrid, splitPhase);
 }
 
 // test if module exists ///////////////////////////////////////////////////////
@@ -265,6 +266,9 @@ void Application::parseParameterFile(const std::string parameterFileName)
         do
         {
             int sg{-1};          // default: untagged module runs on world grid
+            int phase{0};        // default: phase 0 = single split phase (Q6;
+                                 // the parse layer is the single authoritative
+                                 // initializer for the default)
             read(reader, "id", id);
             // guarded push: existence test for <subgrid>. push() returns bool
             // silently (no "Cannot open node" warning) — avoids a warning flood
@@ -276,7 +280,26 @@ void Application::parseParameterFile(const std::string parameterFileName)
                 pop(reader);
                 read(reader, "subgrid", sg);
             }
-            createModule(id.name, id.type, reader, sg);
+            // <splitPhase> rides the exact same guarded pattern
+            if (push(reader, "splitPhase"))
+            {
+                pop(reader);
+                read(reader, "splitPhase", phase);
+            }
+            if (phase < 0)
+            {
+                HADRONS_ERROR(Parsing, "module '" + id.name
+                              + "' has negative <splitPhase> "
+                              + std::to_string(phase));
+            }
+            if (phase > 0 and sg < 0)
+            {
+                HADRONS_ERROR(Parsing, "module '" + id.name + "' has"
+                              + " <splitPhase> " + std::to_string(phase)
+                              + " but no <subgrid> tag (phases only apply"
+                              + " to tagged modules)");
+            }
+            createModule(id.name, id.type, reader, sg, phase);
         } while (reader.nextElement("module"));
         pop(reader);
         pop(reader);
@@ -309,6 +332,10 @@ void Application::saveParameterFile(const std::string parameterFileName, unsigne
             if (vm().getModuleSubgrid(i) >= 0)
             {
                 write(writer, "subgrid", vm().getModuleSubgrid(i));
+            }
+            if (vm().getModuleSplitPhase(i) != 0)
+            {
+                write(writer, "splitPhase", vm().getModuleSplitPhase(i));
             }
             vm().getModule(i)->saveParameters(writer, "options");
             pop(writer);

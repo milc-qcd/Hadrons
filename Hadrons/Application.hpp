@@ -150,7 +150,8 @@ public:
     void createModule(const std::string name);
     template <typename M>
     void createModule(const std::string name, const typename M::Par &par);
-    void createModule(const std::string name, const std::string type, XmlReader &reader, const int subgrid = -1);
+    void createModule(const std::string name, const std::string type, XmlReader &reader, const int subgrid = -1,
+                  const int splitPhase = 0);
     // test if module exists
     bool hasModule(const std::string name) const;
     // module DB entry for result files

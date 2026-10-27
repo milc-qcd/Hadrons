@@ -124,7 +124,18 @@ int Hadrons::mkdir(const std::string dirName)
             }
         }
 
-        return ::mkdir(tmp, mode755);
+        int status = ::mkdir(tmp, mode755);
+        if (status and (errno == EEXIST))
+        {
+            // lost a race with a concurrent creator (e.g. the bosses of
+            // sibling sub-comms executing a split phase): the directory
+            // came into existence between our access() pre-check and this
+            // ::mkdir. EEXIST is success if the path is a usable directory;
+            // any other failure is real.
+            struct stat st;
+            status = (stat(tmp, &st) == 0 and S_ISDIR(st.st_mode)) ? 0 : -1;
+        }
+        return status;
     }
     else
     {

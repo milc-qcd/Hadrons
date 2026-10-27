@@ -207,6 +207,7 @@ void Environment::clearActiveSubGrid(void)
         // (no RB grid to clear)
         activeSplitKey_  = -1;
         shadowStore_.clear();
+        shadowSize_.clear();   // R9 (Slice 7)
         gridSub4d_.clear();
         gridSubRb4d_.clear();
     }
@@ -221,6 +222,7 @@ bool Environment::isSubGridActive(void) const
 void Environment::addShadowObject(const unsigned int address, const int splitKey,
                                   std::unique_ptr<Object> obj)
 {
+    shadowSize_[{address, splitKey}] = obj->footprint();   // R9 (Slice 7)
     shadowStore_[{address, splitKey}] = std::move(obj);
 }
 
@@ -229,6 +231,48 @@ bool Environment::hasShadowObject(const unsigned int address) const
     if (!(activeSubGrid_ && subGridScopeOn_))
         return false;
     return shadowStore_.find({address, activeSplitKey_}) != shadowStore_.end();
+}
+
+bool Environment::freeShadowObject(const unsigned int address,
+                                   const int splitKey)
+{
+    auto it = shadowStore_.find({address, splitKey});
+    if (it == shadowStore_.end())
+    {
+        return false;
+    }
+    shadowStore_.erase(it);
+    shadowSize_.erase({address, splitKey});   // R9 (Slice 7)
+    return true;
+}
+
+unsigned int Environment::sweepShadows(const int splitKey)
+{
+    unsigned int n = 0;
+    for (auto it = shadowStore_.begin(); it != shadowStore_.end();)
+    {
+        if (it->first.second == splitKey)
+        {
+            it = shadowStore_.erase(it);
+            n++;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    for (auto it = shadowSize_.begin(); it != shadowSize_.end();)
+    {
+        if (it->first.second == splitKey)
+        {
+            it = shadowSize_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return n;
 }
 
 // subgrid scatter ////////////////////////////////////////////////////////////
@@ -281,6 +325,77 @@ bool Environment::isLatticeObject(const unsigned int address) const
         return false;
     }
     return object_[address].data->isLattice();
+}
+
+// non-storing split (consumer-gated shadow storage) /////////////////////////
+std::unique_ptr<Object> Environment::splitObject(const unsigned int address)
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return nullptr;
+    }
+    return object_[address].data->splitTo();
+}
+
+// batched sole-consumer scatter (R4) ////////////////////////////////////////
+std::unique_ptr<Object> Environment::splitObjectBatch(
+    const std::vector<unsigned int> &addresses)
+{
+    if (addresses.empty())
+    {
+        return nullptr;
+    }
+    std::vector<const Object *> fulls;
+    fulls.reserve(addresses.size());
+    for (auto a : addresses)
+    {
+        if (a >= object_.size() || !object_[a].data)
+        {
+            return nullptr;
+        }
+        fulls.push_back(object_[a].data.get());
+    }
+    return object_[addresses[0]].data->splitBatchTo(fulls);
+}
+
+// subgrid gather (the reverse of scatterObject) ////////////////////////////
+// Type-erased gather of a tagged-phase-produced object back to the world
+// grid: EVERY rank must call this collectively (Grid_unsplit is
+// world-collective; the descriptor broadcast inside is too). The per-object
+// dispatch (registered at createDerivedObject time; the memory-profile pass
+// registers it on every rank) supplies the static type even where
+// object_[address].data is null (non-owning ranks). On success the
+// world-grid twin REPLACES the subgrid piece at the same address on every
+// rank (owning ranks' piece is destroyed by the replacement — freed inside
+// the gather, never via freeSet), the size accounting moves to the twin
+// footprint, and hasCreatedObject becomes rank-uniform again. Returns false
+// when the address has no dispatch or the type cannot be gathered — the VM
+// caller turns that into a hard error.
+bool Environment::gatherObject(const unsigned int address,
+                               const GatherCtx   &ctx)
+{
+    if (address >= object_.size() || !object_[address].gather)
+    {
+        return false;
+    }
+    auto twin = object_[address].gather(object_[address].data.get(), ctx);
+    if (!twin)
+    {
+        return false;
+    }
+    object_[address].data = std::move(twin);
+    object_[address].size = object_[address].data->footprint();
+    return true;
+}
+
+// cloneability probe ////////////////////////////////////////////////////////
+bool Environment::isCloneableObject(const unsigned int address) const
+{
+    if (address >= object_.size() || !object_[address].data)
+    {
+        return false;
+    }
+    return object_[address].data->isCloneable();
 }
 
 // shadow-create mode ////////////////////////////////////////////////////////
@@ -539,9 +654,17 @@ int Environment::getObjectModule(const std::string name) const
     return getObjectModule(getObjectAddress(name));
 }
 
+// getObjectLs reads creation-set metadata: Ls is written once in
+// createDerivedObject (Environment.hpp) and never cleared by
+// freeObject (which resets only size/data — the same free-survival
+// invariant type/derivedType/gather already rely on). Guard on hasObject
+// like every sibling metadata getter: the pre-scatter early free nulls
+// data while tagged consumers' setups still query input Ls (TSaveField's
+// setup, SaveField.hpp:126); the data itself is fetched through the
+// shadow store.
 unsigned int Environment::getObjectLs(const unsigned int address) const
 {
-    if (hasCreatedObject(address))
+    if (hasObject(address))
     {
         return object_[address].Ls;
     }
@@ -610,7 +733,14 @@ Environment::Size Environment::getTotalSize(void) const
     {
         size += o.size;
     }
-    
+    // R9 (Slice 7): shadow-store memory is live memory on this rank
+    // (scattered pieces and rebuilt copies); include it so memPeak and
+    // MemoryUtils::printMemory see the split-phase footprint
+    for (auto &s: shadowSize_)
+    {
+        size += s.second;
+    }
+
     return size;
 }
 
@@ -668,7 +798,23 @@ void Environment::freeSet(const std::set<unsigned int> &objects)
     }
 
     // free object in topological order to avoid triggering dependency errors
-    std::vector<unsigned int> sorted = graph.topoSort();
+    std::vector<unsigned int> sorted;
+
+    try
+    {
+        sorted = graph.topoSort();
+    }
+    catch (Exceptions::Range &)
+    {
+        std::string names;
+
+        for (auto &a: objects)
+        {
+            names += "'" + object_[a].name + "' ";
+        }
+        HADRONS_ERROR(Logic, "cannot free objects " + names
+                      + ": their object dependencies form a cycle");
+    }
 
     for (auto &a: sorted)
     {
