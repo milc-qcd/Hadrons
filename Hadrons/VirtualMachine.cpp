@@ -2109,6 +2109,14 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
         auto scattered = env().splitObject(a);
         if (scattered)
         {
+            // unit timing (pre-scatter): printed right after the
+            // world-collective Grid_split returns, BEFORE the consumer-
+            // gated store, so every rank stamps the same instant and the
+            // timestamp ends the scatter itself
+            LOG(Message) << "Pre-scatter replicated '"
+                         << env().getObjectName(a) << "' ("
+                         << sizeString(env().getObjectSize(a))
+                         << ")" << std::endl;
             if (keepShadow)
             {
                 env().addShadowObject(a, env().getActiveSplitKey(),
@@ -2124,6 +2132,10 @@ void VirtualMachine::ensureShadowed(const std::vector<unsigned int> &inputs)
             if (keepShadow)
             {
                 env().cloneObject(a, env().getActiveSplitKey());
+                // unit timing (pre-scatter): local unit — only the ranks
+                // that pay the copy stamp its end
+                LOG(Message) << "Pre-scatter cloned '"
+                             << env().getObjectName(a) << "'" << std::endl;
             }
             shadowedObjects_.insert(a);
             continue;   // no producer rebuild needed
@@ -2373,6 +2385,14 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
                 // one collective per element/key; every rank derives the
                 // same groups/slots/padding (rank-invariant inputs)
                 auto piece = env().splitObjectBatch(slots);
+                // unit timing (pre-scatter): the batch's world-original
+                // bytes over DISTINCT members (the R8 anchor padding in
+                // slots must not double-count), sized like the Freed line
+                Size batchBytes = 0;
+                for (auto a : batchMembers)
+                {
+                    batchBytes += env().getObjectSize(a);
+                }
                 if (piece)
                 {
                     const auto me = static_cast<unsigned int>(me_);
@@ -2382,6 +2402,11 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
                                               env().getActiveSplitKey(),
                                               std::move(piece));
                     }
+                    LOG(Message) << "Pre-scatter batch of "
+                                 << batchMembers.size() << " object(s) of type '"
+                                 << kv.first << "' into " << subGrid_.nrhs
+                                 << " slots (" << sizeString(batchBytes)
+                                 << ")" << std::endl;
                 }
                 else
                 {
@@ -2399,6 +2424,14 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
                                 std::move(scattered));
                         }
                     }
+                    // unit timing (pre-scatter): fallback variant AFTER the
+                    // per-object scatters it covers (the mismatch verdict
+                    // is rank-uniform, so every rank reaches this together)
+                    LOG(Message) << "Pre-scatter batch of "
+                                 << batchMembers.size() << " object(s) of type '"
+                                 << kv.first << "' into " << subGrid_.nrhs
+                                 << " slots (" << sizeString(batchBytes)
+                                 << ") (scalar fallback)" << std::endl;
                 }
                 // memo on EVERY rank for every member (incl. padded
                 // duplicates): the memo must not diverge across ranks
@@ -2423,6 +2456,15 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
     // rebuilt before the action and bound the world-grid original at
     // setup() time.) Sub-comm-scoped work; non-consuming ranks skip
     // (existing contract).
+    if (!rebuildQueue_.empty())
+    {
+        // unit timing (pre-scatter): rank-uniform span start — every rank
+        // reaches this together after the last batch; the count is the
+        // full queue, while the per-object lines below print only on the
+        // owning sub-comm that pays each rebuild
+        LOG(Message) << "Pre-scatter rebuilding " << rebuildQueue_.size()
+                     << " object(s)" << std::endl;
+    }
     for (auto it = rebuildQueue_.begin(); it != rebuildQueue_.end(); ++it)
     {
         const unsigned int a = *it;
@@ -2460,6 +2502,11 @@ void VirtualMachine::executeBatchedPreScatter(const Program &p,
             throw;
         }
         env().exitShadowCreate();
+        // unit timing (pre-scatter): owner-only — the rebuild above ran on
+        // this rank's sub-comm; each printed stamp ends a rebuild on a
+        // rank that paid it (shared actions print on every consuming rank)
+        LOG(Message) << "Pre-scatter rebuilt '"
+                     << env().getObjectName(a) << "'" << std::endl;
         shadowedObjects_.insert(a);
     }
 
